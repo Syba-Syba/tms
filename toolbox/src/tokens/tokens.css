@@ -1,0 +1,95 @@
+/* Threshold. Apple's discipline, nobody's chrome. The subject is home, so the language is
+   architecture: limestone surfaces, one plum accent used sparingly, doorway arches at the
+   moments that matter, ledger numerals for money. Neutral on every platform. */
+:root {
+  --tb-brand-50: #f6ecf2;
+  --tb-brand-100: #ecd8e4;
+  --tb-brand-200: #d9b1c8;
+  --tb-brand-300: #c287a9;
+  --tb-brand-400: #97567b;
+  --tb-brand-500: #6d3557;
+  --tb-brand-600: #582a46;
+  --tb-brand-700: #452137;
+  --tb-brand-800: #331828;
+  --tb-brand-900: #22101b;
+
+  --tb-neutral-0: #f7f5f1;
+  --tb-neutral-50: #e9e6e0;
+  --tb-neutral-100: #ded9d0;
+  --tb-neutral-200: #cfc8bc;
+  --tb-neutral-300: #b3aa9b;
+  --tb-neutral-400: #948b7c;
+  --tb-neutral-500: #7d766c;
+  --tb-neutral-600: #5b554c;
+  --tb-neutral-700: #403b34;
+  --tb-neutral-800: #2c2822;
+  --tb-neutral-900: #23201c;
+
+  --tb-success: #3f7d58;
+  --tb-warning: #b07a24;
+  --tb-danger: #b3473e;
+  --tb-info: #4a5d7e;
+  --tb-marker: #e8c66b;
+
+  --tb-bg: var(--tb-neutral-50);
+  --tb-surface: var(--tb-neutral-0);
+  --tb-surface-muted: #eee8de;
+  --tb-border: #d8d2c8;
+  --tb-border-soft: #e3ded4;
+  --tb-text: var(--tb-neutral-900);
+  --tb-text-muted: var(--tb-neutral-500);
+  --tb-text-inverse: #f7f5f1;
+  --tb-ring: var(--tb-brand-500);
+
+  --tb-font-display: 'Cabinet Grotesk', 'Archivo', 'Segoe UI', system-ui, sans-serif;
+  --tb-font-body: 'General Sans', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --tb-font-mono: 'Spline Sans Mono', ui-monospace, monospace;
+
+  --tb-radius-sm: 10px;
+  --tb-radius-md: 14px;
+  --tb-radius-lg: 22px;
+  --tb-radius-arch: 999px 999px 20px 20px;
+  --tb-radius-full: 999px;
+
+  --tb-shadow-sm: 0 1px 2px rgba(35, 32, 28, 0.06), 0 4px 14px rgba(35, 32, 28, 0.05);
+  --tb-shadow-md: 0 2px 6px rgba(35, 32, 28, 0.06), 0 14px 34px rgba(35, 32, 28, 0.09);
+  --tb-shadow-lg: 0 24px 60px rgba(35, 32, 28, 0.16);
+  --tb-edge: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+
+  --tb-duration-fast: 120ms;
+  --tb-duration-base: 220ms;
+  --tb-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Dusk: warm charcoal, never pure black. The plum lightens to orchid so contrast holds. */
+[data-theme='dark'] {
+  --tb-bg: #191613;
+  --tb-surface: #221e1a;
+  --tb-surface-muted: #2c2722;
+  --tb-border: #3a342d;
+  --tb-border-soft: #2f2a24;
+  --tb-text: #f0ece5;
+  --tb-text-muted: #a49b8e;
+  --tb-text-inverse: #191613;
+  --tb-brand-500: #c887ab;
+  --tb-brand-600: #d69fbd;
+  --tb-brand-50: #33222c;
+  --tb-brand-100: #402a37;
+  --tb-success: #6fae8a;
+  --tb-warning: #d19a4a;
+  --tb-danger: #d0766d;
+  --tb-ring: #c887ab;
+  --tb-edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --tb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --tb-shadow-md: 0 14px 34px rgba(0, 0, 0, 0.5);
+  --tb-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.65);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

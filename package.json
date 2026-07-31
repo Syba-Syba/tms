@@ -1,0 +1,23 @@
+{
+  "name": "hlonie-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "toolbox",
+    "tms/api",
+    "tms/app"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run build -w @hlonie/toolbox && npm run env && npm run setup -w tms-api",
+    "env": "node scripts/env.mjs",
+    "dev": "concurrently -n api,app -c magenta,cyan \"npm:dev -w tms-api\" \"npm:dev -w tms-app\"",
+    "doctor": "node scripts/doctor.mjs",
+    "build": "npm run build -w @hlonie/toolbox",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "reset": "npm run reset -w tms-api"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}

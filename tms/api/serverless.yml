@@ -1,0 +1,88 @@
+service: tms-api
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: af-south-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 20
+  environment:
+    NODE_ENV: production
+    DB_SECRET_ARN: ${ssm:/tms/${self:provider.stage}/db-secret-arn}
+    DB_HOST: ${ssm:/tms/${self:provider.stage}/db-host}
+    DB_NAME: tms
+    DOCS_BUCKET: ${self:service}-${self:provider.stage}-docs
+    KMS_KEY_ID: ${ssm:/tms/${self:provider.stage}/kms-key-id}
+  httpApi:
+    authorizers:
+      cognito:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl: ${ssm:/tms/${self:provider.stage}/cognito-issuer}
+        audience:
+          - ${ssm:/tms/${self:provider.stage}/cognito-client-id}
+  # Log groups defaulted to never expiring, so every invocation accumulated forever.
+  logRetentionInDays: 30
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action: [s3:PutObject, s3:GetObject]
+          Resource: arn:aws:s3:::${self:provider.environment.DOCS_BUCKET}/*
+        - Effect: Allow
+          Action: [kms:Encrypt, kms:Decrypt]
+          Resource: '*'
+        - Effect: Allow
+          Action: [secretsmanager:GetSecretValue]
+          Resource: ${self:provider.environment.DB_SECRET_ARN}
+        - Effect: Allow
+          Action: [ses:SendEmail]
+          Resource: '*'
+
+
+package:
+  individually: true
+  patterns:
+    - '!node_modules/.cache/**'
+    - '!**/*.test.ts'
+    - '!**/__tests__/**'
+
+functions:
+  # One function serves all 38 routes. Per-route functions meant no single one
+  # ever stayed warm at roughly a request a minute, so nearly every call paid a cold start.
+  api:
+    handler: src/api.handler
+    events:
+      - httpApi:
+          method: '*'
+          path: /{proxy+}
+          authorizer:
+            name: cognito
+
+
+  invoicesRun:
+    handler: src/handlers/invoices-run.handler
+    events:
+      - schedule: cron(0 6 25 * ? *)
+
+  interestRun:
+    handler: src/handlers/interest-run.handler
+    events:
+      - schedule: cron(0 5 1 * ? *)
+
+  notificationsDispatch:
+    handler: src/handlers/notifications-dispatch.handler
+    events:
+      - schedule: rate(5 minutes)
+
+  notificationsSweep:
+    handler: src/handlers/notifications-sweep.handler
+    events:
+      - schedule: cron(0 5 * * ? *)
+
+  leasesActivate:
+    handler: src/handlers/leases-activate.handler
+    events:
+      - schedule: cron(10 3 * * ? *)
+

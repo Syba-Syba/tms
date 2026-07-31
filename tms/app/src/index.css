@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--tb-font-body);
+  background: var(--tb-bg);
+  color: var(--tb-text);
+}

@@ -1,0 +1,66 @@
+import { createHttpClient } from '@hlonie/toolbox/data';
+import { Preferences } from '@capacitor/preferences';
+
+/** Capacitor Preferences works on Android and falls back to localStorage on the web build. */
+const getToken = async () => (await Preferences.get({ key: 'id_token' })).value;
+
+// An empty value in .env would defeat a nullish fallback, so blank counts as absent.
+const configured = (import.meta.env.VITE_API_URL ?? '').trim();
+export const baseUrl = configured || 'http://localhost:3001';
+
+export const api = createHttpClient({
+  baseUrl,
+  getToken,
+  onUnauthorised: async () => {
+    // A dead token means every answer would be someone else's; sign in again.
+    await Preferences.remove({ key: 'id_token' });
+    localStorage.removeItem('tms.user');
+    window.location.assign('/login');
+  },
+});
+
+export interface ApplicationSummary {
+  id: string;
+  status: string;
+  applicant: string;
+  unit: string;
+  submittedAt: string;
+  preferredMoveIn: string;
+  occupants: number;
+  monthlyRentCents: number;
+  monthlyIncomeCents: number;
+  affordability: { ratio: number; band: 'comfortable' | 'tight' | 'over' };
+  documentCount: number;
+  leaseId: string | null;
+  leaseStatus: string | null;
+}
+
+/** Fetches a short-lived signed link for a stored document and opens it in a new tab. */
+export async function openDocument(key: string) {
+  const { viewUrl } = await api.post<{ viewUrl: string }>('/files/view', { key });
+  window.open(viewUrl, '_blank', 'noopener');
+}
+
+/** Fetches a short-lived signed link without opening it, for inline images. */
+export async function signedUrl(key: string) {
+  const { viewUrl } = await api.post<{ viewUrl: string }>('/files/view', { key });
+  return viewUrl;
+}
+
+/** The server explains refusals precisely ("suburb: at least 2 characters"); this unwraps
+    that explanation so a toast never says less than the API did. */
+export function humanError(error: unknown, fallback = 'Something went wrong. Try again.'): string {
+  const body = (error as { body?: { error?: { message?: string; details?: Record<string, string> } } })?.body;
+  if (!body?.error) {
+    // No response body at all means the request never reached the API.
+    if (error instanceof TypeError || !(error as { status?: number }).status) {
+      return `Could not reach the API at ${baseUrl}. Make sure \`npm run dev\` shows both api and app running, then try again.`;
+    }
+    return fallback;
+  }
+  const lines = [body.error.message ?? fallback];
+  for (const [field, problem] of Object.entries(body.error.details ?? {})) {
+    lines.push(`${field}: ${problem}`);
+  }
+  return lines.join(' ');
+}

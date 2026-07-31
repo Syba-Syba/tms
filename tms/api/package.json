@@ -1,0 +1,39 @@
+{
+  "name": "tms-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "logs": "serverless logs -f api -t",
+    "migrate": "node --env-file=.env scripts/migrate.mjs",
+    "test": "vitest run",
+    "dev": "tsx --env-file=.env src/local.ts",
+    "db:create": "createdb tms 2>/dev/null || true",
+    "migrate:dry": "node --env-file=.env scripts/migrate.mjs --dry-run",
+    "setup": "node --env-file=.env scripts/migrate.mjs --seed",
+    "reset": "node scripts/reset.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "^3.670.0",
+    "@aws-sdk/client-s3": "^3.670.0",
+    "@aws-sdk/client-sesv2": "^3.1096.0",
+    "@aws-sdk/s3-request-presigner": "^3.670.0",
+    "@electric-sql/pglite": "^0.5.4",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.7.5",
+    "@types/pg": "^8.11.10",
+    "serverless": "^3.39.0",
+    "tsx": "^4.23.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "yaml": "^2.9.0"
+  }
+}
