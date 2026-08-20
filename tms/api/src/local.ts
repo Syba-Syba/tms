@@ -178,7 +178,7 @@ createServer(async (request, response) => {
     console.log(`${request.method} ${url.pathname} ${result.statusCode} ${Date.now() - started}ms`);
   } catch (error) {
     console.error(`${request.method} ${url.pathname} threw`, error);
-    response.writeHead(500, { 'content-type': 'application/json' });
+    response.writeHead(500, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     response.end(JSON.stringify({ error: 'server_error' }));
   }
 }).listen(PORT, () => {

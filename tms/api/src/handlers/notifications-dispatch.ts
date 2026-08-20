@@ -1,6 +1,16 @@
 import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2';
 import { query } from '../lib/db';
 import { env } from '../lib/env';
+import { jobLogger } from '../lib/logger';
+
+const log = jobLogger('notifications-dispatch');
+
+/** Enough of an address to recognise the row in a log, not enough to be the address. */
+const maskRecipient = (to: string) => {
+  const at = to.indexOf('@');
+  if (at > 0) return `${to.slice(0, 1)}***${to.slice(at)}`;
+  return to.length > 4 ? `***${to.slice(-4)}` : '***';
+};
 
 const ses = new SESv2Client({ region: env.AWS_REGION });
 
@@ -85,14 +95,14 @@ export const handler = async () => {
 
     if (MODE === 'skip') {
       // Logged rather than sent, so the whole pipeline can be verified before a domain exists.
-      console.log(
-        JSON.stringify({
-          message: 'Notification not sent, NOTIFY_MODE=skip.',
-          to: row.recipient_to,
-          channel: row.channel,
-          subject: row.subject,
-        }),
-      );
+      // The address is masked: skip mode is the default, so this runs in deployed stages too,
+      // and a log group is not the place for a tenant's email address or phone number.
+      log.info('Notification not sent, NOTIFY_MODE=skip.', {
+        notificationId: row.id,
+        to: maskRecipient(row.recipient_to),
+        channel: row.channel,
+        subject: row.subject,
+      });
       await park(row.id, 'NOTIFY_MODE=skip');
       counts.skipped += 1;
       continue;
@@ -116,6 +126,6 @@ export const handler = async () => {
     }
   }
 
-  console.log(JSON.stringify({ message: 'Notification dispatch complete.', mode: MODE, ...counts }));
+  log.info('Notification dispatch complete.', { mode: MODE, ...counts });
   return { mode: MODE, ...counts };
 };

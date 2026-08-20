@@ -2,6 +2,9 @@ import { query, withTransaction } from '../lib/db';
 import { zar } from '../domain/money';
 import { billingWindow, describeWindow, rentForWindow } from '../domain/renewal';
 import { notify } from '../lib/notify';
+import { jobLogger } from '../lib/logger';
+
+const log = jobLogger('invoices-run');
 
 /** EventBridge, 06:00 on the 25th: issue next month's rent invoices for every active lease.
     Idempotent through the (lease_id, period_start) unique key, so a re-run cannot double bill. */
@@ -103,9 +106,9 @@ export const handler = async () => {
         });
       }
     } catch (error) {
-      console.error('Invoice failed for lease', lease.id, error);
+      log.error('Invoice failed for a lease.', { leaseId: lease.id, error });
     }
   }
-  console.log(JSON.stringify({ message: 'Invoice run complete.', period: periodIso, issued }));
+  log.info('Invoice run complete.', { period: periodIso, issued, considered: leases.length });
   return { issued };
 };

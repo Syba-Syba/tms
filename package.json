@@ -18,6 +18,14 @@
     "reset": "npm run reset -w tms-api"
   },
   "devDependencies": {
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.4",
+    "jsdom": "^26.1.0"
+  },
+  "//overrides": "jsdom 30 reaches Node-20.19-only code (require of an ESM dependency) through html-encoding-sniffer 6. vitest pulls it in as an optional peer, so it is pinned here for every workspace at once.",
+  "overrides": {
+    "jsdom": "^26.1.0"
+  },
+  "engines": {
+    "node": ">=20.19"
   }
 }

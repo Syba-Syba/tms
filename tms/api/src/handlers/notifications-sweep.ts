@@ -1,6 +1,9 @@
 import { query } from '../lib/db';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
+import { jobLogger } from '../lib/logger';
+
+const log = jobLogger('notifications-sweep');
 
 const days = (from: string, to: Date) =>
   Math.floor((to.getTime() - new Date(from).getTime()) / 86400000);
@@ -241,6 +244,6 @@ export const handler = async () => {
   );
   counts.renewalsLapsed = lapsed.length;
 
-  console.log(JSON.stringify({ message: 'Notification sweep complete.', ...counts }));
+  log.info('Notification sweep complete.', { ...counts });
   return counts;
 };

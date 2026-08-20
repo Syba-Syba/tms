@@ -6,6 +6,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/__clicks__/setup.ts'],
+    // Starts the API when nothing is listening, so `npm test` needs no second terminal.
+    globalSetup: ['./src/__clicks__/global-setup.ts'],
     css: false,
     // The clicks hit the live dev API, so screens run one at a time in a stable order.
     fileParallelism: false,

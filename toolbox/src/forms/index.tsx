@@ -65,7 +65,7 @@ export function TextField<T extends FieldValues>({
       rules={rules}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
-          <Input id={name} invalid={!!fieldState.error} {...field} {...input} />
+          <Input id={name} invalid={!!fieldState.error} {...field} value={field.value ?? ''} {...input} />
         </Field>
       )}
     />
@@ -86,7 +86,7 @@ export function TextAreaField<T extends FieldValues>({
       name={name}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
-          <Textarea id={name} invalid={!!fieldState.error} {...field} {...props} />
+          <Textarea id={name} invalid={!!fieldState.error} {...field} value={field.value ?? ''} {...props} />
         </Field>
       )}
     />
@@ -108,7 +108,7 @@ export function SelectField<T extends FieldValues>({
       name={name}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
-          <Select id={name} options={options} placeholder={placeholder} invalid={!!fieldState.error} {...field} />
+          <Select id={name} options={options} placeholder={placeholder} invalid={!!fieldState.error} {...field} value={field.value ?? ''} />
         </Field>
       )}
     />

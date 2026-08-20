@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
 import { api, baseUrl, humanError } from '../api/client';
+import { safeReturnPath } from '../lib/safe-path';
 import { startSession, type SessionUser } from '../lib/session';
 
 export function Login() {
@@ -28,8 +29,11 @@ export function Login() {
         password,
       });
       await startSession(result.token, result.user);
-      // Back to wherever the guard caught them, e.g. a copied /apply?unit= link.
-      navigate((location.state as { from?: string } | null)?.from ?? '/', { replace: true });
+      // Back to wherever the guard caught them, e.g. a copied /apply?unit= link. The target
+      // came out of the address bar, so anything leaving this origin falls back to home.
+      navigate(safeReturnPath((location.state as { from?: string } | null)?.from), {
+        replace: true,
+      });
     } catch (error) {
       const wrongCreds = (error as { status?: number }).status === 401;
       toast.show({

@@ -1,21 +1,19 @@
-import { caller } from '../lib/auth';
+import { requireApplicationAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, json, notFound, route } from '../lib/http';
 import { storage } from '../lib/storage';
 
 /** The queue shows a document count; this is what lets the landlord actually read them. */
 export const handler = route(async (event) => {
-  const person = caller(event);
   const applicationId = event.pathParameters?.id;
   if (!applicationId) throw badRequest('An application id is required.');
 
-  const [application] = await query<{ id: string }>(
-    `select a.id from application a
-       join applicant p on p.id = a.applicant_id
-      where a.id = $1 and (p.cognito_sub = $2 or $3)`,
-    [applicationId, person.sub, person.groups.includes('landlord')],
-  );
-  if (!application) throw notFound('Application');
+  // These are ID copies, payslips and bank statements. Only the applicant and the landlord
+  // whose unit was applied for may read them. A 403 would confirm the application exists, so
+  // an outsider gets the same 404 either way.
+  await requireApplicationAccess(event, applicationId).catch(() => {
+    throw notFound('Application');
+  });
 
   const rows = await query<{
     id: string;

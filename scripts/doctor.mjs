@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,8 +8,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const checks = [];
 const check = (label, ok, fix) => checks.push({ label, ok, fix });
 
-const [major] = process.versions.node.split('.').map(Number);
-check(`Node ${process.versions.node}`, major >= 20, 'Install Node 20 or newer.');
+// Checked against the engines floor rather than a hardcoded major. `major >= 20` passed on
+// Node 20.11, where the build tooling then failed with an unrelated-looking module error.
+const required = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).engines.node;
+const [minMajor, minMinor = 0] = required.replace(/^\D*/, '').split('.').map(Number);
+const [major, minor] = process.versions.node.split('.').map(Number);
+check(
+  `Node ${process.versions.node} (need ${required})`,
+  major > minMajor || (major === minMajor && minor >= minMinor),
+  `Install Node ${required}. With nvm: nvm install && nvm use`,
+);
 
 check('workspace root', existsSync(join(root, 'package.json')) && existsSync(join(root, 'toolbox')),
   'Run commands from the folder holding package.json, toolbox and tms.');
@@ -25,7 +33,7 @@ for (const pkg of ['tms/api', 'tms/app']) {
 
 const apiEnv = join(root, 'tms/api/.env');
 if (existsSync(apiEnv)) {
-  const text = (await import('node:fs')).readFileSync(apiEnv, 'utf8');
+  const text = readFileSync(apiEnv, 'utf8');
   const pglite = /^DB_DRIVER=pglite/m.test(text);
   const dir = join(root, 'tms/api', (text.match(/^PGLITE_DIR=(.*)$/m)?.[1] ?? './.pglite').trim());
   if (pglite) {
@@ -33,9 +41,7 @@ if (existsSync(apiEnv)) {
   }
 }
 
-const migrations = join(root, 'db/migrations');
-const nested = join(root, 'tms/db/migrations');
-check('migrations found', existsSync(migrations) || existsSync(nested),
+check('migrations found', existsSync(join(root, 'tms/db/migrations')),
   'The download is incomplete, re-extract it.');
 
 let bad = 0;

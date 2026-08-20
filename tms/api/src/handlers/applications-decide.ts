@@ -1,7 +1,8 @@
+import { requireApplicationAccess } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
-import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { decisionSchema } from '../domain/application';
 
 export const handler = route(async (event) => {
@@ -9,6 +10,11 @@ export const handler = route(async (event) => {
   const id = event.pathParameters?.id;
   if (!id) throw badRequest('An application id is required.');
   const input = parseBody(event, decisionSchema);
+
+  // Being a landlord is not the same as being this unit's landlord. Without this, any landlord
+  // could approve or decline an application made against another landlord's property.
+  const access = await requireApplicationAccess(event, id);
+  if (!access.isLandlord) throw forbidden('Only the landlord decides an application.');
 
   if (input.outcome === 'declined' && !input.reason) {
     throw badRequest('A decline needs a reason. The applicant is told what it is.');

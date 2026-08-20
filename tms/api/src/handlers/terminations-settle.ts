@@ -7,6 +7,7 @@ import { pickRefundRule, reconcile, refundDueBy, settleSchema } from '../domain/
 import { renderExitStatementPdf, type ComparisonRow, type InspectionPhoto } from '../lib/pdf';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
+import { logger } from '../lib/logger';
 
 const photoOrNull = async (key: string | null): Promise<InspectionPhoto | null> => {
   if (!key) return null;
@@ -16,7 +17,7 @@ const photoOrNull = async (key: string | null): Promise<InspectionPhoto | null> 
       type: key.endsWith('.png') ? 'png' : 'jpg',
     };
   } catch (error) {
-    console.error('Comparison photo missing', key, error);
+    logger.warn('Comparison photo missing.', { key, error });
     return null;
   }
 };

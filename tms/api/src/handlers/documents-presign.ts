@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { caller } from '../lib/auth';
+import { requireApplicationAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, json, notFound, parseBody, route } from '../lib/http';
@@ -11,16 +11,15 @@ const schema = z.object({
 });
 
 export const handler = route(async (event) => {
-  const person = caller(event);
   const applicationId = event.pathParameters?.id;
   if (!applicationId) throw badRequest('An application id is required.');
   const input = parseBody(event, schema);
 
+  await requireApplicationAccess(event, applicationId);
+
   const [application] = await query<{ id: string; status: string }>(
-    `select a.id, a.status from application a
-       join applicant p on p.id = a.applicant_id
-      where a.id = $1 and (p.cognito_sub = $2 or $3)`,
-    [applicationId, person.sub, person.groups.includes('landlord')],
+    'select id, status from application where id = $1',
+    [applicationId],
   );
   if (!application) throw notFound('Application');
   if (!['draft', 'submitted', 'screening'].includes(application.status)) {

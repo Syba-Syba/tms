@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { requireLeaseAccess } from '../lib/access';
-import { caller } from '../lib/auth';
+import { requireApplicationAccess, requireLeaseAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { json, notFound, parseBody, route } from '../lib/http';
 import { storage } from '../lib/storage';
@@ -42,22 +41,19 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
 };
 
 export const handler = route(async (event) => {
-  const person = caller(event);
   const { key } = parseBody(event, schema);
 
   if (key.startsWith('applications/')) {
-    const [document] = await query<{ tenant_sub: string | null }>(
-      `select p.cognito_sub as tenant_sub
-         from application_document d
-         join application a on a.id = d.application_id
-         join applicant p on p.id = a.applicant_id
-        where d.s3_key = $1`,
+    // ID copies, payslips and bank statements. Membership of the landlord group used to be
+    // enough to read any of them, for any applicant, under any landlord.
+    const [document] = await query<{ application_id: string }>(
+      'select application_id from application_document where s3_key = $1',
       [key],
     );
     if (!document) throw notFound('Document');
-    if (document.tenant_sub !== person.sub && !person.groups.includes('landlord')) {
+    await requireApplicationAccess(event, document.application_id).catch(() => {
       throw notFound('Document');
-    }
+    });
   } else {
     const leaseId = await leaseIdFor(key);
     if (!leaseId) throw notFound('Document');

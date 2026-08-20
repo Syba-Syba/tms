@@ -1,3 +1,4 @@
+import { landlordIdFor } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, route } from '../lib/http';
@@ -21,7 +22,10 @@ interface Row {
 }
 
 export const handler = route(async (event) => {
-  requireLandlord(event);
+  const person = requireLandlord(event);
+  // The queue carries applicant names, income and paperwork counts, so it is scoped to the
+  // properties this landlord owns rather than to everyone in the landlord group.
+  const landlordId = await landlordIdFor(person);
   const status = event.queryStringParameters?.status ?? 'submitted';
   const limit = Math.min(Number(event.queryStringParameters?.limit ?? 50), 100);
 
@@ -37,9 +41,10 @@ export const handler = route(async (event) => {
        join property pr on pr.id = u.property_id
        left join lease l on l.application_id = a.id and l.status <> 'cancelled'
       where ($1 = 'all' or a.status = $1)
+        and pr.landlord_id = $3
       order by a.submitted_at desc nulls last
       limit $2`,
-    [status, limit],
+    [status, limit, landlordId],
   );
 
   return json(200, {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import pg, { Pool } from 'pg';
 import { env } from './env';
+import { logger } from './logger';
 
 const RDS_CA_PATH = process.env.RDS_CA_BUNDLE ?? '/opt/rds-ca-bundle.pem';
 
@@ -77,7 +78,7 @@ const postgresDriver: Driver = {
     } catch (error) {
       // A failing rollback must not replace the error that caused it.
       await client.query('rollback').catch((rollbackError) => {
-        console.error('Rollback failed', rollbackError);
+        logger.error('Rollback failed.', { error: rollbackError });
       });
       throw error;
     } finally {

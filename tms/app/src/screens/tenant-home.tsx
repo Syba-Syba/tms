@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, CardBody, EmptyState, PageHeader, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
@@ -18,6 +18,7 @@ const daysUntil = (date: string) => Math.round((new Date(date).getTime() - Date.
  * paperwork behind them.
  */
 export function TenantHome() {
+  const navigate = useNavigate();
   const { data, isLoading } = useQuery({
     queryKey: ['leases'],
     queryFn: () => api.get<{ items: LeaseRow[] }>('/leases'),
@@ -100,20 +101,18 @@ export function TenantHome() {
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Link to={`/leases/${lease.id}/tickets/new`}>
-          <Button block>Report a problem</Button>
-        </Link>
-        <Link to={`/leases/${lease.id}/rent`}>
-          <Button block variant="outline">Rent and deposit</Button>
-        </Link>
-        <Link to={`/leases/${lease.id}`}>
-          <Button block variant="outline">Your lease</Button>
-        </Link>
-        <Link to="/tickets">
-          <Button block variant="outline">
-            Maintenance{lease.openTickets ? ` (${lease.openTickets} open)` : ''}
-          </Button>
-        </Link>
+        <Button block onClick={() => navigate(`/leases/${lease.id}/tickets/new`)}>
+          Report a problem
+        </Button>
+        <Button block variant="outline" onClick={() => navigate(`/leases/${lease.id}/rent`)}>
+          Rent and deposit
+        </Button>
+        <Button block variant="outline" onClick={() => navigate(`/leases/${lease.id}`)}>
+          Your lease
+        </Button>
+        <Button block variant="outline" onClick={() => navigate('/tickets')}>
+          Maintenance{lease.openTickets ? ` (${lease.openTickets} open)` : ''}
+        </Button>
       </div>
     </main>
   );

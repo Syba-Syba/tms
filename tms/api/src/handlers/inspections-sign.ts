@@ -5,6 +5,7 @@ import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { signInspectionSchema } from '../domain/inspection';
 import { renderInspectionPdf, type InspectionPhoto } from '../lib/pdf';
+import { logger } from '../lib/logger';
 
 const asBytes = (key: string) => storage().get(key);
 
@@ -31,7 +32,7 @@ const asBytesOrNull = async (key: string) => {
   try {
     return await asBytes(key);
   } catch (error) {
-    console.error('Photo missing at seal time', key, error);
+    logger.warn('Photo missing at seal time.', { key, error });
     return null;
   }
 };

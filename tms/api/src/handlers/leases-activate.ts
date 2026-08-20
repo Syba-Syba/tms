@@ -1,4 +1,7 @@
 import { withTransaction } from '../lib/db';
+import { jobLogger } from '../lib/logger';
+
+const log = jobLogger('leases-activate');
 
 /**
  * Runs each morning. A scheduled lease becomes the live one on its start date, and the lease it
@@ -33,6 +36,6 @@ export const handler = async () => {
     return due.length;
   });
 
-  console.log(JSON.stringify({ message: 'Lease activation complete.', activated }));
+  log.info('Lease activation complete.', { activated });
   return { activated };
 };

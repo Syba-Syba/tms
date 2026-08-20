@@ -13,6 +13,25 @@ interface Statement {
 
 const tone = { paid: 'success', part_paid: 'warning', issued: 'neutral' } as const;
 
+const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+
+/** There is no server-rendered PDF for a running statement, only for the exit statement, so
+    the download is built from the same rows the screen is already showing. CSV, because the
+    thing a tenant does with this is hand it to a bank or paste it into a dispute. */
+function statementCsv(statement: Statement): string {
+  const rows: (string | number)[][] = [['Date', 'Description', 'Reference', 'Debit', 'Credit']];
+  for (const invoice of statement.invoices) {
+    rows.push([invoice.dueOn, `Rent ${invoice.period}`, '', (invoice.totalCents / 100).toFixed(2), '']);
+  }
+  for (const payment of statement.payments) {
+    rows.push([payment.receivedOn, 'Payment received', payment.reference ?? '', '', (payment.amountCents / 100).toFixed(2)]);
+  }
+  rows.push([]);
+  rows.push(['', 'Balance outstanding', '', (statement.balanceCents / 100).toFixed(2), '']);
+  rows.push(['', 'Deposit held', '', '', (statement.depositBalanceCents / 100).toFixed(2)]);
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
+}
+
 export function TenantRent() {
   const { leaseId } = useParams();
   const { data } = useQuery({
@@ -21,6 +40,16 @@ export function TenantRent() {
   });
 
   const balance = data?.balanceCents ?? 0;
+
+  const download = () => {
+    if (!data) return;
+    const url = URL.createObjectURL(new Blob([statementCsv(data)], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `statement-${leaseId}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
@@ -56,7 +85,7 @@ export function TenantRent() {
           </Card>
         ))}
       </div>
-      <Button block variant="secondary" className="mt-5">
+      <Button block variant="secondary" className="mt-5" disabled={!data} onClick={download}>
         Download statement
       </Button>
     </main>

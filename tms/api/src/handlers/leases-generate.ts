@@ -1,7 +1,8 @@
+import { requireApplicationAccess } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
-import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { generateLeaseSchema, leaseEndDate } from '../domain/lease';
 
 export const handler = route(async (event) => {
@@ -9,6 +10,10 @@ export const handler = route(async (event) => {
   const applicationId = event.pathParameters?.id;
   if (!applicationId) throw badRequest('An application id is required.');
   const input = parseBody(event, generateLeaseSchema);
+
+  // A lease binds this landlord's unit, so only that landlord may raise it.
+  const access = await requireApplicationAccess(event, applicationId);
+  if (!access.isLandlord) throw forbidden('Only the landlord generates the lease.');
 
   const lease = await withTransaction(async (run) => {
     const [application] = await run<{

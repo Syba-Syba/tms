@@ -10,9 +10,11 @@ let newLeaseId: string;
 beforeAll(async () => {
   db = await freshDb();
   seeded = await seedLease(db);
+  // An interest entry carries the month it covers; see interest-run.test.ts. A year of it
+  // here, posted as one figure against the month the tenancy is being handed over in.
   await db.query(
-    `insert into deposit_ledger (lease_id, entry_type, amount_cents) values
-       ($1, 'received', 850000), ($1, 'interest', 46752)`,
+    `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month) values
+       ($1, 'received', 850000, null), ($1, 'interest', 46752, '2027-08-01')`,
     [seeded.leaseId],
   );
 }, 60_000);

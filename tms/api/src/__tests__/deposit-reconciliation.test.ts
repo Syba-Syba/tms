@@ -24,10 +24,12 @@ const heldQuery = `
 
 describe('deposit reconciliation', () => {
   it('counts money that already left the deposit', async () => {
+    // An interest entry carries the month it covers, which is what stops the scheduled run
+    // crediting the same month twice. See interest-run.test.ts.
     await db.query(
-      `insert into deposit_ledger (lease_id, entry_type, amount_cents) values
-         ($1, 'received', 850000), ($1, 'interest', 3896),
-         ($1, 'deduction', 100000), ($1, 'refund', 50000)`,
+      `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month) values
+         ($1, 'received', 850000, null), ($1, 'interest', 3896, '2026-10-01'),
+         ($1, 'deduction', 100000, null), ($1, 'refund', 50000, null)`,
       [seeded.leaseId],
     );
     const { rows } = await db.query<{ deposit: string; interest: string; already_out: string }>(
