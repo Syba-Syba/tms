@@ -22,6 +22,117 @@ Android APK and web PWA from one codebase.
 
 Estimated running cost at this size: 15 to 25 USD a month.
 
+## Running it for real without AWS
+
+There are three modes, and `APP_MODE` picks the middle one:
+
+| Mode | Identity | Database | Documents | Who it is for |
+| --- | --- | --- | --- | --- |
+| `development` | faked from an `x-dev-sub` header | PGlite | on disk | a laptop |
+| `self-hosted` | email and password, checked | PGlite or Postgres | on disk | real users, your machine |
+| `aws` | Cognito, checked by API Gateway | RDS | S3 + KMS | the deployed stage |
+
+The difference that matters is identity. `npm run dev` runs `src/local.ts`, which falls back to
+whatever `x-dev-sub` claims when there is no token, so anyone who can reach the port is the
+landlord. That is why it refuses to start outside development. Self-hosted mode runs
+`src/server.ts` instead, which has no fallback at all: no token is 401, on every route except
+the two that issue tokens.
+
+    cd api
+    cp .env.selfhosted.example .env.selfhosted
+    npm run secrets:generate          # paste both values into .env.selfhosted
+    npm run migrate:selfhosted        # seed files are skipped, as always
+
+    BOOTSTRAP_PASSWORD='...' npm run bootstrap -- \
+      --email you@example.co.za --name "Mokoena Properties"
+
+    cd .. && npm run selfhost:build   # builds the toolbox and the web app
+    npm run selfhost:start            # http://127.0.0.1:3001
+
+One process serves the API and the web app on one port, so the browser makes no cross-origin
+call and there is no CORS to configure. `VITE_API_URL=/` is what `selfhost:build` sets to get
+that; a build with it unset now fails rather than baking in `http://localhost:3001`.
+
+`npm run bootstrap` exists because a freshly migrated database has no landlord row — the only
+insert into `landlord` is in the development seed, which the migration runner skips — so
+without it every landlord route answers 403.
+
+### Getting at the database
+
+PGlite has no server and no socket. It is one process against one folder, and the API server
+holds it while it runs, so there is nothing for `psql` or a GUI client to connect to. That is
+the trade for needing nothing installed.
+
+Point `DB_DRIVER` at `postgres` in `.env.selfhosted` and the usual tools work, including while
+the server is running:
+
+    npm run db:psql                      # psql against whatever the env file points at
+    npm run db:psql -- -c "select * from lease limit 5"
+    npm run db:dump > backup-$(date +%F).sql
+
+Both read the credentials from `.env.selfhosted`, so they stay out of shell history. Any GUI
+client (TablePlus, pgAdmin, DBeaver) connects with the same `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_USER` and `DB_PASSWORD` from that file.
+
+On PGlite the same commands refuse, and say why. To read a PGlite directory, stop the server
+first and open it from a script — nothing else can hold it at the same time.
+
+What self-hosted mode does **not** change:
+
+- It binds `127.0.0.1`. Put a TLS terminator in front of it before anyone else uses it; session
+  tokens over plaintext on a shared network are the whole ballgame. `HOST=0.0.0.0` opts out.
+- PGlite is one process against one folder, with no replication and no `pg_dump`. It warns once
+  at startup. Back up `PGLITE_DIR` and `STORAGE_DIR` together, with the server stopped.
+- `STORAGE_SECRET` derives the ID number encryption key. Changing it makes every stored ID
+  number permanently unreadable. Back both secrets up somewhere other than the machine.
+- Passwords are scrypt-hashed and tokens expire after seven days. There is no emailed
+  password reset and no refresh; Cognito would have brought those.
+- Sign-in locks an account for 15 minutes after 10 wrong passwords, and one address for 15
+  minutes after 30. Sign-ups are capped at 10 an hour per address. These counts live in
+  memory, so restarting the server clears them.
+- Settings → Password changes a password and signs out every other device: each token
+  carries a fingerprint of the password hash, and the server checks it on every request.
+- The server refuses JSON bodies over 1 MB and uploads over 15 MB (413), and sends a strict
+  Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` with pages.
+- Plain HTTP on the LAN means anyone on the same Wi-Fi can read traffic, tokens included.
+  Put it behind HTTPS (Caddy or a Cloudflare tunnel) before anyone outside your house uses it.
+
+## Before the first deploy
+
+`serverless.yml` reads everything environment-specific from SSM, so nothing here is created by
+this repo. All of these must exist before `serverless deploy` will even resolve its
+configuration, and packaging fails with "AWS provider credentials not found" until they do.
+
+| Parameter | Type | What it holds |
+| --- | --- | --- |
+| `/tms/<stage>/db-secret-arn` | String | Secrets Manager ARN holding `{"username","password"}` |
+| `/tms/<stage>/db-host` | String | RDS Proxy endpoint |
+| `/tms/<stage>/kms-key-id` | String | Key used for ID number encryption and S3 SSE |
+| `/tms/<stage>/cognito-issuer` | String | User pool issuer URL |
+| `/tms/<stage>/cognito-client-id` | String | App client id, the JWT audience |
+| `/tms/<stage>/lambda-security-group-id` | String | Security group allowed into the proxy |
+| `/tms/<stage>/private-subnet-ids` | StringList | Subnets the functions attach to |
+| `/tms/<stage>/allowed-origins` | StringList | Origins the SPA is served from |
+| `/tms/<stage>/notify-mode` | String | `skip` until a sending domain is verified |
+| `/tms/<stage>/notify-from` | String | Address on that domain |
+
+Also needed: the `tms-api-<stage>-docs` bucket, the Cognito user pool with `tenant` and
+`landlord` groups, and the RDS instance and proxy.
+
+Two things follow from attaching the functions to a VPC. They lose the default route to the
+internet, so Secrets Manager, S3, KMS and SES each need an interface endpoint in that VPC or a
+NAT gateway. And migrations run from somewhere with a route to the proxy — a bastion, a CI
+runner in the VPC, or a one-off task — not from a laptop:
+
+    cd api
+    npm run certs:fetch
+    DB_HOST=<proxy endpoint> DB_NAME=tms DB_SECRET_ARN=<arn> npm run migrate
+
+The seed files are skipped by the runner unless `--seed` is passed, so `npm run migrate` never
+puts development data in a real database. A production database has no landlord row at all:
+insert one with the `cognito_sub` of the real landlord before anyone signs in, or every
+landlord route returns 403.
+
 ## First run
 
     # 1. database
@@ -119,7 +230,11 @@ fixes each one.
 
 `DB_DRIVER=pglite` by default, which is Postgres compiled to WebAssembly running inside the API
 process against `tms/api/.pglite`. It is a real Postgres, not a mock, and the same migrations
-apply to it. Delete the folder or run `npm run reset` to start over.
+apply to it. The folder is not in git: `npm run dev` creates and seeds it when it is missing.
+Delete it or run `npm run reset` to start over.
+
+The click tests refuse to run if the self-hosted server is the thing on port 3001, because
+they create records. Stop it first.
 
 To use a real Postgres instead, set `DB_DRIVER=postgres` in `tms/api/.env` and fill in the
 `DB_HOST` block below it, then `npm run setup -w tms-api`.
@@ -342,8 +457,10 @@ second copy of React Query, react-hook-form and Zod. That was patched around wit
 and a tsconfig `paths` override. npm workspaces fixes it at the root, and the `paths` override
 is gone; the app typechecks without it.
 
-**CI.** `.github/workflows/ci.yml` runs typecheck, all 144 tests and a YAML parse of the
-deployment file on every push.
+**CI.** Still to do. This claimed a `.github/workflows/ci.yml` running typecheck, the tests and
+a parse of the deployment file on every push; no such workflow was ever committed, and there is
+no `.github` directory. `npm run typecheck --workspaces` and `npm test --workspaces` are what it
+would run, and both pass, but nothing runs them automatically.
 
 **Log retention** is set to 30 days. Groups previously kept everything forever.
 

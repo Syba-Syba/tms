@@ -6,7 +6,19 @@ const getToken = async () => (await Preferences.get({ key: 'id_token' })).value;
 
 // An empty value in .env would defeat a nullish fallback, so blank counts as absent.
 const configured = (import.meta.env.VITE_API_URL ?? '').trim();
-export const baseUrl = configured || 'http://localhost:3001';
+
+/**
+ * "/" means the API answers on the same origin that served this page, which is how the
+ * self-hosted server runs: one process, one port, no CORS. The Android build cannot use it —
+ * its origin is the WebView's — so that one sets an absolute URL.
+ *
+ * A production build with neither is refused by vite.config.ts rather than quietly baking in
+ * localhost, which is what used to happen and failed on every call once deployed.
+ */
+export const baseUrl =
+  configured === '/'
+    ? (typeof window === 'undefined' ? 'http://localhost:3001' : window.location.origin)
+    : configured || 'http://localhost:3001';
 
 export const api = createHttpClient({
   baseUrl,
@@ -54,7 +66,10 @@ export function humanError(error: unknown, fallback = 'Something went wrong. Try
   if (!body?.error) {
     // No response body at all means the request never reached the API.
     if (error instanceof TypeError || !(error as { status?: number }).status) {
-      return `Could not reach the API at ${baseUrl}. Make sure \`npm run dev\` shows both api and app running, then try again.`;
+      // A tenant on a phone cannot act on "run npm run dev"; only a developer sees that hint.
+      return import.meta.env.DEV
+        ? `Could not reach the API at ${baseUrl}. Make sure \`npm run dev\` shows both api and app running, then try again.`
+        : 'Could not reach the server. Check your connection and try again.';
     }
     return fallback;
   }

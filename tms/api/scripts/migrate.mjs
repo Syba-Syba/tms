@@ -12,6 +12,40 @@ const files = readdirSync(MIGRATIONS)
   .filter((name) => name.endsWith('.sql') && !name.includes('seed'))
   .sort();
 
+const CA_PATH =
+  process.env.RDS_CA_BUNDLE ?? join(dirname(fileURLToPath(import.meta.url)), '../certs/rds-global-bundle.pem');
+
+/** The same bundle and the same secret the API uses, so migrating connects the way it will. */
+function caBundle() {
+  try {
+    return readFileSync(CA_PATH, 'utf8');
+  } catch {
+    throw new Error(
+      `No RDS CA bundle at ${CA_PATH}. Run "npm run certs:fetch" first, or set RDS_CA_BUNDLE.`,
+    );
+  }
+}
+
+async function password() {
+  if (process.env.DB_PASSWORD) return process.env.DB_PASSWORD;
+  if (!process.env.DB_SECRET_ARN) {
+    throw new Error('Set DB_PASSWORD for a local database, or DB_SECRET_ARN to read one from Secrets Manager.');
+  }
+  const { GetSecretValueCommand, SecretsManagerClient } = await import(
+    '@aws-sdk/client-secrets-manager'
+  );
+  const client = new SecretsManagerClient({ region: process.env.AWS_REGION ?? 'af-south-1' });
+  const { SecretString } = await client.send(
+    new GetSecretValueCommand({ SecretId: process.env.DB_SECRET_ARN }),
+  );
+  if (!SecretString) throw new Error(`Secret ${process.env.DB_SECRET_ARN} holds no SecretString.`);
+  try {
+    return JSON.parse(SecretString).password;
+  } catch {
+    return SecretString;
+  }
+}
+
 /** Same two drivers the API uses, so migrating matches how the app will actually connect. */
 async function connect() {
   if (process.env.DB_DRIVER === 'pglite') {
@@ -32,8 +66,10 @@ async function connect() {
     port: Number(process.env.DB_PORT ?? 5432),
     database: process.env.DB_NAME ?? 'tms',
     user: process.env.DB_USER ?? 'tms_app',
-    password: process.env.DB_PASSWORD,
-    ssl: process.env.DB_SSL === 'off' ? undefined : { rejectUnauthorized: true },
+    password: await password(),
+    // rejectUnauthorized with no ca falls back to the public roots, which do not include the
+    // RDS authority, so migrating against RDS failed on an unverifiable certificate.
+    ssl: process.env.DB_SSL === 'off' ? undefined : { ca: caBundle(), rejectUnauthorized: true },
   });
   await client.connect();
   return {

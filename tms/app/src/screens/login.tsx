@@ -53,10 +53,16 @@ export function Login() {
         Your lease, rent, inspections and maintenance, in one place.
       </p>
       {apiDown ? (
-        <Alert tone="danger" title="The API is not answering" className="mb-4">
-          Nothing is listening at {baseUrl}. Run `npm run dev` and check the api lines, then
-          reload this page.
-        </Alert>
+        import.meta.env.DEV ? (
+          <Alert tone="danger" title="The API is not answering" className="mb-4">
+            Nothing is listening at {baseUrl}. Run `npm run dev` and check the api lines, then
+            reload this page.
+          </Alert>
+        ) : (
+          <Alert tone="danger" title="Can't reach the server" className="mb-4">
+            Check your connection, then reload this page.
+          </Alert>
+        )
       ) : null}
       <Card>
         <CardBody className="space-y-3">

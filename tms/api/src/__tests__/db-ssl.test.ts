@@ -20,6 +20,26 @@ describe('database TLS', () => {
     process.env.DB_SSL = 'off';
     process.env.NODE_ENV = 'production';
     const { getPool } = await import('../lib/db');
-    expect(() => getPool()).toThrow(/only allowed when NODE_ENV=development/);
+    expect(() => getPool()).toThrow(/DB_SSL=off needs/);
+  });
+
+  /* Self-hosted mode runs with NODE_ENV=production, so the old guard would have forced TLS on
+     a Postgres reached over loopback, which has no certificate to present. */
+  it('allows a plaintext connection to a self-hosted database on loopback', async () => {
+    process.env.DB_SSL = 'off';
+    process.env.NODE_ENV = 'production';
+    process.env.APP_MODE = 'self-hosted';
+    process.env.DB_HOST = '127.0.0.1';
+    const { getPool } = await import('../lib/db');
+    expect(() => getPool()).not.toThrow();
+  });
+
+  it('still refuses when a self-hosted database is across a network', async () => {
+    process.env.DB_SSL = 'off';
+    process.env.NODE_ENV = 'production';
+    process.env.APP_MODE = 'self-hosted';
+    process.env.DB_HOST = 'db.example.co.za';
+    const { getPool } = await import('../lib/db');
+    expect(() => getPool()).toThrow(/DB_SSL=off needs/);
   });
 });

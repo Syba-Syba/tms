@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 }
 import { handler as applications_create } from './handlers/applications-create';
 import { handler as auth_login } from './handlers/auth-login';
 import { handler as auth_register } from './handlers/auth-register';
+import { handler as auth_password } from './handlers/auth-password';
 import { handler as applications_documents } from './handlers/applications-documents';
 import { handler as contractors_list } from './handlers/contractors-list';
 import { handler as files_view } from './handlers/files-view';
@@ -64,6 +65,7 @@ type Handler = (
 const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
+  ['POST', '/auth/password', auth_password],
   ['POST', '/applications', applications_create],
   ['GET', '/applications', applications_list],
   ['POST', '/applications/{id}/decision', applications_decide],

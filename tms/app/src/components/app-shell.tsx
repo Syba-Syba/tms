@@ -6,14 +6,14 @@ const LANDLORD = [
   { to: '/properties', label: 'Properties' },
   { to: '/applications', label: 'Applications' },
   { to: '/tickets', label: 'Maintenance' },
-  { to: '/settings/notifications', label: 'Notifications' },
+  { to: '/settings/notifications', label: 'Settings' },
 ];
 
 const TENANT = [
   { to: '/', label: 'Home', end: true },
   { to: '/documents', label: 'Documents' },
   { to: '/tickets', label: 'Maintenance' },
-  { to: '/settings/notifications', label: 'Notifications' },
+  { to: '/settings/notifications', label: 'Settings' },
 ];
 
 /** The arch, once, as the mark. Everything else stays out of the way. */

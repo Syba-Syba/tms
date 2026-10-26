@@ -9,7 +9,7 @@ import { zar } from '../domain/money';
 
 const schema = z.object({
   target: z.enum(['invoice', 'deposit']),
-  invoiceId: z.string().uuid().optional(),
+  invoiceId: z.guid().optional(),
   amountCents: z.number().int().positive(),
   method: z.enum(['eft', 'cash', 'gateway']).default('eft'),
   reference: z.string().max(60).optional(),

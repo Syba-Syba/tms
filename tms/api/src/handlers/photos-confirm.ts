@@ -4,7 +4,7 @@ import { query } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, json, notFound, parseBody, route } from '../lib/http';
 
-const schema = z.object({ scope: z.enum(['inspection', 'ticket']), photoId: z.string().uuid() });
+const schema = z.object({ scope: z.enum(['inspection', 'ticket']), photoId: z.guid() });
 
 /** The client calls this after the PUT succeeds. Only confirmed photos reach a sealed report,
     so an abandoned upload is invisible instead of fatal. */

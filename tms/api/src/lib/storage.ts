@@ -4,6 +4,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
+import { allowsLocalDrivers, secretFor } from './mode';
 
 /**
  * Every document and photo goes through here instead of a handler-owned S3Client.
@@ -68,7 +69,7 @@ const s3Driver = (): Storage => {
 
 // Local URLs are still signed so an expired or tampered link fails the same way it would on S3.
 export const localSignature = (method: 'GET' | 'PUT', key: string, expires: number) =>
-  createHmac('sha256', process.env.STORAGE_SECRET ?? 'local-development-only')
+  createHmac('sha256', secretFor('STORAGE_SECRET', 'local-development-only'))
     .update(`${method}\n${key}\n${expires}`)
     .digest('hex');
 
@@ -131,9 +132,10 @@ let instance: Storage | undefined;
 export function storage(): Storage {
   if (instance) return instance;
   if (process.env.STORAGE_DRIVER === 'local') {
-    // Same rule as the database TLS switch: convenience drivers never reach production.
-    if (process.env.NODE_ENV !== 'development') {
-      throw new Error('STORAGE_DRIVER=local is a development setting. Unset it in production.');
+    // Same rule as the database TLS switch: a convenience driver never reaches AWS, where
+    // S3 exists and this would be a silent downgrade. Self-hosted has no S3 to downgrade from.
+    if (!allowsLocalDrivers()) {
+      throw new Error('STORAGE_DRIVER=local is not permitted in aws mode. Unset it, or set APP_MODE=self-hosted.');
     }
     instance = localDriver();
   } else {

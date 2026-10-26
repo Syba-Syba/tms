@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, CardBody, PageHeader, Spinner, Switch, useToast } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
+import { ChangePassword } from '../components/change-password';
 
 interface Preference {
   category: string;
@@ -52,7 +53,13 @@ export function NotificationPreferences() {
 
   return (
     <main className="mx-auto max-w-2xl px-5 py-6">
-      <PageHeader title="Notifications" description="Choose what reaches you, and how." />
+      <PageHeader title="Settings" description="Your password, and what reaches you." />
+
+      <div className="mb-6">
+        <ChangePassword />
+      </div>
+
+      <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">Notifications</h2>
 
       <div className="space-y-3">
         {categories.map((category) => {
@@ -88,10 +95,12 @@ export function NotificationPreferences() {
         })}
       </div>
 
-      <Alert tone="info" title="Email is switched off in development" className="mt-4">
-        The dispatcher writes what it would have sent to the log instead of sending it, so you
-        can develop without a verified sending domain.
-      </Alert>
+      {import.meta.env.DEV ? (
+        <Alert tone="info" title="Email is switched off in development" className="mt-4">
+          The dispatcher writes what it would have sent to the log instead of sending it, so you
+          can develop without a verified sending domain.
+        </Alert>
+      ) : null}
 
       <Button className="mt-4" onClick={save}>
         Save preferences

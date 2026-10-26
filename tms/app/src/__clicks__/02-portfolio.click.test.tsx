@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route } from 'react-router-dom';
-import { call, mount, signInAs } from './harness';
+import { call, daysFromNow, mount, signInAs } from './harness';
 import { copied } from './setup';
 import { Properties } from '../screens/properties';
 import { ApplyStart } from '../screens/apply-start';
@@ -145,7 +145,7 @@ describe('applying and processing the queue', () => {
     type(label('Gross monthly income'), '40000');
     fireEvent.blur(label('Gross monthly income'));
     type(label('Occupants'), '1');
-    type(label('Move in'), '2026-09-01');
+    type(label('Move in'), daysFromNow(30));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to documents' }));
     await screen.findByText('PROBE-DOCS', undefined, { timeout: 10000 });
   });

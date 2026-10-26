@@ -193,7 +193,7 @@ export function reconcile(input: {
 }
 
 export const addDeductionSchema = z.object({
-  findingId: z.string().uuid().optional(),
+  findingId: z.guid().optional(),
   description: z.string().min(3).max(200),
   amountCents: z.number().int().positive(),
   evidenceS3Key: z.string().max(400).optional(),

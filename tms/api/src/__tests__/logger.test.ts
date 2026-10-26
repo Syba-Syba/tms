@@ -4,8 +4,11 @@ import { requestLogger } from '../lib/http';
 
 /** Lines are written straight to the streams, so the streams are what a test reads. */
 const captured: string[] = [];
-let outSpy: ReturnType<typeof vi.spyOn>;
-let errSpy: ReturnType<typeof vi.spyOn>;
+// ReturnType<typeof vi.spyOn> resolves to the unparameterised MockInstance, which a spy on
+// stream.write is not assignable to. Restoring is all these are used for.
+type Restorable = { mockRestore: () => void };
+let outSpy: Restorable;
+let errSpy: Restorable;
 
 beforeEach(() => {
   captured.length = 0;

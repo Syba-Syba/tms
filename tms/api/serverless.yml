@@ -1,5 +1,36 @@
 service: tms-api
 
+plugins:
+  # Handlers are TypeScript and the runtime is not. Without this the package held .ts files and
+  # no node_modules at all — npm workspaces hoists every runtime dependency to the repo root,
+  # which is outside anything serverless would have zipped — so each function failed at init
+  # with Runtime.ImportModuleError.
+  - serverless-esbuild
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    # Source maps make a stack trace in CloudWatch point at a line of TypeScript.
+    sourcemap: true
+    target: node20
+    platform: node
+    # The source is ESM, so the output is too; .mjs keeps Node from reading it as CommonJS.
+    format: esm
+    outputFileExtension: .mjs
+    # pg is CommonJS and requires node builtins internally. In an ESM bundle esbuild replaces
+    # those calls with a shim that throws "Dynamic require of events is not supported" the
+    # moment the module is loaded. The shim defers to a real `require` if one is in scope, so
+    # this puts one there.
+    banner:
+      js: "import{createRequire as __createRequire}from'module';const require=__createRequire(import.meta.url);"
+    exclude:
+      # Development-only driver: WebAssembly, tens of megabytes, and lib/db.ts refuses to load
+      # it unless NODE_ENV=development, so it must never reach a deployed package.
+      - '@electric-sql/pglite'
+      # An optional native binding pg probes for and works without.
+      - pg-native
+
 provider:
   name: aws
   runtime: nodejs20.x
@@ -14,7 +45,39 @@ provider:
     DB_NAME: tms
     DOCS_BUCKET: ${self:service}-${self:provider.stage}-docs
     KMS_KEY_ID: ${ssm:/tms/${self:provider.stage}/kms-key-id}
+    # The bundle is packaged under certs/; LAMBDA_TASK_ROOT is where the package is unpacked.
+    RDS_CA_BUNDLE: /var/task/certs/rds-global-bundle.pem
+    DB_USER: tms_app
+    # The outbox dispatcher read these from an environment that never carried them, so a
+    # deployed stage parked every message instead of sending it. Set NOTIFY_MODE=send once a
+    # sending domain is verified in SES.
+    NOTIFY_MODE: ${ssm:/tms/${self:provider.stage}/notify-mode, 'skip'}
+    NOTIFY_FROM: ${ssm:/tms/${self:provider.stage}/notify-from, 'no-reply@example.invalid'}
+  # The database sits in a private subnet behind an RDS Proxy, which a Lambda outside the VPC
+  # cannot route to at all. Note that attaching a VPC also removes the default route to the
+  # internet: Secrets Manager, S3, KMS and SES then need either interface endpoints in that
+  # VPC or a NAT gateway.
+  vpc:
+    securityGroupIds:
+      - ${ssm:/tms/${self:provider.stage}/lambda-security-group-id}
+    subnetIds: ${ssm:/tms/${self:provider.stage}/private-subnet-ids~split}
   httpApi:
+    # The browser SPA and the Capacitor WebView are both cross-origin to the API, and no CORS
+    # configuration existed, so every call failed preflight. API Gateway answers OPTIONS itself,
+    # ahead of the authorizer, so preflight does not need a token.
+    cors:
+      allowedOrigins: ${ssm:/tms/${self:provider.stage}/allowed-origins~split}
+      allowedHeaders:
+        - content-type
+        - authorization
+      allowedMethods:
+        - GET
+        - POST
+        - PATCH
+        - PUT
+        - DELETE
+        - OPTIONS
+      maxAge: 600
     authorizers:
       cognito:
         type: jwt
@@ -30,8 +93,10 @@ provider:
         - Effect: Allow
           Action: [s3:PutObject, s3:GetObject]
           Resource: arn:aws:s3:::${self:provider.environment.DOCS_BUCKET}/*
+        # SSE-KMS on a PutObject is a GenerateDataKey call, not an Encrypt, so uploads were
+        # denied by a policy that looked like it covered them.
         - Effect: Allow
-          Action: [kms:Encrypt, kms:Decrypt]
+          Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey, kms:GenerateDataKey*]
           Resource: '*'
         - Effect: Allow
           Action: [secretsmanager:GetSecretValue]
@@ -47,6 +112,14 @@ package:
     - '!node_modules/.cache/**'
     - '!**/*.test.ts'
     - '!**/__tests__/**'
+    # esbuild emits only the bundle, but these are named explicitly so that a change of
+    # packaging cannot quietly ship a developer's credentials, a 40 MB local database or a
+    # tenant's signed lease. .pglite and .storage are committed to this repo.
+    - '!.env'
+    - '!.env.*'
+    - '!.pglite/**'
+    - '!.storage/**'
+    - certs/**
 
 functions:
   # One function serves all 38 routes. Per-route functions meant no single one

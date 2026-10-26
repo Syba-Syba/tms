@@ -6,7 +6,8 @@
 ._*
 
 # Custom folder icons
-Icon
+Icon
+
 
 # Volume root files
 .DocumentRevisions-V100
@@ -51,6 +52,19 @@ out/
 .env
 .env.local
 .env.*.local
+# Holds AUTH_SECRET and STORAGE_SECRET for a self-hosted install. The patterns above do not
+# match it: .env.* is only ignored when it also ends in .local.
+.env.selfhosted
+
+# The development database and documents. Every run rewrote dozens of binary files, so they
+# are rebuilt instead: `npm run dev` creates and seeds the database when it is missing, and
+# `npm run reset` starts it over.
+tms/api/.pglite/
+tms/api/.storage/
+
+# A self-hosted install's database and documents. Real tenant data, never committed.
+tms/api/.pglite-selfhosted/
+tms/api/.storage-selfhosted/
 
 # npm cache directory
 .npm
@@ -61,3 +75,10 @@ out/
 .yarn/unplugged
 .yarn/install-state.gz
 .pnp.*
+# Fetched at deploy time by tms/api/scripts/fetch-ca.mjs. A committed copy goes stale and
+# fails TLS at a moment nobody connects to a certificate rotation.
+tms/api/certs/*.pem
+
+# Serverless build output
+.serverless/
+.esbuild/

@@ -19,14 +19,23 @@ const READY_TIMEOUT_MS = 60_000;
 
 let started: ChildProcess | undefined;
 
-const isUp = async () => {
+/**
+ * 'dev' only for the development API, which answers its root with who you are acting as.
+ * The self-hosted server answers on the same port with the app's HTML; reusing it once ran
+ * the suite against real tenant data, where the demo accounts do not exist.
+ */
+const probe = async (): Promise<'dev' | 'other' | 'down'> => {
   try {
     const response = await fetch(API_URL, { signal: AbortSignal.timeout(1_000) });
-    return response.ok;
+    if (!response.ok) return 'other';
+    const body = await response.json().catch(() => null);
+    return body && typeof body === 'object' && 'actingAs' in body ? 'dev' : 'other';
   } catch {
-    return false;
+    return 'down';
   }
 };
+
+const isUp = async () => (await probe()) === 'dev';
 
 const waitUntilUp = async (deadline: number) => {
   while (Date.now() < deadline) {
@@ -37,9 +46,17 @@ const waitUntilUp = async (deadline: number) => {
 };
 
 export async function setup() {
-  if (await isUp()) {
+  const found = await probe();
+  if (found === 'dev') {
     console.log(`[clicks] reusing the API already on ${API_URL}`);
     return;
+  }
+  if (found === 'other') {
+    throw new Error(
+      `Something other than the development API is listening on ${API_URL} (the self-hosted ` +
+        'server, probably). The click tests create and change records, so they will not run ' +
+        'against it. Stop it, or point VITE_API_URL at a development API.',
+    );
   }
 
   if (!existsSync(join(API_DIR, '.env'))) {

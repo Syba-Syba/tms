@@ -53,6 +53,63 @@ describe('serverless.yml', () => {
     expect(open).toEqual([]);
   });
 
+  /* The suite below was green while the package held .ts files and no dependencies, because
+     everything here checked the source layout and nothing checked the artifact. */
+
+  it('compiles the handlers, which are TypeScript and the runtime is not', () => {
+    expect(config.plugins ?? []).toContain('serverless-esbuild');
+    expect(config.custom.esbuild.bundle).toBe(true);
+  });
+
+  it('keeps the development-only database driver out of the package', () => {
+    expect(config.custom.esbuild.exclude).toContain('@electric-sql/pglite');
+  });
+
+  it('gives the ESM bundle a require, which bundled CommonJS dependencies call', () => {
+    // Without this pg throws 'Dynamic require of "events" is not supported' at import time.
+    expect(config.custom.esbuild.banner.js).toMatch(/createRequire/);
+  });
+
+  it('reads the database certificate from the package, not from an undeclared layer', () => {
+    const raw = readFileSync(join(API_ROOT, 'src/lib/db.ts'), 'utf8');
+    expect(raw).not.toMatch(/\/opt\/rds-ca-bundle\.pem/);
+    expect(config.provider.environment.RDS_CA_BUNDLE).toMatch(/certs\/rds-global-bundle\.pem$/);
+  });
+
+  it('reads the database password from Secrets Manager, which nothing used to do', () => {
+    const raw = readFileSync(join(API_ROOT, 'src/lib/secrets.ts'), 'utf8');
+    expect(raw).toMatch(/GetSecretValueCommand/);
+    expect(config.provider.environment.DB_SECRET_ARN).toBeTruthy();
+  });
+
+  it('answers cross-origin calls, which every browser and WebView client makes', () => {
+    expect(config.provider.httpApi.cors.allowedHeaders).toContain('authorization');
+  });
+
+  it('puts the functions in the VPC the database lives in', () => {
+    expect(config.provider.vpc.subnetIds).toBeTruthy();
+    expect(config.provider.vpc.securityGroupIds).toBeTruthy();
+  });
+
+  it('carries the notification settings the dispatcher reads', () => {
+    expect(config.provider.environment.NOTIFY_MODE).toBeTruthy();
+    expect(config.provider.environment.NOTIFY_FROM).toBeTruthy();
+  });
+
+  it('allows the KMS call an SSE-KMS upload actually makes', () => {
+    const actions = config.provider.iam.role.statements.flatMap((s: any) =>
+      Array.isArray(s.Action) ? s.Action : [s.Action],
+    );
+    // PutObject with SSE-KMS is a GenerateDataKey, not an Encrypt.
+    expect(actions.some((a: string) => a.startsWith('kms:GenerateDataKey'))).toBe(true);
+  });
+
+  it('excludes the committed dev database, local storage and .env from the package', () => {
+    for (const pattern of ['!.pglite/**', '!.storage/**', '!.env']) {
+      expect(config.package.patterns).toContain(pattern);
+    }
+  });
+
   it('grants the dispatcher permission to send mail', () => {
     const actions = config.provider.iam.role.statements.flatMap((s: any) =>
       Array.isArray(s.Action) ? s.Action : [s.Action],

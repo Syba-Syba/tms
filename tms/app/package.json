@@ -17,7 +17,7 @@
     "test:clicks": "vitest run src/__clicks__"
   },
   "dependencies": {
-    "@capacitor/android": "^6.1.2",
+    "@capacitor/android": "^6.2.2",
     "@capacitor/camera": "^6.0.2",
     "@capacitor/core": "^6.1.2",
     "@capacitor/filesystem": "^6.0.1",
@@ -29,7 +29,7 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",
     "react-router-dom": "^6.27.0",
-    "zod": "^3.23.8"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.1.2",

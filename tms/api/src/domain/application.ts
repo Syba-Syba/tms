@@ -31,7 +31,7 @@ export const saPhone = z
   .refine((value) => /^\+27\d{9}$/.test(value), 'Enter a valid South African mobile number.');
 
 export const createApplicationSchema = z.object({
-  unitId: z.string().uuid(),
+  unitId: z.guid(),
   firstName: z.string().min(1, 'First name is required.'),
   lastName: z.string().min(1, 'Last name is required.'),
   idNumber: saIdNumber,

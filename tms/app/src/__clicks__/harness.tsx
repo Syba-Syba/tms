@@ -8,6 +8,17 @@ const API = 'http://localhost:3001';
 
 /** Signs in through the real /auth/login and primes the same storage the app uses, so every
     click carries the same Bearer token the browser would send. */
+/**
+ * A date this many days ahead, as YYYY-MM-DD. The suites used to say '2026-09-01', which was
+ * the future when it was written; the API refuses a move-in date in the past, so from that
+ * day on every suite that applied for a unit failed for a reason unrelated to the code.
+ */
+export function daysFromNow(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+}
+
 export async function signInAs(email: string) {
   const response = await fetch(`${API}/auth/login`, {
     method: 'POST',
@@ -133,14 +144,14 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
       employmentStatus: 'employed',
       monthlyIncomeCents: 4000000,
       occupants: 1,
-      preferredMoveIn: '2026-09-01',
+      preferredMoveIn: daysFromNow(30),
       pets: false,
     });
     localStorage.setItem('CapacitorStorage.id_token', landlordToken);
 
     await call('POST', `/applications/${application.id}/decision`, { outcome: 'approved' });
     const lease = await call<{ id: string }>('POST', `/applications/${application.id}/lease`, {
-      startDate: '2026-09-01',
+      startDate: daysFromNow(30),
       months: 12,
       escalationPct: 8,
     });

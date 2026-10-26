@@ -1,6 +1,8 @@
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { ZodError, type ZodSchema } from 'zod';
 import { createLogger } from './logger';
+// Installs plain-English validation messages before any schema parses.
+import './zod-messages';
 
 export class ApiError extends Error {
   constructor(

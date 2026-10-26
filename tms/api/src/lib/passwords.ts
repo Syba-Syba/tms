@@ -8,6 +8,14 @@ export function hashPassword(password: string): string {
   return `scrypt:${salt}:${hash}`;
 }
 
+/**
+ * Sign-in for an email that does not exist used to return before running scrypt, so it answered
+ * measurably faster than a wrong password and the timing said which emails had accounts. The
+ * caller verifies against this instead, which costs the same and never matches.
+ */
+let dummy: string | undefined;
+export const dummyHash = () => (dummy ??= hashPassword(randomBytes(16).toString('hex')));
+
 export function verifyPassword(password: string, stored: string): boolean {
   if (stored.startsWith('plain:')) {
     return process.env.NODE_ENV === 'development' && stored.slice(6) === password;
