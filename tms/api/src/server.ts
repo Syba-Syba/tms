@@ -149,6 +149,14 @@ const sendJson = (response: import('node:http').ServerResponse, status: number, 
   response.end(text);
 };
 
+/** A top-level page load or refresh, as opposed to a fetch() from the running app. */
+function isPageLoad(request: Pick<IncomingMessage, 'headers'>): boolean {
+  const mode = request.headers['sec-fetch-mode'];
+  if (mode) return mode === 'navigate';
+  // Older browsers send no fetch metadata; a page load is the only GET that asks for HTML first.
+  return /^text\/html/i.test(String(request.headers.accept ?? ''));
+}
+
 /** Serves the built SPA. Unknown paths fall through to index.html so client routing works. */
 async function serveWeb(pathname: string, response: import('node:http').ServerResponse) {
   const candidate = resolve(WEB_ROOT, `.${pathname}`);
@@ -232,6 +240,14 @@ createServer(async (request, response) => {
 
   if (url.pathname.startsWith('/files/') && (method === 'GET' || method === 'PUT')) {
     await serveFile(request, response, url);
+    return;
+  }
+
+  // Screens and endpoints share paths (/applications, /tickets, /leases/{id}), so a refresh
+  // on one of those screens used to come back as the API's JSON. A browser loading a page
+  // says so; the app's own fetch() calls do not, so they still reach the API.
+  if (method === 'GET' && isPageLoad(request)) {
+    await serveWeb(url.pathname, response);
     return;
   }
 

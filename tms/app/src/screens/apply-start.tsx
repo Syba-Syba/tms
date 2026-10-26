@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Button, Card, CardBody, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';

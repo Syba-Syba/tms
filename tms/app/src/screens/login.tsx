@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
 import { api, baseUrl, humanError } from '../api/client';
 import { safeReturnPath } from '../lib/safe-path';

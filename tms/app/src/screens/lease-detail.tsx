@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router';
 import {
   Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, Spinner, useToast,
 } from '@hlonie/toolbox/ui';

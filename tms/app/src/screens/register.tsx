@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router';
 import { Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';

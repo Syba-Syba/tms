@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { Camera, CameraResultType } from '@capacitor/camera';
 import { Button, Card, CardBody, PageHeader, SegmentedControl, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { TextField } from '@hlonie/toolbox/forms';

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route } from 'react-router-dom';
+import { Route } from 'react-router';
 import { call, ensureLease, mount, signInAs } from './harness';
 import { openedUrls } from './setup';
 import { LeaseReview } from '../screens/lease-review';

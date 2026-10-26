@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Alert, Button, Card, CardBody, EmptyState, PageHeader, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';

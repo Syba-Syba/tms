@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { Camera, CameraResultType } from '@capacitor/camera';
 import {
   Button, Card, CardBody, PageHeader, SegmentedControl, Spinner, Textarea, UploadTile, useToast,
