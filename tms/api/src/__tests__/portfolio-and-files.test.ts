@@ -1,3 +1,4 @@
+import { PRIVACY_VERSION } from '../domain/privacy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { mkdtempSync } from 'node:fs';
@@ -258,6 +259,7 @@ describe('documents come back out', () => {
         monthlyIncomeCents: 4000000,
         occupants: 1,
         preferredMoveIn: '2099-01-01',
+        consentVersion: PRIVACY_VERSION,
       },
     });
     expect(application.status).toBe(201);

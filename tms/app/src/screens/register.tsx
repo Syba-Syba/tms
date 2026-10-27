@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Button, Card, CardBody, Checkbox, Input, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
+import { PRIVACY_VERSION } from '../lib/privacy';
 
 /** Tenants self-serve because an applicant needs an identity before applying. Landlords are
     provisioned, the same split a Cognito user pool would enforce. */
 export function Register() {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
@@ -15,7 +17,10 @@ export function Register() {
   const create = async () => {
     setBusy(true);
     try {
-      const result = await api.post<{ token: string; user: SessionUser }>('/auth/register', form);
+      const result = await api.post<{ token: string; user: SessionUser }>('/auth/register', {
+        ...form,
+        consentVersion: PRIVACY_VERSION,
+      });
       await startSession(result.token, result.user);
       navigate('/apply', { replace: true });
     } catch (error) {
@@ -29,6 +34,7 @@ export function Register() {
     form.name.trim().length < 2 ? 'your full name' : null,
     !form.email.includes('@') ? 'a valid email' : null,
     form.password.length < 8 ? 'a password of at least 8 characters' : null,
+    !consent ? 'your agreement to the privacy notice' : null,
   ].filter(Boolean);
   const ready = missing.length === 0;
 
@@ -62,6 +68,18 @@ export function Register() {
             autoComplete="new-password"
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
+          />
+          <Checkbox
+            id="register-consent"
+            checked={consent}
+            onChange={(event) => setConsent(event.target.checked)}
+            label={
+              <span>
+                I have read the{' '}
+                <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                and agree to it
+              </span>
+            }
           />
           <Button block loading={busy} disabled={!ready} onClick={create}>
             Create the account

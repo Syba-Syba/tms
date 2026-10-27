@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router';
-import { Button, Card, CardBody, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
+import { Link, useNavigate } from 'react-router';
+import { Button, Card, CardBody, Checkbox, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { PRIVACY_VERSION } from '../lib/privacy';
 
 interface AvailableUnit {
   id: string;
@@ -35,6 +36,7 @@ export function ApplyStart() {
   const { control, handleSubmit, formState } = useForm<FormValues>();
   const navigate = useNavigate();
   const toast = useToast();
+  const [consent, setConsent] = useState(false);
   const [unitId, setUnitId] = useState(
     () => new URLSearchParams(window.location.search).get('unit') ?? '',
   );
@@ -58,6 +60,7 @@ export function ApplyStart() {
         monthlyIncomeCents: Math.round(Number(values.monthlyIncome) * 100),
         occupants: Number(values.occupants),
         pets: false,
+        consentVersion: PRIVACY_VERSION,
       });
       navigate(`/apply/${created.id}/documents`);
     } catch (error) {
@@ -140,7 +143,20 @@ export function ApplyStart() {
             <TextField control={control} name="occupants" label="Occupants" inputMode="numeric" required />
             <TextField control={control} name="preferredMoveIn" label="Move in" type="date" required />
           </div>
-          <Button block loading={formState.isSubmitting} onClick={submit}>
+          <Checkbox
+            id="application-consent"
+            checked={consent}
+            onChange={(event) => setConsent(event.target.checked)}
+            label={
+              <span className="text-[13px]">
+                I agree that the landlord may use my ID number, income and the documents I upload to
+                decide this application, as the{' '}
+                <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                explains.
+              </span>
+            }
+          />
+          <Button block loading={formState.isSubmitting} disabled={!consent} onClick={submit}>
             Continue to documents
           </Button>
         </CardBody>

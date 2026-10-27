@@ -3,15 +3,20 @@ import { z } from 'zod';
 import { credentialVersion, signToken } from '../lib/authtoken';
 import { hashPassword } from '../lib/passwords';
 import { audit } from '../lib/audit';
-import { query } from '../lib/db';
+import { withTransaction } from '../lib/db';
+import { recordConsent } from '../lib/privacy';
+import { PRIVACY_VERSION } from '../domain/privacy';
 import { mode } from '../lib/mode';
 import { registrationsByAddress } from '../lib/ratelimit';
-import { conflict, json, parseBody, route, tooManyRequests, ApiError } from '../lib/http';
+import { badRequest, conflict, json, parseBody, route, tooManyRequests, ApiError } from '../lib/http';
 
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().email().max(254),
   password: z.string().min(8, 'Use at least 8 characters.').max(200, 'Use at most 200 characters.'),
+  // The notice version the person ticked. The app always sends it; without it, the app asks for
+  // consent on first sign-in instead, so nobody uses the system without having agreed.
+  consentVersion: z.string().max(20).optional(),
 });
 
 const requireLocalDriver = () => {
@@ -31,17 +36,25 @@ export const handler = route(async (event) => {
   const input = parseBody(event, schema);
   const email = input.email.toLowerCase();
 
-  const existing = await query('select 1 from local_credential where email = $1', [email]);
-  if (existing.length > 0) throw conflict('That email already has an account. Sign in instead.');
+  if (input.consentVersion !== undefined && input.consentVersion !== PRIVACY_VERSION) {
+    throw badRequest('The privacy notice has changed. Reload the page and read it again.');
+  }
 
   const sub = `local-${randomUUID()}`;
   const passwordHash = hashPassword(input.password);
   registrationsByAddress.record(address);
-  await query(
-    `insert into local_credential (sub, email, name, role, password_hash)
-     values ($1, $2, $3, 'tenant', $4)`,
-    [sub, email, input.name, passwordHash],
-  );
+  await withTransaction(async (run) => {
+    const existing = await run('select 1 from local_credential where email = $1', [email]);
+    if (existing.length > 0) throw conflict('That email already has an account. Sign in instead.');
+    await run(
+      `insert into local_credential (sub, email, name, role, password_hash)
+       values ($1, $2, $3, 'tenant', $4)`,
+      [sub, email, input.name, passwordHash],
+    );
+    if (input.consentVersion) {
+      await recordConsent(run, event, { sub, kind: 'privacy_notice', version: input.consentVersion });
+    }
+  });
 
   const user = { sub, role: 'tenant' as const, name: input.name, email };
   await audit({

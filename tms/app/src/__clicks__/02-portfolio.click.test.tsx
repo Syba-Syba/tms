@@ -147,6 +147,7 @@ describe('applying and processing the queue', () => {
     fireEvent.blur(label('Gross monthly income'));
     type(label('Occupants'), '1');
     type(label('Move in'), daysFromNow(30));
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to documents' }));
     await screen.findByText('PROBE-DOCS', undefined, { timeout: 10000 });
   });

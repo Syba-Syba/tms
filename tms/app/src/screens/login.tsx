@@ -93,6 +93,9 @@ export function Login() {
             Applying for a place?{' '}
             <Link to="/register" className="font-bold text-brand-500">Create an account</Link>
           </p>
+          <p className="text-center text-[12px]">
+            <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>
+          </p>
         </CardBody>
       </Card>
       {import.meta.env.DEV ? (

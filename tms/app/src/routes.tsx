@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router';
 import { AppShell } from './components/app-shell';
 import { RouteError } from './components/route-error';
+import { ConsentGate } from './components/consent-gate';
 import { currentUser } from './lib/session';
 
 /** Each screen loads when its route is first visited, so the sign-in page does not pay for
@@ -19,7 +20,11 @@ function RequireAuth() {
       <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
     );
   }
-  return <Outlet />;
+  return (
+    <ConsentGate>
+      <Outlet />
+    </ConsentGate>
+  );
 }
 
 export const router = createBrowserRouter([
@@ -32,6 +37,8 @@ export const router = createBrowserRouter([
       { path: '/register', lazy: screen('register', 'Register') },
       { path: '/forgot-password', lazy: screen('forgot-password', 'ForgotPassword') },
       { path: '/reset-password', lazy: screen('reset-password', 'ResetPassword') },
+      // Public, so it can be read before signing up.
+      { path: '/privacy', lazy: screen('privacy', 'Privacy') },
       {
         element: <RequireAuth />,
         children: [

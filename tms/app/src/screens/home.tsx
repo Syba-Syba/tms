@@ -76,6 +76,11 @@ function LandlordHome() {
     queryFn: () => api.get<{ items: { id: string; title: string; unit: string; status: string; overdue: boolean }[] }>('/tickets'),
   });
 
+  const privacy = useQuery({
+    queryKey: ['privacy-requests'],
+    queryFn: () => api.get<{ items: { status: string }[] }>('/privacy-requests'),
+  });
+
   if (leases.isLoading) {
     return (
       <main className="mx-auto flex max-w-6xl justify-center px-4 py-16">
@@ -118,6 +123,14 @@ function LandlordHome() {
     tasks.push({
       key: `arrears-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
       title: `${lease.tenant} owes ${zar(lease.outstandingCents)}`, detail: lease.unit,
+    });
+  }
+  const privacyWaiting = privacy.data?.items.filter((item) => item.status === 'pending').length ?? 0;
+  if (privacyWaiting > 0) {
+    tasks.push({
+      key: 'privacy', to: '/settings/notifications', tone: 'warning',
+      title: `${privacyWaiting} privacy request${privacyWaiting === 1 ? '' : 's'} to answer`,
+      detail: 'POPIA expects an answer within a reasonable time.',
     });
   }
   if (waiting > 0) {

@@ -47,6 +47,11 @@ import { handler as expenses_list } from './handlers/expenses-list';
 import { handler as expenses_update } from './handlers/expenses-update';
 import { handler as reports_income_expense } from './handlers/reports-income-expense';
 import { handler as reports_arrears } from './handlers/reports-arrears';
+import { handler as me_privacy } from './handlers/me-privacy';
+import { handler as me_data_export } from './handlers/me-data-export';
+import { handler as me_erasure } from './handlers/me-erasure';
+import { handler as privacy_requests_list } from './handlers/privacy-requests-list';
+import { handler as privacy_requests_decide } from './handlers/privacy-requests-decide';
 import { handler as photos_confirm } from './handlers/photos-confirm';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
@@ -143,6 +148,12 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['DELETE', '/expenses/{id}', expenses_update],
   ['GET', '/reports/income-expense', reports_income_expense],
   ['GET', '/reports/arrears', reports_arrears],
+  ['GET', '/me/privacy', me_privacy],
+  ['POST', '/me/consents', me_privacy],
+  ['GET', '/me/data-export', me_data_export],
+  ['POST', '/me/erasure-request', me_erasure],
+  ['GET', '/privacy-requests', privacy_requests_list],
+  ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
 ];
 
 interface Compiled {

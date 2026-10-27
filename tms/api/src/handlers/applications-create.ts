@@ -4,6 +4,8 @@ import { withTransaction } from '../lib/db';
 import { encryptIdNumber } from '../lib/idcrypt';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { createApplicationSchema } from '../domain/application';
+import { recordConsent } from '../lib/privacy';
+import { PRIVACY_VERSION } from '../domain/privacy';
 
 export const handler = route(async (event) => {
   const person = caller(event);
@@ -11,6 +13,10 @@ export const handler = route(async (event) => {
 
   if (input.preferredMoveIn < new Date(new Date().toDateString())) {
     throw badRequest('The move in date cannot be in the past.');
+  }
+
+  if (input.consentVersion !== PRIVACY_VERSION) {
+    throw badRequest('Agree to the current privacy notice to apply.');
   }
 
   const encrypted = await encryptIdNumber(input.idNumber);
@@ -62,6 +68,13 @@ export const handler = route(async (event) => {
         input.notes ?? null,
       ],
     );
+
+    await recordConsent(run, event, {
+      sub: person.sub,
+      kind: 'application_screening',
+      version: input.consentVersion,
+      subjectId: application!.id,
+    });
 
     await run('update unit set status = $2 where id = $1 and status = $3', [
       input.unitId,

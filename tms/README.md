@@ -187,6 +187,11 @@ Apple developer fee, and the service worker gives them offline reads.
 | PUT, DELETE | /expenses/{id} | landlord | correct or remove an expense |
 | GET | /reports/income-expense | landlord | rent invoiced, collected, expenses and net per property, tax year by default |
 | GET | /reports/arrears | landlord | what each lease owes, aged 0, 30, 60, 90 and 90+ days |
+| GET, POST | /me/privacy, /me/consents | signed in | notice version accepted; accept the current one |
+| GET | /me/data-export | signed in | everything held about the caller, as JSON |
+| POST | /me/erasure-request | tenant | ask for erasure; immediate when there is nothing to keep |
+| GET | /privacy-requests | landlord | erasure requests from their applicants and tenants |
+| POST | /privacy-requests/{id}/decision | landlord | erase, or refuse with a reason |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
 | GET | /applications | landlord | queue with rent to income band |
@@ -203,7 +208,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Sixty-five routes in all; the table lists the shape of each family rather than every verb.
+Seventy-one routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -562,6 +567,31 @@ in and out, some exports use semicolons and decimal commas. The reader finds col
 header and falls back to the values when there is none. Dates are read day first. OFX is the
 reliable choice when the bank offers it.
 
+## POPIA
+
+The landlord is the responsible party; the app is what they process personal information with.
+
+- Privacy notice at `/privacy`, public, in plain language. Its version is
+  `PRIVACY_VERSION` in `api/src/domain/privacy.ts` and `app/src/lib/privacy.ts`; a test keeps
+  them equal. Bump both when the notice's substance changes, and everyone is asked again.
+- Consent is recorded in `consent` with the version, time, IP address and device: at sign-up,
+  per application (for using the ID number, income and documents to decide it), and on first
+  sign-in for anyone without the current version, landlords included.
+- Settings, Your data: download everything held about you as one JSON file (the ID number shows
+  its last four digits; it is never decrypted), and ask for erasure.
+- Erasure: an account that never applied goes at once. Otherwise the request waits for the
+  landlord, under Settings, Privacy requests, and on the overview. The system refuses to erase
+  while records must be kept: five years after a lease ends (Tax Administration Act, and the
+  Rental Housing Tribunal). A refusal needs a reason, which the person is emailed with the
+  Information Regulator's address. Erasure replaces the person's details with placeholders,
+  deletes their documents, slips, lease PDFs and signature images, their sign-in and their
+  messages, and leaves amounts and dates so the books still add up.
+- Retention: `privacy-sweep` runs daily and deletes the documents of applications declined or
+  withdrawn more than twelve months ago.
+
+What is not here yet: a named Information Officer per landlord shown in the notice, and
+correction of details by the person themselves (they ask the landlord today).
+
 ## Expenses and reports
 
 Expenses are recorded per landlord, optionally against a property and a unit, in categories
@@ -606,6 +636,7 @@ through `app/src/lib/format.ts`.
 | Reports: income and expenses per property, arrears age analysis, expense capture, CSV export | `/reports` | landlord |
 | Sign in, create an account | `/login`, `/register` | anyone |
 | Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
+| Privacy notice | `/privacy` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

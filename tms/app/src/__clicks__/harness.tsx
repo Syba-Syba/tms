@@ -1,3 +1,4 @@
+import { PRIVACY_VERSION } from '../lib/privacy';
 import type { ReactElement } from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -146,6 +147,7 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
       monthlyIncomeCents: 4000000,
       occupants: 1,
       preferredMoveIn: daysFromNow(30),
+      consentVersion: PRIVACY_VERSION,
       pets: false,
     });
     localStorage.setItem('CapacitorStorage.id_token', landlordToken);
