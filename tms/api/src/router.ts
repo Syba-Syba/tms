@@ -42,6 +42,11 @@ import { handler as bank_imports_create } from './handlers/bank-imports-create';
 import { handler as bank_imports_list } from './handlers/bank-imports-list';
 import { handler as bank_imports_get } from './handlers/bank-imports-get';
 import { handler as bank_imports_resolve } from './handlers/bank-imports-resolve';
+import { handler as expenses_create } from './handlers/expenses-create';
+import { handler as expenses_list } from './handlers/expenses-list';
+import { handler as expenses_update } from './handlers/expenses-update';
+import { handler as reports_income_expense } from './handlers/reports-income-expense';
+import { handler as reports_arrears } from './handlers/reports-arrears';
 import { handler as photos_confirm } from './handlers/photos-confirm';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
@@ -132,6 +137,12 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/bank-imports', bank_imports_list],
   ['GET', '/bank-imports/{id}', bank_imports_get],
   ['POST', '/bank-imports/{id}/resolve', bank_imports_resolve],
+  ['POST', '/expenses', expenses_create],
+  ['GET', '/expenses', expenses_list],
+  ['PUT', '/expenses/{id}', expenses_update],
+  ['DELETE', '/expenses/{id}', expenses_update],
+  ['GET', '/reports/income-expense', reports_income_expense],
+  ['GET', '/reports/arrears', reports_arrears],
 ];
 
 interface Compiled {

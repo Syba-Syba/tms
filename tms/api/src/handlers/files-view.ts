@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requireApplicationAccess, requireLeaseAccess } from '../lib/access';
+import { caller } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, notFound, parseBody, route } from '../lib/http';
 import { storage } from '../lib/storage';
@@ -44,7 +45,15 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
 export const handler = route(async (event) => {
   const { key } = parseBody(event, schema);
 
-  if (key.startsWith('applications/')) {
+  if (key.startsWith('expenses/')) {
+    // An expense slip belongs to a landlord, not a lease, so no tenant can ever reach one.
+    const person = caller(event);
+    const [slip] = await query<{ cognito_sub: string | null }>(
+      `select ll.cognito_sub from expense e join landlord ll on ll.id = e.landlord_id where e.slip_s3_key = $1`,
+      [key],
+    );
+    if (!slip || slip.cognito_sub !== person.sub || !person.groups.includes('landlord')) throw notFound('Document');
+  } else if (key.startsWith('applications/')) {
     // ID copies, payslips and bank statements. Membership of the landlord group used to be
     // enough to read any of them, for any applicant, under any landlord.
     const [document] = await query<{ application_id: string }>(

@@ -183,6 +183,10 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /bank-imports | landlord | read a CSV or OFX bank statement into credit lines |
 | GET | /bank-imports, /bank-imports/{id} | landlord | past imports; one import with a suggested lease per line |
 | POST | /bank-imports/{id}/resolve | landlord | confirm lines as payments, or set them aside |
+| POST, GET | /expenses | landlord | record an expense with an optional slip; list by period |
+| PUT, DELETE | /expenses/{id} | landlord | correct or remove an expense |
+| GET | /reports/income-expense | landlord | rent invoiced, collected, expenses and net per property, tax year by default |
+| GET | /reports/arrears | landlord | what each lease owes, aged 0, 30, 60, 90 and 90+ days |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
 | GET | /applications | landlord | queue with rent to income band |
@@ -199,7 +203,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Fifty-nine routes in all; the table lists the shape of each family rather than every verb.
+Sixty-five routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -558,6 +562,22 @@ in and out, some exports use semicolons and decimal commas. The reader finds col
 header and falls back to the values when there is none. Dates are read day first. OFX is the
 reliable choice when the bank offers it.
 
+## Expenses and reports
+
+Expenses are recorded per landlord, optionally against a property and a unit, in categories
+that follow what SARS lets a landlord deduct. Bond interest has its own category because the
+capital part of a bond payment is not deductible. A slip photo or PDF can go with each one;
+only its landlord can open it.
+
+The income report defaults to the current tax year (1 March to the end of February) and shows
+two income figures per property: rent invoiced in the period, and rent collected in it. Net is
+collected less expenses. Deposits are left out, because they are the tenant's money. The arrears
+report ages each lease's unpaid invoices into the same buckets the tenant's statement uses, and
+flags leases with a slip waiting. Both download as CSV for an accountant.
+
+CI runs on every push and pull request (`.github/workflows/ci.yml`): a clean `npm ci`,
+typecheck, toolbox lint, every test suite and the self-hosted build.
+
 ## Screens
 
 Tenant and landlord share the same app; navigation, permissions and data follow the role.
@@ -580,6 +600,7 @@ Tenant and landlord share the same app; navigation, permissions and data follow 
 | Notification preferences | `/settings/notifications` | both |
 | Apply and upload documents | `/apply` | prospective tenant |
 | Payments: slips to check, bank statement import and matching | `/payments` | landlord |
+| Reports: income and expenses per property, arrears age analysis, expense capture, CSV export | `/reports` | landlord |
 | Sign in, create an account | `/login`, `/register` | anyone |
 | Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
 
