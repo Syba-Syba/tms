@@ -37,12 +37,12 @@ const TENANT: Item[] = [
 
 const BAR_SIZE = 4;
 
-/** The arch, once, as the mark. Everything else stays out of the way. */
+/** A doorway, drawn once, and the name set in the statement serif. */
 function Mark() {
   return (
     <span className="flex items-center gap-2">
-      <span className="h-5 w-4 rounded-t-full border-2 border-b-0 border-brand-500" />
-      <b className="text-[15px] font-extrabold tracking-tight text-ink">Threshold</b>
+      <span className="h-[18px] w-[14px] rounded-t-full border-[1.5px] border-b-0 border-ink" aria-hidden />
+      <b className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">Threshold</b>
     </span>
   );
 }
@@ -61,18 +61,18 @@ export function AppShell() {
 
   return (
     <div className="min-h-dvh bg-bg text-ink">
-      <header className="sticky top-0 z-20 border-b border-line-soft bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3 sm:px-5">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-5">
           <Mark />
-          <nav className="hidden flex-1 gap-1 md:flex" aria-label="Main">
+          <nav className="hidden h-full flex-1 gap-6 md:flex" aria-label="Main">
             {items.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive: active }) =>
-                  `whitespace-nowrap rounded-sm px-3 py-1.5 text-[13.5px] font-semibold ${
-                    active ? 'bg-brand-50 text-brand-500' : 'text-ink-muted hover:text-ink'
+                  `-mb-px flex items-center whitespace-nowrap border-b-2 text-[14px] ${
+                    active ? 'border-ink font-medium text-ink' : 'border-transparent text-ink-muted hover:text-ink'
                   }`
                 }
               >
@@ -80,11 +80,11 @@ export function AppShell() {
               </NavLink>
             ))}
           </nav>
-          <span className="ml-auto truncate text-xs text-ink-muted md:ml-0">{currentUser()?.name}</span>
+          <span className="ml-auto truncate text-[13px] text-ink-muted md:ml-0">{currentUser()?.name}</span>
           <button
             type="button"
             onClick={() => endSession()}
-            className="hidden rounded-sm px-3 py-1.5 text-[13px] font-bold text-ink-muted hover:text-ink md:block"
+            className="hidden text-[13px] text-ink-muted underline-offset-4 hover:text-ink hover:underline md:block"
           >
             Log out
           </button>
@@ -98,7 +98,7 @@ export function AppShell() {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line-soft bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         <div className="mx-auto flex max-w-lg">
           {bar.map((item) => (
@@ -127,8 +127,8 @@ export function AppShell() {
               end={item.end}
               onClick={() => setMoreOpen(false)}
               className={({ isActive: active }) =>
-                `flex items-center gap-3 rounded-md px-3 py-3 text-[15px] font-semibold ${
-                  active ? 'bg-brand-50 text-brand-500' : 'text-ink hover:bg-surface-muted'
+                `flex items-center gap-3 rounded-sm px-3 py-3 text-[15px] ${
+                  active ? 'bg-surface-muted font-medium text-ink' : 'text-ink hover:bg-surface-muted'
                 }`
               }
             >
@@ -139,7 +139,7 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => endSession()}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-[15px] font-semibold text-ink-muted hover:bg-surface-muted"
+            className="flex w-full items-center gap-3 rounded-sm px-3 py-3 text-[15px] text-ink-muted hover:bg-surface-muted"
           >
             <LogOutIcon className="text-[20px]" />
             Log out
@@ -161,8 +161,8 @@ function Tab({
 }) {
   return (
     <span
-      className={`flex flex-col items-center gap-0.5 pb-2 pt-2.5 text-[11px] font-semibold ${
-        active ? 'text-brand-500' : 'text-ink-muted'
+      className={`flex flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${
+        active ? 'font-semibold text-ink' : 'text-ink-muted'
       }`}
     >
       <Icon className="text-[22px]" />

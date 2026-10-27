@@ -48,7 +48,7 @@ export function PrivacyRequests() {
   const items = data?.items ?? [];
   return (
     <section>
-      <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">Privacy requests</h2>
+      <h2 className="label mb-2">Privacy requests</h2>
       {items.length === 0 ? (
         <Card>
           <CardBody>

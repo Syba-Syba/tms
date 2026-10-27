@@ -17,7 +17,7 @@ export function StatCard({
   return (
     <div className={cn('rounded-md border border-line bg-surface px-4 py-3.5', className)}>
       <p className="text-xs text-ink-muted">{label}</p>
-      <p className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">{value}</p>
+      <p className="mt-1 font-display text-[26px] font-medium tabular-nums leading-tight text-ink">{value}</p>
       {delta ? (
         <p
           className={cn(

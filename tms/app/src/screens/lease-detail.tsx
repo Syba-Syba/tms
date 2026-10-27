@@ -87,11 +87,11 @@ export function LeaseDetail() {
           {[
             ['Rent', <Ledger key="r" cents={data.monthlyRentCents} className="text-[19px]" />],
             ['Deposit', <Ledger key="d" cents={data.depositCents} className="text-[19px]" />],
-            ['Escalation', <span key="e" className="text-[19px] font-extrabold">{data.escalationPct}%</span>],
+            ['Escalation', <span key="e" className="font-display text-[20px] font-medium">{data.escalationPct}%</span>],
             ['Ends', <span key="x" className="text-[15px] font-semibold">{formatDate(data.endDate)}</span>],
           ].map(([label, value]) => (
             <div key={String(label)}>
-              <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">{label}</p>
+              <p className="label">{label}</p>
               {value}
             </div>
           ))}
@@ -111,7 +111,7 @@ export function LeaseDetail() {
       {data.renewal ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-brand-500">
+            <p className="label text-brand-600">
               Renewal offered · answer by {formatDate(data.renewal.respondBy)}
             </p>
             <p className="text-[15px]">
@@ -164,7 +164,7 @@ export function LeaseDetail() {
         </Alert>
       ) : null}
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Invoices</p>
+      <p className="label mb-2">Invoices</p>
       <Card className="mb-4">
         <CardBody className="space-y-2">
           {data.invoices.length === 0 ? (
@@ -202,7 +202,7 @@ export function LeaseDetail() {
         </CardBody>
       </Card>
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Inspections</p>
+      <p className="label mb-2">Inspections</p>
       <Card className="mb-4">
         <CardBody className="space-y-2">
           {data.inspections.length === 0 ? (

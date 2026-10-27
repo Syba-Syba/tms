@@ -72,7 +72,7 @@ export function YourData() {
 
   return (
     <section>
-      <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">Your data</h2>
+      <h2 className="label mb-2">Your data</h2>
       <Card>
         <CardBody className="space-y-4">
           <p className="text-[14px] text-ink-muted">

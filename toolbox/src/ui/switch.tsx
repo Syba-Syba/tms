@@ -29,7 +29,7 @@ export function Switch({
     >
       <span
         className={cn(
-          'h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
+          'h-5 w-5 rounded-full bg-white ring-1 ring-black/10 transition-transform',
           checked ? 'translate-x-5' : 'translate-x-0.5',
         )}
       />

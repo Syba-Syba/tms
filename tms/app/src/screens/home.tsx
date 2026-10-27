@@ -176,7 +176,7 @@ function LandlordHome() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-ink-muted">Needs you</h2>
+          <h2 className="label mb-2">Needs you</h2>
           {tasks.length === 0 ? (
             <Card>
               <CardBody>
@@ -220,7 +220,7 @@ function Stat({ label, value, hint, danger, to }: { label: string; value: string
     <Card className="h-full">
       <CardBody>
         <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`font-mono text-[19px] font-bold tracking-tight ${danger ? 'text-danger' : 'text-ink'}`}>{value}</p>
+        <p className={`font-display text-[24px] font-medium leading-tight ${danger ? 'text-danger' : 'text-ink'}`}>{value}</p>
         {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
       </CardBody>
     </Card>
@@ -240,7 +240,7 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="text-xs font-bold uppercase tracking-widest text-ink-muted">Leases</h2>
+        <h2 className="label">Leases</h2>
         <Link to="/properties" className="text-xs font-bold text-brand-500">Properties</Link>
       </div>
       {rows.length > 6 ? (
@@ -297,8 +297,8 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
                     <span className="block whitespace-nowrap text-xs text-ink-muted">{lease.ref}</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">{lease.tenant}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right font-mono">{zar(lease.monthlyRentCents)}</td>
-                  <td className={`whitespace-nowrap px-4 py-2.5 text-right font-mono ${lease.outstandingCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{zar(lease.monthlyRentCents)}</td>
+                  <td className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${lease.outstandingCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
                     {lease.outstandingCents > 0 ? zar(lease.outstandingCents) : '-'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">

@@ -12,7 +12,7 @@ import { PRIVACY_VERSION } from '../lib/privacy';
 export function Privacy() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="mb-1 text-[26px] font-extrabold tracking-tight">Privacy notice</h1>
+      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Privacy notice</h1>
       <p className="mb-6 text-[13px] text-ink-muted">Version of {formatDate(PRIVACY_VERSION)}</p>
 
       <Card>

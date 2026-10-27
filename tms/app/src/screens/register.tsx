@@ -40,7 +40,7 @@ export function Register() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 text-[26px] font-extrabold tracking-tight">Create an account</h1>
+      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Create an account</h1>
       <p className="mb-5 text-[14px] text-ink-muted">
         One account carries your application through to the lease, the deposit and beyond.
       </p>

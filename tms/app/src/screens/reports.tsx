@@ -192,7 +192,7 @@ function IncomeExpense() {
               <CardBody className="space-y-2">
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-[15px] font-semibold text-ink">{row.property}</p>
-                  <p className={`font-mono text-[15px] font-semibold ${row.netCents < 0 ? 'text-danger' : ''}`}>
+                  <p className={`tabular-nums text-[15px] font-semibold ${row.netCents < 0 ? 'text-danger' : ''}`}>
                     {zar(row.netCents)}
                   </p>
                 </div>
@@ -229,7 +229,7 @@ function Stat({ label, cents, strong }: { label: string; cents: number; strong?:
     <Card>
       <CardBody>
         <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`font-mono text-[17px] ${strong ? 'font-bold' : 'font-semibold'} ${cents < 0 ? 'text-danger' : ''}`}>
+        <p className={`font-display text-[22px] ${strong ? 'font-semibold' : 'font-medium'} ${cents < 0 ? 'text-danger' : ''}`}>
           {zar(cents)}
         </p>
       </CardBody>
@@ -244,7 +244,7 @@ function Line({ label, cents, hint }: { label: string; cents: number; hint?: str
         {label}
         {hint ? <span className="ml-1 text-xs">({hint})</span> : null}
       </span>
-      <span className="font-mono">{zar(cents)}</span>
+      <span className="tabular-nums">{zar(cents)}</span>
     </p>
   );
 }
@@ -295,14 +295,14 @@ function Arrears() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-mono text-[15px] font-semibold">{zar(item.totalCents)}</p>
+                  <p className="tabular-nums text-[15px] font-semibold">{zar(item.totalCents)}</p>
                   {item.proofPending ? <Badge tone="info">slip waiting</Badge> : null}
                 </div>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 {BUCKETS.filter((bucket) => item.ageing[bucket.key] > 0).map((bucket) => (
                   <span key={bucket.key} className="text-xs text-ink-muted">
-                    {bucket.label}: <span className="font-mono">{zar(item.ageing[bucket.key])}</span>
+                    {bucket.label}: <span className="tabular-nums">{zar(item.ageing[bucket.key])}</span>
                   </span>
                 ))}
               </div>
@@ -427,7 +427,7 @@ function Expenses() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">{zar(expense.amountCents)}</span>
+                  <span className="tabular-nums text-sm">{zar(expense.amountCents)}</span>
                   {expense.slipKey ? (
                     <Button variant="ghost" onClick={() => openDocument(expense.slipKey!)}>Slip</Button>
                   ) : null}

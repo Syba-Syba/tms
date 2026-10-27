@@ -62,7 +62,7 @@ export function NotificationPreferences() {
         <ChangePassword />
       </div>
 
-      <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">Notifications</h2>
+      <h2 className="label mb-2">Notifications</h2>
 
       <div className="space-y-3">
         {categories.map((category) => {

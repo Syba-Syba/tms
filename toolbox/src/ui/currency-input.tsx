@@ -16,12 +16,12 @@ export const CurrencyInput = forwardRef<
   return (
     <div
       className={cn(
-        'flex h-10 items-center rounded-md border border-line bg-surface focus-within:ring-2 focus-within:ring-[var(--tb-ring)]',
+        'flex h-10 items-center rounded-sm border border-line bg-surface focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500',
         invalid && 'border-danger',
         className,
       )}
     >
-      <span className="border-r border-line px-3 font-mono text-sm text-ink-muted">{currency}</span>
+      <span className="border-r border-line px-3 text-[14px] text-ink-muted">{currency}</span>
       <input
         ref={ref}
         inputMode="decimal"
@@ -36,7 +36,7 @@ export const CurrencyInput = forwardRef<
           }
         }}
         aria-invalid={invalid || undefined}
-        className="w-full bg-transparent px-3 text-right font-mono text-sm text-ink outline-none"
+        className="w-full bg-transparent px-3 text-right text-[14px] tabular-nums text-ink outline-none"
         placeholder="0.00"
         {...props}
       />

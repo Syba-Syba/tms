@@ -44,7 +44,7 @@ export function Documents() {
         description="Your lease, every inspection and every invoice. Keep these; they are what settles a dispute."
       />
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Lease</p>
+      <p className="label mb-2">Lease</p>
       <Card className="mb-5">
         <CardBody className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -66,7 +66,7 @@ export function Documents() {
         </CardBody>
       </Card>
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+      <p className="label mb-2">
         Inspections
       </p>
       <Card className="mb-5">
@@ -103,7 +103,7 @@ export function Documents() {
 
       {data.termination?.statementKey ? (
         <>
-          <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+          <p className="label mb-2">
             Deposit statement
           </p>
           <Card className="mb-5">
@@ -119,7 +119,7 @@ export function Documents() {
         </>
       ) : null}
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Invoices</p>
+      <p className="label mb-2">Invoices</p>
       <Card>
         <CardBody className="space-y-2">
           {data.invoices.length === 0 ? (

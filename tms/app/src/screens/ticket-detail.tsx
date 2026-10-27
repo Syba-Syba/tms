@@ -130,7 +130,7 @@ export function TicketDetail() {
         </Alert>
       ) : null}
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">History</p>
+      <p className="label mb-2">History</p>
       <Card className="mb-4">
         <CardBody className="space-y-3">
           {data.events.map((entry, index) => (
@@ -156,7 +156,7 @@ export function TicketDetail() {
       {data.quoteCents && !data.quoteApproved && landlord ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-brand-500">Quote</p>
+            <p className="label text-brand-600">Quote</p>
             <Ledger cents={data.quoteCents} className="text-[26px]" />
             <Button onClick={() => act({ action: 'approve_quote' }, 'Quote approved')}>
               Approve and let them start
@@ -277,7 +277,7 @@ export function TicketDetail() {
       {data.rating ? (
         <Card className="mb-4">
           <CardBody className="space-y-2">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Rated</p>
+            <p className="label">Rated</p>
             <ArchRating value={data.rating} />
             {data.ratingNote ? <p className="text-[13.5px]">{data.ratingNote}</p> : null}
           </CardBody>
@@ -320,7 +320,7 @@ function PhotoRow({ photos, phase, label }: {
   if (set.length === 0) return null;
   return (
     <div>
-      <p className="mb-1 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">{label}</p>
+      <p className="label mb-1">{label}</p>
       <div className="flex flex-wrap gap-2">
         {set.map((photo) => (
           <SignedImage

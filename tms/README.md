@@ -608,6 +608,26 @@ flags leases with a slip waiting. Both download as CSV for an accountant.
 CI runs on every push and pull request (`.github/workflows/ci.yml`): a clean `npm ci`,
 typecheck, toolbox lint, every test suite and the self-hosted build.
 
+## Design
+
+The look borrows from three products with in-house design teams: Mercury for its calm
+(paper-white pages, black primary buttons, room to breathe), Stripe for data (rows split by thin
+rules, figures that line up, colour only for state) and Monzo for the tenant's side (one warm,
+tinted panel for their own money, plain friendly copy).
+
+- Page titles and money are set in Source Serif 4, like a bank statement. Everything else is IBM
+  Plex Sans, with IBM Plex Mono for references such as LSE-00101. The fonts are bundled, Latin
+  subset only, because the self-hosted CSP allows nothing from another origin and the Android app
+  must work offline.
+- Panels are flat white with a 1px rule. There are no drop shadows on the page, no pill shapes and
+  no gradients.
+- One accent, bottle green, for links, focus and selection. Primary buttons are ink black, so each
+  screen has one obvious next step.
+- Labels are small and in sentence case. Use the `label` class rather than spaced-out capitals.
+
+The values live in `toolbox/src/tokens/tokens.css`; components read them, screens never hardcode a
+colour.
+
 ## Screens
 
 Tenant and landlord share the same app; navigation, permissions and data follow the role. On a

@@ -25,14 +25,14 @@ export function Drawer({
           className={cn(
             'fixed flex flex-col border-line bg-surface shadow-lg focus:outline-none',
             side === 'right' && 'inset-y-0 right-0 w-full max-w-md border-l',
-            side === 'bottom' && 'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-lg border-t',
+            side === 'bottom' && 'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-md border-t',
           )}
         >
           {side === 'bottom' ? (
             <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-neutral-300" aria-hidden />
           ) : null}
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <Dialog.Title className="font-display text-base font-semibold text-ink">
+            <Dialog.Title className="text-[16px] font-semibold text-ink">
               {title}
             </Dialog.Title>
             <Dialog.Close className="text-ink-muted hover:text-ink" aria-label="Close">

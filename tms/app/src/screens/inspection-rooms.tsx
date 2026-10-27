@@ -159,7 +159,7 @@ export function InspectionRooms() {
         {data.status !== 'completed' ? (
           <Card>
             <CardBody className="space-y-3">
-              <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+              <p className="label">
                 Review and sign
               </p>
               {walkthroughOpen && !reviewable ? (

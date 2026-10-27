@@ -22,6 +22,7 @@ module.exports = {
         warning: 'var(--tb-warning)',
         danger: 'var(--tb-danger)',
         info: 'var(--tb-info)',
+        action: { DEFAULT: 'var(--tb-action)', hover: 'var(--tb-action-hover)' },
       },
       fontFamily: {
         display: ['var(--tb-font-display)'],

@@ -14,7 +14,7 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       role="tablist"
-      className={cn('inline-flex rounded-full border border-line bg-surface-muted p-0.5', className)}
+      className={cn('inline-flex rounded-sm border border-line bg-surface-muted p-0.5', className)}
     >
       {options.map((option) => (
         <button
@@ -24,8 +24,8 @@ export function SegmentedControl<T extends string>({
           aria-selected={option.value === value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-full px-4 py-1.5 text-sm text-ink-muted transition-colors',
-            option.value === value && 'bg-surface font-medium text-ink shadow-sm',
+            'rounded-[4px] px-3.5 py-1.5 text-[13px] text-ink-muted transition-colors',
+            option.value === value && 'bg-surface font-medium text-ink ring-1 ring-line',
           )}
         >
           {option.label}

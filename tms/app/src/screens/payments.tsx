@@ -114,7 +114,7 @@ function Slips() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="font-mono text-[17px] font-semibold">{zar(proof.amountCents)}</p>
+                <p className="font-display text-[20px] font-medium">{zar(proof.amountCents)}</p>
                 <p className="text-xs text-ink-muted">paid {formatDate(proof.paidOn)}</p>
               </div>
             </div>
@@ -264,7 +264,7 @@ function BankImport() {
 
       {history.data?.items.length ? (
         <div className="space-y-2">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-ink-muted">Earlier imports</h2>
+          <h2 className="label">Earlier imports</h2>
           {history.data.items.map((item) => (
             <Card key={item.id}>
               <CardBody className="flex items-center justify-between gap-3">
@@ -369,7 +369,7 @@ function ImportReview({
                     <p className="break-words text-[14px] font-semibold text-ink">{line.description}</p>
                     <p className="text-xs text-ink-muted">{formatDate(line.postedOn)}</p>
                   </div>
-                  <p className="whitespace-nowrap font-mono text-[15px] font-semibold">{zar(line.amountCents)}</p>
+                  <p className="whitespace-nowrap tabular-nums text-[15px] font-semibold">{zar(line.amountCents)}</p>
                 </div>
                 {line.suggestion ? (
                   <p className="flex items-center gap-2 text-xs text-ink-muted">
@@ -414,7 +414,7 @@ function ImportReview({
 
       {data.lines.some((line) => line.status !== 'unmatched') ? (
         <div className="space-y-1 pt-2">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-ink-muted">Done</h2>
+          <h2 className="label">Done</h2>
           {data.lines
             .filter((line) => line.status !== 'unmatched')
             .map((line) => (

@@ -52,7 +52,7 @@ export function ConsentGate({ children }: { children: ReactNode }) {
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-10">
       <Card>
         <CardBody className="space-y-4">
-          <h1 className="text-[22px] font-extrabold tracking-tight">
+          <h1 className="font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">
             {data.acceptedVersion ? 'Our privacy notice has changed' : 'Before you carry on'}
           </h1>
           <p className="text-[14px] text-ink-muted">

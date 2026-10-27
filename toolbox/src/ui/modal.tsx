@@ -23,15 +23,15 @@ export function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/45" />
         <Dialog.Content
           className={cn(
-            'fixed left-1/2 top-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-line bg-surface shadow-lg focus:outline-none',
+            'fixed left-1/2 top-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border border-line bg-surface shadow-lg focus:outline-none',
             widths[size],
           )}
         >
           <div className="border-b border-line px-5 py-4">
-            <Dialog.Title className="font-display text-base font-semibold text-ink">
+            <Dialog.Title className="text-[16px] font-semibold text-ink">
               {title}
             </Dialog.Title>
             {description ? (

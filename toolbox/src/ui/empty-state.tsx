@@ -17,7 +17,7 @@ export function EmptyState({
   return (
     <div className={cn('flex flex-col items-center gap-3 px-6 py-14 text-center', className)}>
       {icon ? <div className="text-ink-muted">{icon}</div> : null}
-      <h3 className="font-display text-lg font-semibold text-ink">{title}</h3>
+      <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
       {description ? <p className="max-w-sm text-sm text-ink-muted">{description}</p> : null}
       {action}
     </div>

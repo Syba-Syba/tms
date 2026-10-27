@@ -108,7 +108,7 @@ export function Termination() {
       {settled ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+            <p className="label">
               {settled.tenantOwesCents > 0 ? 'Owed by tenant' : 'Refund to tenant'}
             </p>
             <Ledger
@@ -141,7 +141,7 @@ export function Termination() {
       {data.deductions.length > 0 ? (
         <Card className="mb-4">
           <CardBody className="space-y-2">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+            <p className="label">
               Deductions recorded
             </p>
             {data.deductions.map((deduction) => (
@@ -202,11 +202,11 @@ export function Termination() {
 
               <div className="grid grid-cols-2 gap-3 text-[13px]">
                 <div className="rounded-sm bg-surface-muted p-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">Move in</p>
+                  <p className="label">Move in</p>
                   <p className="font-semibold capitalize">{item.incoming.condition ?? 'not recorded'}</p>
                 </div>
                 <div className="rounded-sm bg-surface-muted p-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">Move out</p>
+                  <p className="label">Move out</p>
                   <p className="font-semibold capitalize">{item.outgoing.condition ?? 'not inspected'}</p>
                 </div>
               </div>

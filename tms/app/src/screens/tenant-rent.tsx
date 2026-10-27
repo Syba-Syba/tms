@@ -141,7 +141,7 @@ export function TenantRent() {
       />
       <Card className="mb-4">
         <CardBody className="space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-ink-muted">Pay by EFT with this reference</p>
+          <p className="label">Pay by EFT with this reference</p>
           <TagField label="Reference" value={data?.reference ?? '...'} />
           <p className="text-xs text-ink-muted">
             Use it exactly, so your payment is matched to your unit. Your deposit stands at{' '}
@@ -170,7 +170,7 @@ export function TenantRent() {
                   <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm">{formatZar(invoice.totalCents / 100)}</span>
+                  <span className="tabular-nums text-sm">{formatZar(invoice.totalCents / 100)}</span>
                   <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
                     {proofSent ? 'Proof sent' : status(invoice.status).label}
                   </Badge>
@@ -183,13 +183,13 @@ export function TenantRent() {
 
       {data && data.proofs.length > 0 ? (
         <section className="mt-6">
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-ink-muted">Slips you sent</h2>
+          <h2 className="label mb-2">Slips you sent</h2>
           <div className="space-y-2">
             {data.proofs.map((proof) => (
               <Card key={proof.id}>
                 <CardBody className="flex items-center justify-between">
                   <div>
-                    <p className="font-mono text-sm">{formatZar(proof.amountCents / 100)}</p>
+                    <p className="tabular-nums text-sm">{formatZar(proof.amountCents / 100)}</p>
                     <p className="text-xs text-ink-muted">
                       Paid {formatDate(proof.paidOn)}
                       {proof.target === 'deposit' ? ', deposit' : ''}
