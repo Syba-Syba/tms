@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route } from 'react-router';
-import { call, daysFromNow, mount, signInAs } from './harness';
+import { call, daysFromNow, mount, signInAs, API } from './harness';
 import { copied } from './setup';
 import { Properties } from '../screens/properties';
 import { ApplyStart } from '../screens/apply-start';
@@ -74,7 +74,8 @@ describe('the portfolio screen', () => {
     await screen.findByText('Unit removed');
 
     // Remove the now-empty property the same way.
-    fireEvent.click(within(cardOf('Click Street')).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(cardOf('Click Street')).getByRole('button', { name: 'Edit property' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove this property' }));
     await screen.findByText(/only goes once it has no units/);
     fireEvent.click((await screen.findAllByRole('button', { name: 'Remove' })).at(-1)!);
     await screen.findByText('Property removed');
@@ -106,14 +107,14 @@ describe('applying and processing the queue', () => {
     unitId = unit.id;
     // A fixed identity so the next suite can sign in as the same person.
     applicantEmail = 'queue-applicant@example.co.za';
-    const register = await fetch('http://localhost:3001/auth/register', {
+    const register = await fetch(`${API}/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Queue Applicant', email: applicantEmail, password: 'a-long-password' }),
     });
     const session = register.ok
       ? await register.json()
-      : await fetch('http://localhost:3001/auth/login', {
+      : await fetch(`${API}/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email: applicantEmail, password: 'a-long-password' }),
@@ -162,16 +163,19 @@ describe('applying and processing the queue', () => {
     await screen.findAllByText('Applications');
 
     // Approve if the application is still waiting; reruns find it already approved.
-    const waiting = await screen
-      .findByText('Queue Applicant', undefined, { timeout: 3000 })
-      .catch(() => null);
+    // The screen renders phone cards and a laptop table; CSS picks one, jsdom has both.
+    const waiting = (
+      await screen.findAllByText('Queue Applicant', undefined, { timeout: 3000 }).catch(() => [] as HTMLElement[])
+    ).find((node) => node.closest('tr'));
     if (waiting) {
       fireEvent.click(within(waiting.closest('tr')!).getByRole('button', { name: 'Approve' }));
       await screen.findByText('Application approved');
     }
 
     fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
-    const approvedRow = (await screen.findAllByText('Queue Applicant', undefined, { timeout: 5000 }))[0]!;
+    const approvedRow = (await screen.findAllByText('Queue Applicant', undefined, { timeout: 5000 })).find((node) =>
+      node.closest('tr'),
+    )!;
     fireEvent.click(within(approvedRow.closest('tr')!).getByRole('button', { name: 'Generate lease' }));
     await screen.findByText(/Lease for Queue Applicant/);
     fireEvent.click(screen.getByRole('button', { name: 'Generate and open it' }));

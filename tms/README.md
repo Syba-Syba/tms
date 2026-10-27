@@ -246,10 +246,13 @@ fixes each one.
 `DB_DRIVER=pglite` by default, which is Postgres compiled to WebAssembly running inside the API
 process against `tms/api/.pglite`. It is a real Postgres, not a mock, and the same migrations
 apply to it. The folder is not in git: `npm run dev` creates and seeds it when it is missing.
-Delete it or run `npm run reset` to start over.
+Delete it or run `npm run reset` to start over. `npm run dev` also applies any migrations a
+pulled branch adds to an existing database, without re-seeding it.
 
-The click tests refuse to run if the self-hosted server is the thing on port 3001, because
-they create records. Stop it first.
+For demos and screenshots, `npm run demo` (with `npm run dev` stopped) adds a second building,
+two more tenants, three months of rent with one tenant in arrears, a year's expenses and an
+overdue repair. Dates are relative to today, so the dashboard reads the same whenever you run
+it. `npm run reset && npm run demo` gives a clean demo copy.
 
 To use a real Postgres instead, set `DB_DRIVER=postgres` in `tms/api/.env` and fill in the
 `DB_HOST` block below it, then `npm run setup -w tms-api`.
@@ -281,16 +284,13 @@ someone else, the same as it would be in production.
 
     npm test
 
-200 tests. They boot their own Postgres, so nothing needs to be running.
+Over 350 tests. They boot their own Postgres, so nothing needs to be running.
 
-There is a second kind of test: sixteen click-through tests that render every screen in a
-DOM, press the actual buttons, and let each press hit the running dev API — documents opened
-by a button are downloaded and checked to be real PDFs. They need the API up:
-
-    npm run dev                       # in one terminal
-    npm run test:clicks -w tms-app    # in another
-
-The suites build their own fixtures through the API, so they pass in any order and on reruns.
+The app's click-through tests render screens in a DOM, press the actual buttons, and let each
+press hit a real API. Documents opened by a button are downloaded and checked to be real PDFs.
+`npm test` starts that API itself on port 3101, against a throwaway database and storage folder
+that are deleted afterwards, so the tests never touch your development data. They used to run
+against the dev API on 3001 and left a test property behind on every run.
 
 
 ## Audit notes, July 2026
@@ -580,11 +580,14 @@ typecheck, toolbox lint, every test suite and the self-hosted build.
 
 ## Screens
 
-Tenant and landlord share the same app; navigation, permissions and data follow the role.
+Tenant and landlord share the same app; navigation, permissions and data follow the role. On a
+phone the main sections sit in a bottom tab bar, with the rest behind More; on a laptop they sit
+in the top bar. Dates read "7 Oct 2026" and statuses read as words ("Unpaid", "Part paid"),
+through `app/src/lib/format.ts`.
 
 | Screen | Route | Who |
 | --- | --- | --- |
-| Landlord home: every lease with rent, arrears, deposit and open tickets | `/` | landlord |
+| Landlord overview: month's collections, arrears, slips and repairs, a "Needs you" list, every lease | `/` | landlord |
 | Tenant home: balance, rent, deposit with interest, what needs attention | `/` | tenant |
 | Documents: lease, every inspection, every invoice | `/documents` | tenant |
 | Lease detail: invoices, inspections, renewal, notice, record payment | `/leases/:id` | both, actions landlord only |

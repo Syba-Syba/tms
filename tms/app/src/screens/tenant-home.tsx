@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Alert, Button, Card, CardBody, EmptyState, PageHeader, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate } from '../lib/format';
 
 interface LeaseRow {
   id: string; ref: string; unit: string; endDate: string;
@@ -43,7 +44,7 @@ export function TenantHome() {
 
   return (
     <main className="mx-auto max-w-2xl px-5 py-6">
-      <PageHeader title={lease.unit} description={`${lease.ref} · your lease runs to ${lease.endDate}`} />
+      <PageHeader title={lease.unit} description={`${lease.ref} · your lease runs to ${formatDate(lease.endDate)}`} />
 
       <Card className="mb-4">
         <CardBody className="space-y-1 py-7 text-center">
@@ -89,7 +90,7 @@ export function TenantHome() {
           Open your lease to see the new rent and dates, then accept or decline.
         </Alert>
       ) : lease.terminationEffectiveOn ? (
-        <Alert tone="warning" title={`Your lease ends ${lease.terminationEffectiveOn}`} className="mb-4">
+        <Alert tone="warning" title={`Your lease ends ${formatDate(lease.terminationEffectiveOn)}`} className="mb-4">
           The exit inspection must happen in the final three days, with you there. If it does not
           happen, the law treats the place as undamaged and nothing can be deducted from your
           deposit.

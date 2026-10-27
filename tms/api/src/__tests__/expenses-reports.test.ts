@@ -150,6 +150,14 @@ describe('income against expenses', () => {
 });
 
 describe('arrears', () => {
+  it('shows a tenant with paid months behind them as owing this one', async () => {
+    // September is paid, October is not. The old figure subtracted September's payment from
+    // October's invoice and called the lease paid up.
+    const leases = await call('GET', '/leases', LANDLORD);
+    const lease = leases.body.items.find((item: { id: string }) => item.id === LEASE);
+    expect(lease.outstandingCents).toBe(850000);
+  });
+
   it('ages what each lease owes', async () => {
     const report = await call('GET', '/reports/arrears', LANDLORD);
     expect(report.status).toBe(200);

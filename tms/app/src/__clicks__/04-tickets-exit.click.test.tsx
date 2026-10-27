@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { Route } from 'react-router';
-import { call, ensureLease, mount, signInAs } from './harness';
+import { call, ensureLease, mount, signInAs, API } from './harness';
 import { openedUrls } from './setup';
 import { TicketNew } from '../screens/ticket-new';
 import { TicketDetail } from '../screens/ticket-detail';
@@ -13,7 +13,7 @@ const type = (element: Element, value: string) => fireEvent.change(element, { ta
 const APPLICANT = 'queue-applicant@example.co.za';
 
 const signInApplicant = async () => {
-  const session = await fetch('http://localhost:3001/auth/login', {
+  const session = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: APPLICANT, password: 'a-long-password' }),
@@ -86,7 +86,11 @@ describe('the exit, clicked', () => {
     mount(`/leases/${leaseId}`, <Route path="/leases/:leaseId" element={<LeaseDetail />} />);
     if (!before.termination) {
       fireEvent.click(await screen.findByRole('button', { name: 'Serve notice' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Serve it' }));
+      const dialog = await screen.findByRole('dialog');
+      // The serve button stays disabled until the landlord confirms what it does.
+      expect(within(dialog).getByRole('button', { name: 'Serve notice' })).toBeDisabled();
+      fireEvent.click(within(dialog).getByRole('checkbox'));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Serve notice' }));
       await screen.findByText('Notice served', undefined, { timeout: 8000 });
     } else {
       // A rerun meets the notice already served; the banner is the proof instead.

@@ -6,6 +6,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
+import { formatDate, status } from '../lib/format';
 
 interface Proof {
   id: string;
@@ -27,7 +28,6 @@ interface Statement {
   proofs: Proof[];
 }
 
-const tone = { paid: 'success', part_paid: 'warning', issued: 'neutral' } as const;
 const proofTone = { pending: 'info', accepted: 'success', rejected: 'danger' } as const;
 const proofLabel = { pending: 'Waiting for landlord', accepted: 'Accepted', rejected: 'Not accepted' } as const;
 
@@ -167,12 +167,12 @@ export function TenantRent() {
               <CardBody className="flex items-center justify-between">
                 <div>
                   <p className="text-[15px] font-semibold text-ink">{invoice.period}</p>
-                  <p className="text-xs text-ink-muted">Due {invoice.dueOn}</p>
+                  <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm">{formatZar(invoice.totalCents / 100)}</span>
-                  <Badge tone={proofSent ? 'info' : (tone[invoice.status as keyof typeof tone] ?? 'neutral')}>
-                    {proofSent ? 'proof sent' : invoice.status.replace('_', ' ')}
+                  <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
+                    {proofSent ? 'Proof sent' : status(invoice.status).label}
                   </Badge>
                 </div>
               </CardBody>
@@ -191,7 +191,7 @@ export function TenantRent() {
                   <div>
                     <p className="font-mono text-sm">{formatZar(proof.amountCents / 100)}</p>
                     <p className="text-xs text-ink-muted">
-                      Paid {proof.paidOn}
+                      Paid {formatDate(proof.paidOn)}
                       {proof.target === 'deposit' ? ', deposit' : ''}
                       {proof.reference ? `, ref ${proof.reference}` : ''}
                     </p>

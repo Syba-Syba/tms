@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router';
 import {
   Badge,
   Button,
-  ConfirmDialog,
+  Card,
+  CardBody,
   DataTable,
   Drawer,
   Input,
@@ -14,10 +15,12 @@ import {
   SegmentedControl,
   Spinner,
   StatCard,
+  Textarea,
   useToast,
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, type ApplicationSummary, humanError } from '../api/client';
+import { formatDate } from '../lib/format';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
@@ -46,6 +49,7 @@ interface PortfolioUnit {
 export function LandlordQueue() {
   const [status, setStatus] = useState<'submitted' | 'approved' | 'declined'>('submitted');
   const [declining, setDeclining] = useState<ApplicationSummary | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
   const [viewingDocs, setViewingDocs] = useState<ApplicationSummary | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [generatingFor, setGeneratingFor] = useState<ApplicationSummary | null>(null);
@@ -64,11 +68,57 @@ export function LandlordQueue() {
   });
 
   const decide = async (id: string, outcome: 'approved' | 'declined', reason?: string) => {
-    await api.post(`/applications/${id}/decision`, { outcome, reason });
-    toast.show({ title: `Application ${outcome}`, tone: outcome === 'approved' ? 'success' : 'info' });
-    setDeclining(null);
-    refetch();
+    try {
+      await api.post(`/applications/${id}/decision`, { outcome, reason });
+      toast.show({ title: `Application ${outcome}`, tone: outcome === 'approved' ? 'success' : 'info' });
+      setDeclining(null);
+      setDeclineReason('');
+      refetch();
+    } catch (error) {
+      toast.show({ title: 'Not saved', description: humanError(error), tone: 'danger' });
+    }
   };
+
+  /** The same buttons in the laptop table and on the phone cards. */
+  const actionsFor = (item: ApplicationSummary) => {
+    if (status === 'submitted') {
+      return (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setDeclining(item)}>
+            Decline
+          </Button>
+          <Button size="sm" onClick={() => decide(item.id, 'approved')}>
+            Approve
+          </Button>
+        </div>
+      );
+    }
+    if (status === 'approved') {
+      return (
+        <div className="flex justify-end">
+          {item.leaseId ? (
+            <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
+              {item.leaseStatus === 'active' ? 'Open lease' : 'Continue signing'}
+            </Button>
+          ) : (
+            <Button size="sm" loading={generating === item.id} onClick={() => openGenerate(item)}>
+              Generate lease
+            </Button>
+          )}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const docsFor = (item: ApplicationSummary) =>
+    item.documentCount > 0 ? (
+      <button type="button" className="text-[13px] font-bold text-brand-500" onClick={() => setViewingDocs(item)}>
+        {item.documentCount} on file
+      </button>
+    ) : (
+      <span className="text-[13px] text-ink-muted">no documents</span>
+    );
 
   const openGenerate = (item: ApplicationSummary) => {
     setTerms({ startDate: item.preferredMoveIn, months: '12', escalationPct: '8' });
@@ -103,17 +153,8 @@ export function LandlordQueue() {
     .reduce((sum, unit) => sum + unit.monthlyRentCents, 0);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-6">
-      <PageHeader
-        title="Applications"
-        description="Approve, read the paperwork, generate the lease."
-        breadcrumbs={[{ label: 'Manage' }, { label: 'Applications' }]}
-        actions={
-          <Button size="sm" variant="outline" onClick={() => navigate('/properties')}>
-            Properties
-          </Button>
-        }
-      />
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+      <PageHeader title="Applications" description="Approve, read the paperwork, generate the lease." />
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Waiting on you" value={String(status === 'submitted' ? items.length : '—')} />
@@ -137,6 +178,33 @@ export function LandlordQueue() {
         ]}
       />
 
+      {/* Phone: one card per applicant, every column readable without scrolling sideways. */}
+      <div className="space-y-3 md:hidden">
+        {items.length === 0 ? <p className="py-6 text-center text-[13px] text-ink-muted">No applications here.</p> : null}
+        {items.map((item) => (
+          <Card key={item.id}>
+            <CardBody className="space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[15px] font-semibold text-ink">{item.applicant}</p>
+                  <p className="text-xs text-ink-muted">
+                    {item.unit}, moves in {formatDate(item.preferredMoveIn)}
+                  </p>
+                </div>
+                <Badge tone={bandTone[item.affordability.band]}>
+                  {Math.round(item.affordability.ratio * 100)}% of income
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                {docsFor(item)}
+                {actionsFor(item)}
+              </div>
+            </CardBody>
+          </Card>
+        ))}
+      </div>
+
+      <div className="hidden md:block">
       <DataTable
         data={items}
         emptyTitle="No applications here"
@@ -158,68 +226,50 @@ export function LandlordQueue() {
           {
             id: 'documents',
             header: 'Docs',
-            cell: ({ row }) => {
-              const item = row.original as ApplicationSummary;
-              return item.documentCount > 0 ? (
-                <button
-                  type="button"
-                  className="text-[13px] font-bold text-brand-500"
-                  onClick={() => setViewingDocs(item)}
-                >
-                  {item.documentCount} on file
-                </button>
-              ) : (
-                <span className="text-[13px] text-ink-muted">none</span>
-              );
-            },
+            cell: ({ row }) => docsFor(row.original as ApplicationSummary),
           },
-          { accessorKey: 'preferredMoveIn', header: 'Move in' },
+          {
+            id: 'moveIn',
+            header: 'Move in',
+            cell: ({ row }) => formatDate((row.original as ApplicationSummary).preferredMoveIn),
+          },
           {
             id: 'actions',
             header: '',
-            cell: ({ row }) => {
-              const item = row.original as ApplicationSummary;
-              if (status === 'submitted') {
-                return (
-                  <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setDeclining(item)}>
-                      Decline
-                    </Button>
-                    <Button size="sm" onClick={() => decide(item.id, 'approved')}>
-                      Approve
-                    </Button>
-                  </div>
-                );
-              }
-              if (status === 'approved') {
-                return (
-                  <div className="flex justify-end">
-                    {item.leaseId ? (
-                      <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
-                        {item.leaseStatus === 'active' ? 'Open lease' : 'Continue signing'}
-                      </Button>
-                    ) : (
-                      <Button size="sm" loading={generating === item.id} onClick={() => openGenerate(item)}>
-                        Generate lease
-                      </Button>
-                    )}
-                  </div>
-                );
-              }
-              return null;
-            },
+            cell: ({ row }) => actionsFor(row.original as ApplicationSummary),
           },
         ]}
       />
+      </div>
 
-      <ConfirmDialog
+      <Modal
         open={!!declining}
-        onOpenChange={() => setDeclining(null)}
-        title="Decline this application"
+        onOpenChange={(next) => {
+          if (!next) {
+            setDeclining(null);
+            setDeclineReason('');
+          }
+        }}
+        title={declining ? `Decline ${declining.applicant}` : 'Decline'}
         description="The applicant is told the reason, so write something they can act on."
-        confirmLabel="Decline"
-        onConfirm={() => declining && decide(declining.id, 'declined', 'Rent exceeds a third of income.')}
-      />
+      >
+        <div className="space-y-3">
+          <Textarea
+            placeholder="For example: the rent is more than a third of your income."
+            maxLength={500}
+            value={declineReason}
+            onChange={(event) => setDeclineReason(event.target.value)}
+          />
+          <Button
+            block
+            variant="danger"
+            disabled={declineReason.trim().length < 5}
+            onClick={() => declining && decide(declining.id, 'declined', declineReason.trim())}
+          >
+            Decline and tell them
+          </Button>
+        </div>
+      </Modal>
 
       <Modal
         open={!!generatingFor}
@@ -310,7 +360,7 @@ function DocumentsDrawer({ application, onClose }: {
               <div>
                 <p className="text-[14px] font-semibold">{KIND_LABEL[document.kind] ?? document.kind}</p>
                 <p className="text-xs text-ink-muted">
-                  {(document.sizeBytes / 1024).toFixed(0)} KB · {document.uploadedAt.slice(0, 10)}
+                  {(document.sizeBytes / 1024).toFixed(0)} KB · {formatDate(document.uploadedAt)}
                 </p>
               </div>
               <span className="text-[13px] font-bold text-brand-500">Open</span>

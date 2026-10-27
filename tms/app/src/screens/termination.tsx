@@ -6,6 +6,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { api, openDocument, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate } from '../lib/format';
 
 interface ComparisonItem {
   room: string;
@@ -124,7 +125,7 @@ export function Termination() {
                 <p className="text-danger">Less arrears <Ledger cents={settled.arrearsCents} /></p>
               ) : null}
             </div>
-            <Alert tone="info" title={`Payable by ${settled.refundDueBy}`}>
+            <Alert tone="info" title={`Payable by ${formatDate(settled.refundDueBy)}`}>
               {RULE_COPY[settled.refundRule]}
             </Alert>
           </CardBody>

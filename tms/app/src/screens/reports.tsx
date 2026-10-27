@@ -6,6 +6,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
+import { formatDate } from '../lib/format';
 
 const CATEGORIES: Record<string, string> = {
   rates: 'Rates',
@@ -290,7 +291,7 @@ function Arrears() {
                     {item.unit}
                   </Link>
                   <p className="text-xs text-ink-muted">
-                    {item.tenant}, {item.leaseRef}, oldest due {item.oldestDueOn}
+                    {item.tenant}, {item.leaseRef}, oldest due {formatDate(item.oldestDueOn)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -421,7 +422,7 @@ function Expenses() {
                 <div className="min-w-0">
                   <p className="text-[14px] font-semibold text-ink">{expense.description}</p>
                   <p className="text-xs text-ink-muted">
-                    {expense.incurredOn}, {CATEGORIES[expense.category] ?? expense.category}
+                    {formatDate(expense.incurredOn)}, {CATEGORIES[expense.category] ?? expense.category}
                     {expense.property ? `, ${expense.property}${expense.unit ? ` ${expense.unit}` : ''}` : ''}
                   </p>
                 </div>

@@ -26,7 +26,8 @@
     "bootstrap": "tsx --env-file=.env.selfhosted scripts/bootstrap.mjs",
     "migrate:selfhosted": "node --env-file=.env.selfhosted --import tsx scripts/migrate.mjs",
     "db:psql": "node --env-file=.env.selfhosted scripts/db-shell.mjs",
-    "db:dump": "node --env-file=.env.selfhosted scripts/db-shell.mjs dump"
+    "db:dump": "node --env-file=.env.selfhosted scripts/db-shell.mjs dump",
+    "demo": "node --env-file=.env scripts/demo.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.670.0",

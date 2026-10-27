@@ -7,6 +7,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
+import { formatDate } from '../lib/format';
 
 interface ProofRow {
   id: string;
@@ -114,7 +115,7 @@ function Slips() {
               </div>
               <div className="text-right">
                 <p className="font-mono text-[17px] font-semibold">{zar(proof.amountCents)}</p>
-                <p className="text-xs text-ink-muted">paid {proof.paidOn}</p>
+                <p className="text-xs text-ink-muted">paid {formatDate(proof.paidOn)}</p>
               </div>
             </div>
             <p className="text-xs text-ink-muted">
@@ -270,7 +271,7 @@ function BankImport() {
                 <div>
                   <p className="text-[14px] font-semibold">{item.fileName}</p>
                   <p className="text-xs text-ink-muted">
-                    {item.importedAt.slice(0, 10)}, {item.lines} credits, {item.matched} matched
+                    {formatDate(item.importedAt)}, {item.lines} credits, {item.matched} matched
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -366,7 +367,7 @@ function ImportReview({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="break-words text-[14px] font-semibold text-ink">{line.description}</p>
-                    <p className="text-xs text-ink-muted">{line.postedOn}</p>
+                    <p className="text-xs text-ink-muted">{formatDate(line.postedOn)}</p>
                   </div>
                   <p className="whitespace-nowrap font-mono text-[15px] font-semibold">{zar(line.amountCents)}</p>
                 </div>
@@ -419,7 +420,7 @@ function ImportReview({
             .map((line) => (
               <p key={line.id} className="flex justify-between gap-3 text-xs text-ink-muted">
                 <span className="truncate">
-                  {line.postedOn} {line.description}
+                  {formatDate(line.postedOn)} {line.description}
                 </span>
                 <span className="whitespace-nowrap">
                   {zar(line.amountCents)} {line.status === 'matched' ? `to ${leaseLabel(line.leaseId)}` : 'set aside'}

@@ -51,6 +51,7 @@ export const handler = route(async (event) => {
     id: string;
     name: string;
     address: string;
+    fields: Record<string, string>;
     units: unknown[];
   }>();
   for (const row of rows) {
@@ -59,6 +60,15 @@ export const handler = route(async (event) => {
         id: row.property_id,
         name: row.property_name,
         address: `${row.address_line1}, ${row.suburb}, ${row.city}, ${row.province}, ${row.postal_code}`,
+        // The parts as well, so the app can edit a property without parsing the line above.
+        fields: {
+          name: row.property_name,
+          addressLine1: row.address_line1,
+          suburb: row.suburb,
+          city: row.city,
+          province: row.province,
+          postalCode: row.postal_code,
+        },
         units: [],
       });
     }

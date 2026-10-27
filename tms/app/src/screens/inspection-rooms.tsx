@@ -14,6 +14,7 @@ import {
   type SignaturePadHandle,
 } from '@hlonie/toolbox/ui';
 import { api, openDocument, humanError } from '../api/client';
+import { formatDate } from '../lib/format';
 
 export interface InspectionState {
   id: string;
@@ -115,7 +116,7 @@ export function InspectionRooms() {
     <main className="mx-auto max-w-lg px-4 py-6">
       <PageHeader
         title={data.kind === 'incoming' ? 'Move-in inspection' : 'Move-out inspection'}
-        description={`${data.unit} · ${data.scheduledFor}. Walk every room together, then both of you sign.`}
+        description={`${data.unit} · ${formatDate(data.scheduledFor)}. Walk every room together, then both of you sign.`}
       />
 
       <div className="space-y-3">

@@ -17,6 +17,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { api, openDocument, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate } from '../lib/format';
 
 interface Lease {
   id: string;
@@ -101,7 +102,7 @@ export function LeaseReview() {
             <dt className="text-ink-muted">Deposit</dt>
             <dd className="text-right font-mono"><Ledger cents={data.depositCents} /></dd>
             <dt className="text-ink-muted">Term</dt>
-            <dd className="text-right">{data.startDate} to {data.endDate}</dd>
+            <dd className="text-right">{formatDate(data.startDate)} to {formatDate(data.endDate)}</dd>
             <dt className="text-ink-muted">Escalation</dt>
             <dd className="text-right">{data.escalationPct}% a year</dd>
           </dl>

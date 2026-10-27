@@ -7,6 +7,7 @@ import {
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
 import { SignedImage } from '../components/signed-image';
+import { capitalise, formatDateTime, status } from '../lib/format';
 
 interface DirectoryEntry {
   id: string;
@@ -104,14 +105,14 @@ export function TicketDetail() {
     <main className="mx-auto max-w-2xl px-5 py-6">
       <PageHeader
         title={data.title}
-        description={`${data.unit} · ${data.category} · reported by ${data.tenant}`}
+        description={`${data.unit} · ${capitalise(data.category)} · reported by ${data.tenant}`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Badge tone={SEVERITY[data.severity as keyof typeof SEVERITY]}>{data.severity}</Badge>
-        <Badge tone={data.overdue ? 'danger' : 'neutral'}>{data.status.replace(/_/g, ' ')}</Badge>
+        <Badge tone={SEVERITY[data.severity as keyof typeof SEVERITY]}>{capitalise(data.severity)}</Badge>
+        <Badge tone={data.overdue ? 'danger' : status(data.status).tone}>{status(data.status).label}</Badge>
         <span className={`text-xs ${data.overdue ? 'font-bold text-danger' : 'text-ink-muted'}`}>
-          {data.overdue ? 'Overdue since' : 'Response target'} {data.targetBy.slice(0, 16).replace('T', ' ')}
+          {data.overdue ? 'Overdue since' : 'Response target'} {formatDateTime(data.targetBy)}
         </span>
       </div>
 

@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, Spinner, useToast,
+  Alert, Badge, Button, Card, CardBody, Checkbox, CurrencyInput, Input, Modal, PageHeader, Select, Spinner, useToast,
 } from '@hlonie/toolbox/ui';
+import { formatZar } from '@hlonie/toolbox/utils';
 import { api, openDocument, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate, status } from '../lib/format';
 
 interface Lease {
   id: string; ref: string; status: string; unit: string; tenant: string;
@@ -28,6 +30,8 @@ export function LeaseDetail() {
   const [showNotice, setShowNotice] = useState(false);
   const [notice, setNotice] = useState({ reason: 'end_of_term', initiatedBy: 'landlord' });
   const [showRenewal, setShowRenewal] = useState(false);
+  // Serving notice starts the end of a tenancy, so it takes a deliberate second step.
+  const [noticeConfirmed, setNoticeConfirmed] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['lease', leaseId],
@@ -52,6 +56,23 @@ export function LeaseDetail() {
     <main className="mx-auto max-w-3xl px-5 py-6">
       <PageHeader title={data.unit} description={`${data.ref} · ${data.tenant}`} />
 
+      {landlord && data.status !== 'terminated' && data.status !== 'cancelled' ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button onClick={() => setShowPayment(true)}>Record a payment</Button>
+          {!data.renewal && !data.termination ? (
+            <Button variant="outline" onClick={() => setShowRenewal(true)}>Offer a renewal</Button>
+          ) : null}
+          {data.termination ? (
+            <Link
+              to={`/terminations/${data.termination.id}`}
+              className="rounded-sm border border-line bg-surface px-4 py-2 text-[14px] font-bold text-ink"
+            >
+              Settle the deposit
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
       {data.status === 'out_for_signature' ? (
         <Alert tone="info" title="Out for signature" className="mb-4">
           <Link to={`/lease/${data.id}`} className="font-bold text-brand-500">
@@ -67,7 +88,7 @@ export function LeaseDetail() {
             ['Rent', <Ledger key="r" cents={data.monthlyRentCents} className="text-[19px]" />],
             ['Deposit', <Ledger key="d" cents={data.depositCents} className="text-[19px]" />],
             ['Escalation', <span key="e" className="text-[19px] font-extrabold">{data.escalationPct}%</span>],
-            ['Ends', <span key="x" className="text-[15px] font-semibold">{data.endDate}</span>],
+            ['Ends', <span key="x" className="text-[15px] font-semibold">{formatDate(data.endDate)}</span>],
           ].map(([label, value]) => (
             <div key={String(label)}>
               <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">{label}</p>
@@ -91,10 +112,10 @@ export function LeaseDetail() {
         <Card className="mb-4">
           <CardBody className="space-y-3">
             <p className="text-[10.5px] font-bold uppercase tracking-widest text-brand-500">
-              Renewal offered · answer by {data.renewal.respondBy}
+              Renewal offered · answer by {formatDate(data.renewal.respondBy)}
             </p>
             <p className="text-[15px]">
-              {data.renewal.newStartDate} to {data.renewal.newEndDate} at{' '}
+              {formatDate(data.renewal.newStartDate)} to {formatDate(data.renewal.newEndDate)} at{' '}
               <Ledger cents={data.renewal.newRentCents} /> a month.
             </p>
             {data.renewal.depositTopUpCents > 0 ? (
@@ -135,11 +156,11 @@ export function LeaseDetail() {
       ) : null}
 
       {data.termination ? (
-        <Alert tone="warning" title={`Lease ends ${data.termination.effectiveOn}`} className="mb-4">
-          Notice served {data.termination.noticeGivenOn}. The exit inspection must happen in the
+        <Alert tone="warning" title={`Lease ends ${formatDate(data.termination.effectiveOn)}`} className="mb-4">
+          Notice served {formatDate(data.termination.noticeGivenOn)}. The exit inspection must happen in the
           final three days, with both of you there. Skip it and the law treats the place as
           undamaged, so nothing can be deducted.
-          {data.termination.refundDueBy ? ` Refund due by ${data.termination.refundDueBy}.` : ''}
+          {data.termination.refundDueBy ? ` Refund due by ${formatDate(data.termination.refundDueBy)}.` : ''}
         </Alert>
       ) : null}
 
@@ -152,16 +173,14 @@ export function LeaseDetail() {
             </p>
           ) : null}
           {data.invoices.map((invoice) => (
-            <div key={invoice.id} className="flex items-center justify-between border-b border-line-soft pb-2 last:border-0">
-              <div>
+            <div key={invoice.id} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
+              <div className="min-w-0">
                 <p className="text-[14px] font-semibold">{invoice.period}</p>
-                <p className="text-xs text-ink-muted">Due {invoice.dueOn}</p>
+                <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex shrink-0 items-center gap-3">
                 <Ledger cents={invoice.totalCents} className="text-[15px]" />
-                <Badge tone={invoice.status === 'paid' ? 'success' : 'warning'}>
-                  {invoice.status.replace('_', ' ')}
-                </Badge>
+                <Badge tone={status(invoice.status).tone}>{status(invoice.status).label}</Badge>
                 <button
                   type="button"
                   className="text-[13px] font-bold text-brand-500"
@@ -192,7 +211,10 @@ export function LeaseDetail() {
           {data.inspections.map((inspection) => (
             <div key={inspection.id} className="flex items-center justify-between">
               <div>
-                <p className="text-[14px] font-semibold capitalize">{inspection.kind} · {inspection.scheduledFor}</p>
+                <p className="text-[14px] font-semibold">
+                  {inspection.kind === 'incoming' ? 'Move-in' : inspection.kind === 'outgoing' ? 'Move-out' : 'Routine'} ·{' '}
+                  {formatDate(inspection.scheduledFor)}
+                </p>
                 <p className="text-xs text-ink-muted">
                   {inspection.findings} items{inspection.flagged ? `, ${inspection.flagged} flagged` : ''}
                 </p>
@@ -244,24 +266,15 @@ export function LeaseDetail() {
         </CardBody>
       </Card>
 
-      {landlord ? (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setShowPayment(true)}>Record a payment</Button>
-          {!data.renewal && !data.termination ? (
-            <Button variant="outline" onClick={() => setShowRenewal(true)}>Offer a renewal</Button>
-          ) : null}
-          {!data.termination ? (
-            <Button variant="outline" onClick={() => setShowNotice(true)}>Serve notice</Button>
-          ) : null}
-          {data.termination ? (
-            <Link
-              to={`/terminations/${data.termination.id}`}
-              className="rounded-sm bg-brand-500 px-4 py-2.5 text-[14px] font-bold text-ink-inverse"
-            >
-              Settle the deposit
-            </Link>
-          ) : null}
-        </div>
+      {landlord && !data.termination && data.status === 'active' ? (
+        <section className="mt-8 rounded-md border border-line p-4">
+          <p className="text-[14px] font-semibold text-ink">End this lease</p>
+          <p className="mb-3 text-[13px] text-ink-muted">
+            Serving notice starts the end of the tenancy and tells the tenant. Use it when the lease
+            is not being renewed, or the tenancy is ending early.
+          </p>
+          <Button variant="outline" onClick={() => setShowNotice(true)}>Serve notice</Button>
+        </section>
       ) : null}
 
       <Modal open={showPayment} onOpenChange={(next) => setShowPayment(next)} title="Record a payment">
@@ -273,7 +286,7 @@ export function LeaseDetail() {
               { value: '', label: 'Against the deposit' },
               ...open.map((invoice) => ({
                 value: invoice.id,
-                label: `${invoice.period} · outstanding ${((invoice.totalCents - invoice.paidCents) / 100).toFixed(2)}`,
+                label: `${invoice.period}, ${formatZar((invoice.totalCents - invoice.paidCents) / 100)} outstanding`,
               })),
             ]}
           />
@@ -332,7 +345,15 @@ export function LeaseDetail() {
         </div>
       </Modal>
 
-      <Modal open={showNotice} onOpenChange={(next) => setShowNotice(next)} title="Serve notice">
+      <Modal
+        open={showNotice}
+        onOpenChange={(next) => {
+          setShowNotice(next);
+          if (!next) setNoticeConfirmed(false);
+        }}
+        title="Serve notice"
+        description={`This ends ${data.tenant}'s lease of ${data.unit}. The tenant is told straight away.`}
+      >
         <div className="space-y-3">
           <Select
             value={notice.reason}
@@ -348,8 +369,16 @@ export function LeaseDetail() {
             Early cancellation carries 20 business days under the Consumer Protection Act. The
             earliest lawful date is worked out for you and cannot be brought forward.
           </p>
+          <Checkbox
+            id="notice-confirm"
+            checked={noticeConfirmed}
+            onChange={(event) => setNoticeConfirmed(event.target.checked)}
+            label="I understand this starts the end of the tenancy"
+          />
           <Button
             block
+            variant="danger"
+            disabled={!noticeConfirmed}
             onClick={() =>
               run(async () => {
                 await api.post(`/leases/${leaseId}/termination`, {
@@ -358,10 +387,11 @@ export function LeaseDetail() {
                   noticeGivenOn: today(),
                 });
                 setShowNotice(false);
+                setNoticeConfirmed(false);
               }, 'Notice served')
             }
           >
-            Serve it
+            Serve notice
           </Button>
         </div>
       </Modal>
