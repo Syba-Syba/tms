@@ -12,3 +12,10 @@ export function localToday(): string {
     String(now.getDate()).padStart(2, '0'),
   ].join('-');
 }
+
+/** A YYYY-MM-DD date moved by whole days, on the calendar rather than the clock. */
+export function addDays(iso: string, days: number): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  const moved = new Date(Date.UTC(year!, month! - 1, day! + days));
+  return moved.toISOString().slice(0, 10);
+}

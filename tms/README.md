@@ -71,10 +71,17 @@ the default). Times are Johannesburg time:
 | `invoices-run` | 06:00 daily (this month; next month too from the 25th) |
 
 Each daily job also runs once about five seconds after startup, so a machine that was off at
-06:00 catches up. All of them are safe to run twice. To drive them from cron instead, set
-`RUN_JOBS=false` and call one by name:
+06:00 catches up. `interest-run` catches up only on the 1st, so a restart mid-month cannot post
+interest early. A catch-up before a job's own time still lets it run at that time. A job that
+fails is retried after 15 minutes, then 30, 60, and every 2 hours, until it succeeds that day;
+an `interest-run` that fails all day on the 1st needs `npm run jobs -- interest-run` by hand.
+Each finished daily job writes a `job.finished` row to `audit_log`. All of them are safe to run
+twice. To drive them from cron instead, set `RUN_JOBS=false` and call one by name:
 
     npm run jobs -- invoices-run
+
+Cron mode needs Postgres. PGlite is one process against one folder and the server holds it, so
+on `DB_DRIVER=pglite` `npm run jobs` refuses rather than open the live database a second time.
 
 ### Email
 
@@ -217,6 +224,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /auth/login, /auth/register | anyone | local sign-in and tenant sign-up; Cognito's job in production |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
+| POST | /applications/{id}/documents/confirm | tenant | record an application document once its upload has landed |
 | GET | /applications | landlord | queue with rent to income band |
 | POST | /applications/{id}/decision | landlord | approve or decline with a reason |
 | POST | /applications/{id}/lease | landlord | generate the lease, sets it out for signature |
@@ -322,6 +330,11 @@ by a button are downloaded and checked to be real PDFs. They need the API up:
     npm run test:clicks -w tms-app    # in another
 
 The suites build their own fixtures through the API, so they pass in any order and on reruns.
+
+With the self-hosted server on 3001, run them against a development API on another port
+instead; the suite starts one there and stops it afterwards:
+
+    VITE_API_URL=http://localhost:3101 npm run test:clicks -w tms-app
 
 
 ## Audit notes, July 2026

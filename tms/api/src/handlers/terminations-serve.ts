@@ -4,7 +4,8 @@ import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import {
   earliestEffectiveDate,
-  NOTICE_BUSINESS_DAYS,
+  latestEffectiveDate,
+  noticeBusinessDays,
   serveNoticeSchema,
   type TerminationReason,
 } from '../domain/termination';
@@ -35,9 +36,12 @@ export const handler = route(async (event) => {
   const input = parseBody(event, serveNoticeSchema);
   const penaltyCents = input.penaltyCents ?? 0;
 
-  // You may only serve notice as yourself. Mutual needs both, so the landlord records it.
-  if (input.initiatedBy === 'tenant' && !access.isTenant) {
-    throw forbidden('Only the tenant serves the tenant’s notice.');
+  // A tenant serves their own notice in the app. A tenant who gave it on paper or by email
+  // (CPA s14 needs it in writing, not in this app) has it recorded by the landlord, dated the
+  // day it was received. Without that, a tenant cancelling early by letter could not be
+  // entered at all. Mutual needs both, so the landlord records it.
+  if (input.initiatedBy === 'tenant' && !access.isTenant && !access.isLandlord) {
+    throw forbidden('Only the tenant or the landlord records the tenant’s notice.');
   }
   if (input.initiatedBy !== 'tenant' && !access.isLandlord) {
     throw forbidden('Only the landlord records this notice.');
@@ -50,6 +54,13 @@ export const handler = route(async (event) => {
   // A penalty is a landlord's charge under CPA s14. A tenant cannot set one on themselves.
   if (penaltyCents > 0 && !access.isLandlord) {
     throw forbidden('Only the landlord sets a cancellation penalty.');
+  }
+  // CPA s14(3)(b) allows a penalty for cancelling a fixed term early, nothing else. A lease
+  // that runs to term, or ends on a breach, carries none.
+  if (penaltyCents > 0 && input.reason !== 'early_tenant') {
+    throw badRequest('A cancellation penalty only applies when the tenant cancels early.', {
+      penaltyCents: 'Leave it at zero for this reason.',
+    });
   }
 
   const today = sastToday();
@@ -69,15 +80,37 @@ export const handler = route(async (event) => {
     if (!lease) throw badRequest('That lease no longer exists.');
     if (lease.status !== 'active') throw conflict(`This lease is ${lease.status}.`);
 
+    // An accepted renewal takes over from this lease on its start date and moves the tenant
+    // across. A notice here was lost at that handover and the tenant billed under the new
+    // lease, so the two cannot both stand: the notice is refused while the renewal is.
+    const [renewed] = await run<{ start_date: string }>(
+      `select start_date::text from lease where previous_lease_id = $1 and status = 'scheduled'`,
+      [leaseId],
+    );
+    if (renewed) {
+      throw conflict(
+        `A renewal of this lease has been accepted and starts on ${renewed.start_date}, so notice ` +
+          'cannot be served on it. Once the new lease starts, notice is given on that one.',
+      );
+    }
+
+    const notice = dateFromIso(noticeGivenOn);
     const leaseEnd = dateFromIso(lease.end_date);
-    const earliest = earliestEffectiveDate(input.reason, dateFromIso(noticeGivenOn), leaseEnd);
+    const noticeDays = noticeBusinessDays(input.reason, notice, leaseEnd);
+    const earliest = earliestEffectiveDate(input.reason, notice, leaseEnd);
+    const latest = latestEffectiveDate(input.reason, notice, leaseEnd);
     const effective = input.effectiveOn ? dateFromIso(isoDate(input.effectiveOn)) : earliest;
     // The parties may agree a later date than the minimum, never an earlier one.
     if (effective < earliest) {
       throw badRequest(
         `The earliest lawful end date is ${isoDate(earliest)}. ` +
-          `${NOTICE_BUSINESS_DAYS[input.reason]} business days’ notice applies.`,
+          `${noticeDays} business days’ notice applies.`,
       );
+    }
+    // Nor one far off: a notice dated years ahead kept the lease live and the deposit
+    // unsettled until then, and the termination cannot be replaced.
+    if (effective > latest) {
+      throw badRequest(`The latest end date for this notice is ${isoDate(latest)}.`);
     }
     // Nor can a lease end before today: the tenancy that ran until now happened.
     if (isoDate(effective) < today) {
@@ -96,11 +129,15 @@ export const handler = route(async (event) => {
         input.reason,
         noticeGivenOn,
         isoDate(effective),
-        NOTICE_BUSINESS_DAYS[input.reason],
+        noticeDays,
         penaltyCents,
       ],
     );
     if (!termination) throw conflict('Notice has already been served on this lease.');
+
+    // An offer to renew a lease that is ending lapses with the notice; accepting it afterwards
+    // would start a new lease the tenant has just said they are leaving.
+    await run(`update renewal set status = 'lapsed' where lease_id = $1 and status = 'offered'`, [leaseId]);
 
     // Next month's rent may already have been invoiced in full on the 25th.
     const trimmed = await trimInvoicesAfter(run, leaseId, isoDate(effective));
@@ -161,6 +198,7 @@ export const handler = route(async (event) => {
     entity: 'termination',
     entityId: result.id,
     detail: {
+      recordedBy: access.isTenant && !access.isLandlord ? 'tenant' : 'landlord',
       reason: input.reason,
       initiatedBy: input.initiatedBy,
       noticeGivenOn,

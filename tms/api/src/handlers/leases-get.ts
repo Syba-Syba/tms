@@ -62,6 +62,16 @@ export const handler = route(async (event) => {
     [leaseId],
   );
 
+  // The lease that follows this one, once a renewal is accepted. Until both have signed it the
+  // tenancy carries on under this lease, so the page has to say where to sign.
+  const [next] = await query<{ id: string; ref: string; status: string; start_date: string; signatures: string }>(
+    `select n.id, 'LSE-' || lpad(n.ref_no::text, 5, '0') as ref, n.status, n.start_date::text,
+            (select count(*) from lease_signature s where s.lease_id = n.id)::text as signatures
+       from lease n
+      where n.previous_lease_id = $1 and n.status in ('scheduled', 'active')`,
+    [leaseId],
+  );
+
   const signatures = await query<{ party: string; signed_at: string }>(
     'select party, signed_at from lease_signature where lease_id = $1',
     [leaseId],
@@ -125,6 +135,15 @@ export const handler = route(async (event) => {
           newEndDate: renewal.new_end_date,
           newRentCents: Number(renewal.new_rent_cents),
           depositTopUpCents: Number(renewal.deposit_top_up_cents),
+        }
+      : null,
+    renewedBy: next
+      ? {
+          id: next.id,
+          ref: next.ref,
+          status: next.status,
+          startDate: next.start_date,
+          signaturesOnFile: Number(next.signatures),
         }
       : null,
     invoices: invoices.map((row) => ({

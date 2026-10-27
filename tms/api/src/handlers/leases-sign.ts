@@ -8,6 +8,8 @@ import { pngBytesFromDataUrl } from '../lib/images';
 import { logger } from '../lib/logger';
 import { notify } from '../lib/notify';
 import { leaseParties } from '../lib/recipients';
+import { activateScheduledLease } from '../lib/activation';
+import { sastToday } from '../domain/dates';
 
 export const handler = route(async (event) => {
   const leaseId = event.pathParameters?.id;
@@ -18,9 +20,10 @@ export const handler = route(async (event) => {
   assertSigningAs(access, input.party);
   const person = access.person;
 
-  // No OTP is issued anywhere, so there is nothing for the client to have verified. The
-  // signature's evidence is the identity behind the token, the device, the address and the
-  // document hash, which are all recorded below.
+  // No OTP is issued anywhere, so there is nothing for the client to have verified, and a
+  // client-sent otpVerified is ignored: otp_verified is always stored false. The signature's
+  // evidence is the identity behind the token, the device, the address and the document hash,
+  // which are all recorded below.
 
   // Checked before anything is stored, so a signature that is not a PNG is refused now
   // rather than discovered when a report tries to embed it.
@@ -29,12 +32,21 @@ export const handler = route(async (event) => {
   const signatureKey = `leases/${leaseId}/signature-${input.party}.png`;
 
   const outcome = await withTransaction(async (run) => {
-    const [lease] = await run<{ id: string; status: string; unit_id: string; pdf_sha256: string | null }>(
-      'select id, status, unit_id, pdf_sha256 from lease where id = $1 for update',
+    const [lease] = await run<{
+      id: string;
+      status: string;
+      unit_id: string;
+      pdf_sha256: string | null;
+      previous_lease_id: string | null;
+      start_date: string;
+    }>(
+      `select id, status, unit_id, pdf_sha256, previous_lease_id, start_date::text
+         from lease where id = $1 for update`,
       [leaseId],
     );
     if (!lease) throw notFound('Lease');
-    if (lease.status !== 'out_for_signature') {
+    // 'scheduled' is an accepted renewal: signed like any lease, live on its start date.
+    if (lease.status !== 'out_for_signature' && lease.status !== 'scheduled') {
       throw conflict(`This lease is ${lease.status} and cannot be signed.`);
     }
     // The hash ties the signature to the exact document that was on screen. A lease with no
@@ -56,7 +68,7 @@ export const handler = route(async (event) => {
         leaseId,
         input.party,
         signatureKey,
-        input.otpVerified ?? false,
+        false,
         event.requestContext.http.sourceIp,
         event.headers['user-agent'] ?? null,
         input.pdfSha256,
@@ -73,12 +85,19 @@ export const handler = route(async (event) => {
     const count = Number(rows[0]?.count ?? 0);
 
     const fullySigned = count === 2;
-    if (fullySigned) {
+    let status = lease.status;
+    if (fullySigned && lease.status === 'out_for_signature') {
       await run("update lease set status = 'active', activated_at = now() where id = $1", [leaseId]);
       await run("update unit set status = 'occupied' where id = $1", [lease.unit_id]);
+      status = 'active';
+    } else if (fullySigned && lease.start_date <= sastToday()) {
+      // A renewal signed on or after its start date: the old lease has been running month to
+      // month while it waited. It goes live now rather than at tomorrow's job.
+      await activateScheduledLease(run, lease, { sub: person.sub, role: input.party });
+      status = 'active';
     }
 
-    return { fullySigned, signaturesOnFile: count };
+    return { fullySigned, signaturesOnFile: count, status };
   });
 
   await audit({
@@ -109,7 +128,7 @@ export const handler = route(async (event) => {
   }
 
   return json(200, {
-    status: outcome.fullySigned ? 'active' : 'out_for_signature',
+    status: outcome.status,
     signaturesOnFile: outcome.signaturesOnFile,
   });
 });

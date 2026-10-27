@@ -54,14 +54,30 @@ export const handler = route(async (event) => {
     );
 
     // One open application per person per unit. A double tap, or applying again while the
-    // first is still with the landlord, made a second row for the same decision.
+    // first is still with the landlord, made a second row for the same decision. An approved
+    // one counts too until its lease has ended or been cancelled: a second approval sent a
+    // second notice and could never get a lease.
     const [open] = await run<{ id: string }>(
-      `select id from application
-        where applicant_id = $1 and unit_id = $2 and status in ('draft', 'submitted', 'screening')
+      `select a.id from application a
+        where a.applicant_id = $1 and a.unit_id = $2
+          and (a.status in ('draft', 'submitted', 'screening')
+               or (a.status = 'approved' and not exists (
+                     select 1 from lease l
+                      where l.application_id = a.id and l.status in ('terminated', 'cancelled'))))
         limit 1`,
       [applicant!.id, input.unitId],
     );
     if (open) throw conflict('You already have an application open for this unit.');
+
+    // A held unit with a lease being drawn up or signed is spoken for. Only one live lease
+    // is allowed per unit, so approving this application would lead nowhere.
+    const [leased] = await run<{ id: string }>(
+      `select id from lease
+        where unit_id = $1 and status in ('draft', 'out_for_signature', 'active')
+        limit 1`,
+      [input.unitId],
+    );
+    if (leased) throw conflict('That unit already has a lease in progress.');
 
     const [application] = await run<{ id: string; status: string }>(
       `insert into application

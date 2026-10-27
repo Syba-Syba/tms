@@ -62,12 +62,17 @@ export const handler = route(async (event) => {
             -- RHA s5(3): a landlord who never inspects is deemed to accept the unit as it is. A
             -- tenant who was told the date and stayed away does not get that benefit: the
             -- landlord inspects alone, and a report the landlord signed after the date counts.
+            -- Only for an inspection booked before its day (SAST), so the tenant was told: one
+            -- created after the date could otherwise be signed alone to keep deductions.
             exists (select 1 from inspection i
                      where i.lease_id = t.lease_id and i.kind = 'outgoing'
                        and (i.status = 'completed'
                             or (i.scheduled_for < $2::date
+                                and (i.created_at at time zone 'UTC' + interval '2 hours')::date < i.scheduled_for
                                 and exists (select 1 from inspection_signature s
-                                             where s.inspection_id = i.id and s.party = 'landlord')
+                                             where s.inspection_id = i.id and s.party = 'landlord'
+                                               and (s.signed_at at time zone 'UTC' + interval '2 hours')::date
+                                                   >= i.scheduled_for)
                                 and not exists (select 1 from inspection_signature s
                                                  where s.inspection_id = i.id and s.party = 'tenant'))))
               as outgoing_completed
@@ -117,13 +122,22 @@ export const handler = route(async (event) => {
   );
   // Each open invoice less what was paid against it. Netting every payment on the lease
   // against every invoice overstated arrears whenever a paid invoice sat beside an unpaid one.
-  const [outstanding] = await query<{ arrears: string }>(
-    `select coalesce(sum(i.total_cents - coalesce((select sum(p.amount_cents) from payment p
-                                                    where p.invoice_id = i.id), 0)), 0)::text as arrears
-       from invoice i
-      where i.lease_id = $1 and i.status in ('issued', 'part_paid')`,
+  // Rent paid above an invoice's total is a credit: a fully paid month that a notice later
+  // cut short. It first offsets arrears; whatever is left goes back to the tenant.
+  const [outstanding] = await query<{ arrears: string; credit: string }>(
+    `with owing as (
+       select i.status, i.total_cents - coalesce((select sum(p.amount_cents) from payment p
+                                                  where p.invoice_id = i.id), 0) as owed
+         from invoice i
+        where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
+     )
+     select coalesce(sum(owed) filter (where status in ('issued', 'part_paid') and owed > 0), 0)::text as arrears,
+            coalesce(sum(-owed) filter (where owed < 0), 0)::text as credit
+       from owing`,
     [context.lease_id],
   );
+  const grossArrears = Number(outstanding?.arrears ?? 0);
+  const rentCredit = Number(outstanding?.credit ?? 0);
 
   // Anything already paid out or deducted has left the deposit and cannot be refunded twice.
   const alreadyOut = Number(ledger?.already_out ?? 0);
@@ -132,8 +146,9 @@ export const handler = route(async (event) => {
     interestCents: Number(ledger?.interest ?? 0),
     deductionsCents:
       deductions.reduce((sum, row) => sum + Number(row.amount_cents), 0) + alreadyOut,
-    arrearsCents: Math.max(0, Number(outstanding?.arrears ?? 0)),
+    arrearsCents: Math.max(0, grossArrears - rentCredit),
     penaltyCents: Number(context.penalty_cents),
+    rentCreditCents: Math.max(0, rentCredit - grossArrears),
   });
 
   // 14 days runs from restoration, the other two from the lease ending.
@@ -200,6 +215,7 @@ export const handler = route(async (event) => {
     interestCents: summary.interestCents,
     arrearsCents: summary.arrearsCents,
     penaltyCents: summary.penaltyCents,
+    rentCreditCents: summary.rentCreditCents,
     deductions: deductions.map((row) => ({
       description: row.description,
       amountCents: Number(row.amount_cents),
@@ -231,22 +247,53 @@ export const handler = route(async (event) => {
     let remaining = summary.heldCents - alreadyOut;
     const post = async (amount: number, note: string) => {
       const posted = Math.min(amount, Math.max(0, remaining));
-      if (posted <= 0) return;
+      if (posted <= 0) return 0;
       await run(
         `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
          values ($1, 'deduction', $2, $3)`,
         [context.lease_id, posted, note],
       );
       remaining -= posted;
+      return posted;
     };
     for (const deduction of deductions) await post(Number(deduction.amount_cents), deduction.description);
-    if (summary.arrearsCents > 0) await post(summary.arrearsCents, 'Rent arrears');
+    if (summary.arrearsCents > 0) {
+      // What came off the deposit for arrears pays the open invoices, oldest first. Left open,
+      // the statement still showed the tenant owing rent the deposit had already covered.
+      let applied = await post(summary.arrearsCents, 'Rent arrears');
+      const open = await run<{ id: string; owing: string }>(
+        `select i.id, (i.total_cents - coalesce((select sum(p.amount_cents) from payment p
+                                                  where p.invoice_id = i.id), 0))::text as owing
+           from invoice i
+          where i.lease_id = $1 and i.status in ('issued', 'part_paid')
+          order by i.due_on, i.period_start
+          for update`,
+        [context.lease_id],
+      );
+      for (const invoice of open) {
+        const amount = Math.min(applied, Number(invoice.owing));
+        if (amount <= 0) continue;
+        await run(
+          `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+           values ($1, $2, $3, 'deposit', 'From the deposit at settlement', $4, $5)`,
+          [context.lease_id, invoice.id, amount, today, access.person.sub],
+        );
+        await run('update invoice set status = $2 where id = $1', [
+          invoice.id,
+          amount === Number(invoice.owing) ? 'paid' : 'part_paid',
+        ]);
+        applied -= amount;
+      }
+    }
     if (summary.penaltyCents > 0) await post(summary.penaltyCents, 'Cancellation penalty');
-    if (summary.refundCents > 0) {
+    // Only the deposit's share of the refund leaves the deposit; a rent credit is the
+    // landlord's own money, so it is on the statement but not in the ledger.
+    const fromDeposit = Math.min(summary.refundCents, Math.max(0, remaining));
+    if (fromDeposit > 0) {
       await run(
         `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
          values ($1, 'refund', $2, $3)`,
-        [context.lease_id, summary.refundCents, input.refundReference ?? 'Refund on termination'],
+        [context.lease_id, fromDeposit, input.refundReference ?? 'Refund on termination'],
       );
     }
 

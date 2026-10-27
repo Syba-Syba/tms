@@ -19,6 +19,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, type ApplicationSummary, humanError } from '../api/client';
 import { QueryError } from '../components/query-state';
+import { createAndRender } from '../lib/uploads';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
@@ -96,15 +97,28 @@ export function LandlordQueue() {
   const generateLease = async (item: ApplicationSummary) => {
     setGenerating(item.id);
     try {
-      const lease = await api.post<{ id: string }>(`/applications/${item.id}/lease`, {
-        startDate: terms.startDate,
-        months: Number(terms.months),
-        escalationPct: Number(terms.escalationPct),
-      });
-      await api.post(`/leases/${lease.id}/render`, {});
-      toast.show({ title: 'Lease generated', description: 'Sign it, then the tenant does.', tone: 'success' });
+      const result = await createAndRender(
+        () =>
+          api.post<{ id: string }>(`/applications/${item.id}/lease`, {
+            startDate: terms.startDate,
+            months: Number(terms.months),
+            escalationPct: Number(terms.escalationPct),
+          }),
+        (leaseId) => api.post(`/leases/${leaseId}/render`, {}),
+      );
+      // The lease exists either way, so the row now offers "Continue signing".
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      if (result.rendered) {
+        toast.show({ title: 'Lease generated', description: 'Sign it, then the tenant does.', tone: 'success' });
+      } else {
+        toast.show({
+          title: 'Lease created, document not generated',
+          description: `${humanError(result.renderError)} Generate it from the lease.`,
+          tone: 'warning',
+        });
+      }
       setGeneratingFor(null);
-      navigate(`/lease/${lease.id}`);
+      navigate(`/lease/${result.leaseId}`);
     } catch (error) {
       toast.show({ title: 'Lease not generated', description: humanError(error), tone: 'danger' });
     } finally {

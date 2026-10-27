@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route } from 'react-router';
-import { call, daysFromNow, mount, signInAs } from './harness';
+import { API, call, daysFromNow, mount, signInAs } from './harness';
 import { copied } from './setup';
 import { Properties } from '../screens/properties';
 import { ApplyStart } from '../screens/apply-start';
@@ -106,14 +106,14 @@ describe('applying and processing the queue', () => {
     unitId = unit.id;
     // A fixed identity so the next suite can sign in as the same person.
     applicantEmail = 'queue-applicant@example.co.za';
-    const register = await fetch('http://localhost:3001/auth/register', {
+    const register = await fetch(`${API}/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Queue Applicant', email: applicantEmail, password: 'a-long-password' }),
     });
     const session = register.ok
       ? await register.json()
-      : await fetch('http://localhost:3001/auth/login', {
+      : await fetch(`${API}/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email: applicantEmail, password: 'a-long-password' }),

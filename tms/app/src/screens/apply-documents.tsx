@@ -34,11 +34,13 @@ export function ApplyDocuments() {
     setState((current) => ({ ...current, [kind]: 'uploading' }));
 
     try {
-      const { uploadUrl } = await api.post<{ uploadUrl: string }>(
+      const { uploadUrl, key } = await api.post<{ uploadUrl: string; key: string }>(
         `/applications/${applicationId}/documents/presign`,
         { kind, contentType: photo.contentType, sizeBytes: photo.blob.size },
       );
       await putFile(uploadUrl, photo.blob, photo.contentType);
+      // Only a confirmed upload is on file for the landlord, and it replaces any earlier one.
+      await api.post(`/applications/${applicationId}/documents/confirm`, { key });
       setState((current) => ({ ...current, [kind]: 'synced' }));
     } catch (error) {
       setState((current) => ({ ...current, [kind]: 'failed' }));

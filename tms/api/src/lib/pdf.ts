@@ -241,6 +241,24 @@ export interface InspectionPhoto {
   type: 'jpg' | 'png';
 }
 
+/**
+ * A photo whose header says JPEG or PNG can still be truncated or corrupt, and pdf-lib throws
+ * on it. One bad photo used to fail every render and seal of its inspection, for good, so it
+ * is left out here instead (and refused at upload, see isEmbeddableImage).
+ */
+async function embedPhoto(doc: PDFDocument, photo: InspectionPhoto) {
+  try {
+    return photo.type === 'png' ? await doc.embedPng(photo.bytes) : await doc.embedJpg(photo.bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Whether pdf-lib can embed these bytes as the given type. Checked when an upload is confirmed. */
+export async function isEmbeddableImage(bytes: Uint8Array, type: 'jpg' | 'png') {
+  return (await embedPhoto(await PDFDocument.create(), { bytes, type })) !== null;
+}
+
 export interface InspectionData {
   ref: string;
   kind: 'incoming' | 'outgoing';
@@ -300,8 +318,10 @@ export async function renderInspectionPdf(input: InspectionData) {
         const rowPhotos = finding.photos.slice(start, start + 3);
         const embedded = [];
         for (const photo of rowPhotos) {
-          embedded.push(photo.type === 'png' ? await ctx.doc.embedPng(photo.bytes) : await ctx.doc.embedJpg(photo.bytes));
+          const image = await embedPhoto(ctx.doc, photo);
+          if (image) embedded.push(image);
         }
+        if (embedded.length === 0) continue;
         const sized = embedded.map((image) => {
           const scale = Math.min(thumbWidth / image.width, 130 / image.height);
           return { image, w: image.width * scale, h: image.height * scale };
@@ -415,6 +435,8 @@ export interface ExitStatementData {
   interestCents: number;
   arrearsCents: number;
   penaltyCents: number;
+  /** Rent paid for days after the lease ended, owed back to the tenant. */
+  rentCreditCents?: number;
   deductions: { description: string; amountCents: number; backedBy?: string | null }[];
   refundCents: number;
   tenantOwesCents: number;
@@ -459,9 +481,8 @@ async function drawComparison(ctx: Ctx, row: ComparisonRow) {
       color: flag ? rgb(0.7, 0.28, 0.24) : MUTED,
     });
 
-    if (photo) {
-      const image =
-        photo.type === 'png' ? await ctx.doc.embedPng(photo.bytes) : await ctx.doc.embedJpg(photo.bytes);
+    const image = photo ? await embedPhoto(ctx.doc, photo) : null;
+    if (image) {
       const scale = Math.min(width_ / image.width, height / image.height);
       ctx.page.drawImage(image, {
         x,
@@ -506,6 +527,7 @@ export async function renderExitStatementPdf(input: ExitStatementData) {
   pair(ctx, 'Deposit', zar(data.depositCents));
   pair(ctx, 'Interest earned', zar(data.interestCents));
   pair(ctx, 'Held in total', zar(data.depositCents + data.interestCents));
+  if (data.rentCreditCents) pair(ctx, 'Rent paid in advance', zar(data.rentCreditCents));
   ctx.y -= 4;
 
   text(ctx, 'What is claimed', { bold: true, size: 12, gap: 8 });

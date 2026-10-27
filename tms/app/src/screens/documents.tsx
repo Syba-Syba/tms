@@ -3,6 +3,7 @@ import { Badge, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/t
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
 import { QueryState } from '../components/query-state';
+import { currentLease } from '../lib/leases';
 import { useOpenDocument } from '../lib/open-document';
 
 interface Lease {
@@ -19,9 +20,10 @@ export function Documents() {
   const openDocument = useOpenDocument();
   const list = useQuery({
     queryKey: ['leases'],
-    queryFn: () => api.get<{ items: { id: string }[] }>('/leases'),
+    queryFn: () => api.get<{ items: { id: string; status: string }[] }>('/leases'),
   });
-  const leaseId = list.data?.items[0]?.id;
+  // The current tenancy's documents, not an accepted renewal's that has not started yet.
+  const leaseId = currentLease(list.data?.items ?? [])?.id;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],

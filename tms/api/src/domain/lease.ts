@@ -10,9 +10,9 @@ export const generateLeaseSchema = z.object({
 export const signLeaseSchema = z.object({
   party: z.enum(['tenant', 'landlord']),
   signatureBase64: z.string().min(100, 'Signature image is missing.'),
-  // Kept for the column it is stored in. No PIN is issued anywhere, so the server never
-  // required it to be true; the client used to assert it anyway, which proved nothing.
-  otpVerified: z.boolean().optional().default(false),
+  // Tolerated so older clients still validate, never stored: no PIN is issued anywhere, so a
+  // client asserting it proved nothing. lease_signature.otp_verified is always false.
+  otpVerified: z.boolean().optional(),
   pdfSha256: z.string().length(64),
 });
 

@@ -4,7 +4,7 @@ import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import { offerRenewalSchema, renewalTerms } from '../domain/renewal';
 import { rentForPeriod, zar } from '../domain/money';
-import { dateFromIso } from '../domain/dates';
+import { dateFromIso, sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
 
 export const handler = route(async (event) => {
@@ -55,7 +55,8 @@ export const handler = route(async (event) => {
       escalationPct: escalation,
       termMonths: input.termMonths,
       depositHeldCents: Number(held?.balance ?? 0),
-      offeredOn: new Date(),
+      // The South African date, so an offer made just after midnight is not dated yesterday.
+      offeredOn: dateFromIso(sastToday()),
       respondDays: input.respondDays,
     });
     // A landlord may name a figure instead of taking the escalation, but the deposit has to

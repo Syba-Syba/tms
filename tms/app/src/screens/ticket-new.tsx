@@ -6,6 +6,7 @@ import { TextField } from '@hlonie/toolbox/forms';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
 import { pickPhoto, putFile, type PickedPhoto } from '../lib/photos';
+import { uploadPending } from '../lib/uploads';
 
 const CATEGORIES = [
   { value: 'plumbing', label: 'Plumbing' },
@@ -42,7 +43,45 @@ export function TicketNew() {
     }
   };
 
+  // Set once the report is in. A photo that failed stays here to retry: the ticket screen
+  // cannot add photos, so leaving would lose it.
+  const [ticketId, setTicketId] = useState<string | null>(null);
+
+  const uploadPhotos = async (id: string) =>
+    uploadPending(
+      photos,
+      async (entry) => {
+        const { uploadUrl, photoId } = await api.post<{ uploadUrl: string; photoId: string }>(
+          `/tickets/${id}/photos/presign`,
+          { phase: 'report', contentType: entry.photo.contentType, sizeBytes: entry.photo.blob.size },
+        );
+        await putFile(uploadUrl, entry.photo.blob, entry.photo.contentType);
+        await api.post('/photos/confirm', { scope: 'ticket', photoId });
+      },
+      (index, state) => setPhotos((current) => current.map((p, i) => (i === index ? { ...p, state } : p))),
+    );
+
+  const finish = (id: string, failed: number) => {
+    queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    queryClient.invalidateQueries({ queryKey: ['leases'] });
+    if (failed) {
+      setTicketId(id);
+      toast.show({
+        title: 'Reported',
+        description: `${failed} photo${failed === 1 ? '' : 's'} did not upload. Retry here, or finish without ${failed === 1 ? 'it' : 'them'}.`,
+        tone: 'warning',
+      });
+      return;
+    }
+    toast.show({ title: ticketId ? 'Photos added' : 'Reported', description: SLA_COPY[severity], tone: 'success' });
+    navigate(-1);
+  };
+
   const submit = handleSubmit(async (values) => {
+    if (ticketId) {
+      finish(ticketId, await uploadPhotos(ticketId));
+      return;
+    }
     try {
       const ticket = await api.post<{ id: string }>(`/leases/${leaseId}/tickets`, {
         category,
@@ -50,34 +89,7 @@ export function TicketNew() {
         ...values,
       });
       // Photos upload after creation so a dropped connection never loses the written report.
-      let failed = 0;
-      for (const [index, entry] of photos.entries()) {
-        const mark = (state: UploadState) =>
-          setPhotos((current) => current.map((p, i) => (i === index ? { ...p, state } : p)));
-        try {
-          mark('uploading');
-          const { uploadUrl, photoId } = await api.post<{ uploadUrl: string; photoId: string }>(
-            `/tickets/${ticket.id}/photos/presign`,
-            { phase: 'report', contentType: entry.photo.contentType, sizeBytes: entry.photo.blob.size },
-          );
-          await putFile(uploadUrl, entry.photo.blob, entry.photo.contentType);
-          await api.post('/photos/confirm', { scope: 'ticket', photoId });
-          mark('synced');
-        } catch {
-          failed += 1;
-          mark('failed');
-        }
-      }
-      queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      queryClient.invalidateQueries({ queryKey: ['leases'] });
-      toast.show({
-        title: 'Reported',
-        description: failed
-          ? `${SLA_COPY[severity]} ${failed} photo${failed === 1 ? '' : 's'} did not upload; add them from the ticket.`
-          : SLA_COPY[severity],
-        tone: failed ? 'warning' : 'success',
-      });
-      navigate(-1);
+      finish(ticket.id, await uploadPhotos(ticket.id));
     } catch (error) {
       toast.show({ title: 'Not sent', description: humanError(error), tone: 'danger' });
     }
@@ -129,8 +141,13 @@ export function TicketNew() {
             </Button>
           </div>
           <Button block loading={formState.isSubmitting} onClick={submit}>
-            Send report
+            {ticketId ? 'Retry photos' : 'Send report'}
           </Button>
+          {ticketId ? (
+            <Button block variant="outline" disabled={formState.isSubmitting} onClick={() => navigate(-1)}>
+              Finish without them
+            </Button>
+          ) : null}
         </CardBody>
       </Card>
     </main>

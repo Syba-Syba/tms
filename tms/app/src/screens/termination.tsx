@@ -150,6 +150,9 @@ export function Termination() {
               {settled.arrearsCents > 0 ? (
                 <p className="text-danger">Less arrears <Ledger cents={settled.arrearsCents} /></p>
               ) : null}
+              {settled.penaltyCents > 0 ? (
+                <p className="text-danger">Less cancellation penalty <Ledger cents={settled.penaltyCents} /></p>
+              ) : null}
             </div>
             <Alert tone="info" title={`Payable by ${settled.refundDueBy}`}>
               {RULE_COPY[settled.refundRule]}

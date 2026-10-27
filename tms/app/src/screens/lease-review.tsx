@@ -56,7 +56,23 @@ export function LeaseReview() {
   const party: 'tenant' | 'landlord' = data.viewer.isLandlord ? 'landlord' : 'tenant';
   const signedParties = data.signatures.map((signature) => signature.party);
   const iHaveSigned = signedParties.includes(party);
-  const canSign = data.status === 'out_for_signature' && !iHaveSigned && data.hasDocument;
+  // 'scheduled' is an accepted renewal, signed the same way before it starts.
+  const signable = data.status === 'out_for_signature' || data.status === 'scheduled';
+  const canSign = signable && !iHaveSigned && data.hasDocument;
+  const isRenewal = data.status === 'scheduled';
+
+  const generate = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/leases/${leaseId}/render`, {});
+      toast.show({ title: 'Lease document ready', tone: 'success' });
+      refetch();
+    } catch (error) {
+      toast.show({ title: 'Could not generate it', description: humanError(error), tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const sign = async () => {
     if (padRef.current?.isEmpty()) {
@@ -84,7 +100,7 @@ export function LeaseReview() {
     }
   };
 
-  const stepIndex = data.status === 'active' ? 4 : 2 + signedParties.length;
+  const stepIndex = data.status === 'active' || (isRenewal && signedParties.length === 2) ? 4 : 2 + signedParties.length;
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
@@ -115,7 +131,11 @@ export function LeaseReview() {
             </Button>
           ) : (
             <Alert tone="info" title="Document not rendered yet">
-              The landlord generates the PDF from the Applications screen before anyone signs.
+              {data.viewer.isLandlord && signable ? (
+                <Button size="sm" loading={busy} onClick={generate}>Generate the document</Button>
+              ) : (
+                'The landlord generates the PDF before anyone signs.'
+              )}
             </Alert>
           )}
         </CardBody>
@@ -126,7 +146,7 @@ export function LeaseReview() {
           <Stepper
             current={stepIndex}
             steps={[
-              { title: 'Application approved' },
+              { title: isRenewal ? 'Renewal accepted' : 'Application approved' },
               { title: 'Lease generated' },
               {
                 title: 'Landlord signature',
@@ -136,7 +156,9 @@ export function LeaseReview() {
                 title: 'Tenant signature',
                 detail: signedParties.includes('tenant') ? 'On file' : undefined,
               },
-              { title: 'Lease active', detail: 'Deposit due within 7 days' },
+              isRenewal
+                ? { title: `Starts ${data.startDate}`, detail: 'Takes over from the current lease' }
+                : { title: 'Lease active', detail: 'Deposit due within 7 days' },
             ]}
           />
         </CardBody>
@@ -149,7 +171,13 @@ export function LeaseReview() {
         </Alert>
       ) : null}
 
-      {iHaveSigned && data.status === 'out_for_signature' ? (
+      {isRenewal && signedParties.length === 2 ? (
+        <Alert tone="success" title={`Signed · starts ${data.startDate}`}>
+          Both signatures are on file. The new lease takes over from the current one on its start date.
+        </Alert>
+      ) : null}
+
+      {iHaveSigned && signable && signedParties.length < 2 ? (
         <Alert tone="info" title="Your signature is on file">
           Waiting on the {party === 'tenant' ? 'landlord' : 'tenant'} to sign.
         </Alert>

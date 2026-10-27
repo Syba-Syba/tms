@@ -72,7 +72,7 @@ export async function setup() {
     // vitest sets NODE_ENV=test, and Node's --env-file will not override a variable that is
     // already set, so the API would inherit `test` and refuse to start. The local drivers it
     // uses (pglite, local storage, local KMS) all require development on purpose.
-    env: { ...process.env, NODE_ENV: 'development' },
+    env: { ...process.env, NODE_ENV: 'development', PORT: new URL(API_URL).port || '3001' },
   });
 
   // Kept so a startup failure reports why instead of only timing out.

@@ -6,6 +6,7 @@ import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/h
 import { ROOM_TEMPLATE, createInspectionSchema, outgoingWindow } from '../domain/inspection';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
+import { isoDate, sastToday } from '../domain/dates';
 
 export const handler = route(async (event) => {
   const leaseId = event.pathParameters?.id;
@@ -37,6 +38,12 @@ export const handler = route(async (event) => {
 
     // The outgoing inspection is only valid in the statutory 3 day window before the tenancy ends.
     if (input.kind === 'outgoing') {
+      // Booked ahead, so the tenant can be there. One "scheduled" after the day had passed
+      // let a landlord sign it alone and keep deductions the law forfeits when nobody inspects.
+      const today = sastToday();
+      if (isoDate(input.scheduledFor) < today) {
+        throw badRequest(`An outgoing inspection cannot be booked in the past. Pick a day from ${today}.`);
+      }
       const window = outgoingWindow(new Date(`${lease.last_day}T00:00:00Z`));
       if (input.scheduledFor < window.opens || input.scheduledFor > window.closes) {
         throw badRequest(

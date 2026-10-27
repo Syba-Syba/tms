@@ -2,6 +2,7 @@ import { query } from '../lib/db';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { jobLogger } from '../lib/logger';
+import { sastToday } from '../domain/dates';
 
 const log = jobLogger('notifications-sweep');
 
@@ -14,8 +15,12 @@ const days = (from: string, to: Date) =>
  * in a day is harmless.
  */
 export const handler = async () => {
+  // The South African day, not UTC or the database's zone: between midnight and 02:00 SAST
+  // those still say yesterday, and the reminders would go out a day late.
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const today = sastToday();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`Bad date ${today}`);
+  const sqlToday = `'${today}'::date`;
   const counts = { overdueRent: 0, slaSoon: 0, slaBreached: 0, inspections: 0, refunds: 0,
                    leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
 
@@ -36,8 +41,8 @@ export const handler = async () => {
        join unit u on u.id = l.unit_id
        join property pr on pr.id = u.property_id
       where i.status in ('issued', 'part_paid')
-        and i.due_on < current_date
-        and (current_date - i.due_on) % 7 = 3`,
+        and i.due_on < ${sqlToday}
+        and (${sqlToday} - i.due_on) % 7 = 3`,
   );
   for (const row of overdue) {
     if (Number(row.outstanding) <= 0) continue;
@@ -110,7 +115,7 @@ export const handler = async () => {
        join unit u on u.id = l.unit_id
        join property pr on pr.id = u.property_id
        join landlord ll on ll.id = pr.landlord_id
-      where i.status = 'in_progress' and i.scheduled_for = current_date + 1`,
+      where i.status = 'in_progress' and i.scheduled_for = ${sqlToday} + 1`,
   );
   for (const row of inspections) {
     const data = {
@@ -156,7 +161,7 @@ export const handler = async () => {
        join landlord ll on ll.id = pr.landlord_id
       where t.status = 'settled'
         and t.refund_due_by is not null
-        and t.refund_due_by between current_date and current_date + 3
+        and t.refund_due_by between ${sqlToday} and ${sqlToday} + 3
         and ll.cognito_sub is not null`,
   );
   for (const row of refunds) {
@@ -188,7 +193,7 @@ export const handler = async () => {
        join landlord ll on ll.id = pr.landlord_id
        left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
       where l.status = 'active' and t.id is null
-        and l.end_date in (current_date + 60, current_date + 30, current_date + 7)
+        and l.end_date in (${sqlToday} + 60, ${sqlToday} + 30, ${sqlToday} + 7)
         and ll.cognito_sub is not null`,
   );
   for (const row of ending) {
@@ -218,7 +223,7 @@ export const handler = async () => {
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id
        join property pr on pr.id = u.property_id
-      where r.status = 'offered' and r.respond_by between current_date and current_date + 3`,
+      where r.status = 'offered' and r.respond_by between ${sqlToday} and ${sqlToday} + 3`,
   );
   for (const offer of openOffers) {
     if (!offer.sub) continue;
@@ -240,7 +245,7 @@ export const handler = async () => {
   // An offer nobody answered stops being an offer. Leaving it open would block the next one.
   const lapsed = await query<{ id: string }>(
     `update renewal set status = 'lapsed'
-      where status = 'offered' and respond_by < current_date returning id`,
+      where status = 'offered' and respond_by < ${sqlToday} returning id`,
   );
   counts.renewalsLapsed = lapsed.length;
 

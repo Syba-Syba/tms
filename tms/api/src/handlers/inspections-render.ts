@@ -1,5 +1,6 @@
 import { requireLeaseAccessVia } from '../lib/access';
-import { query } from '../lib/db';
+import { randomUUID } from 'node:crypto';
+import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, json, route } from '../lib/http';
 import { renderInspectionPdf } from '../lib/pdf';
 import { storage } from '../lib/storage';
@@ -43,6 +44,21 @@ export const handler = route(async (event) => {
     throw conflict(`This inspection is ${inspection!.status}.`);
   }
 
+  // The render is claimed before the findings are read: the draft key is set to this render's
+  // own key and the old fingerprint withdrawn. A findings save or photo confirm clears the key,
+  // and a later render replaces it, so the fingerprint is stored below only if neither
+  // happened. Before, a save in between was missing from a draft that was then signed.
+  const key = `inspections/${inspectionId}/draft-${randomUUID()}.pdf`;
+  await withTransaction(async (run) => {
+    const [row] = await run<{ status: string }>('select status from inspection where id = $1 for update', [
+      inspectionId,
+    ]);
+    if (!['in_progress', 'awaiting_signatures'].includes(row!.status)) {
+      throw conflict(`This inspection is ${row!.status}.`);
+    }
+    await run('update inspection set draft_s3_key = $2, draft_sha256 = null where id = $1', [inspectionId, key]);
+  });
+
   const { findings, photosOmitted } = await collectReportFindings(inspectionId);
   const rendered = await renderInspectionPdf({
     ref: inspection!.ref,
@@ -55,13 +71,16 @@ export const handler = route(async (event) => {
     draft: true,
   });
 
-  const key = `inspections/${inspectionId}/draft.pdf`;
   await storage().put(key, rendered.bytes, 'application/pdf');
-  await query('update inspection set draft_s3_key = $2, draft_sha256 = $3 where id = $1', [
-    inspectionId,
-    key,
-    rendered.sha256,
-  ]);
+  const stored = await query<{ id: string }>(
+    `update inspection set draft_sha256 = $3
+      where id = $1 and draft_s3_key = $2 and status in ('in_progress', 'awaiting_signatures')
+      returning id`,
+    [inspectionId, key, rendered.sha256],
+  );
+  if (stored.length === 0) {
+    throw conflict('The inspection changed while the report was rendering. Render it again.');
+  }
 
   return json(200, { key, sha256: rendered.sha256 });
 });

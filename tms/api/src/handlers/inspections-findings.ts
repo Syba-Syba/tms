@@ -1,4 +1,5 @@
 import { requireLeaseAccessVia } from '../lib/access';
+import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { upsertFindingsSchema } from '../domain/inspection';
@@ -6,7 +7,7 @@ import { upsertFindingsSchema } from '../domain/inspection';
 export const handler = route(async (event) => {
   const inspectionId = event.pathParameters?.id;
   if (!inspectionId) throw badRequest('An inspection id is required.');
-  await requireLeaseAccessVia(
+  const access = await requireLeaseAccessVia(
     event,
     'select lease_id from inspection where id = $1',
     [inspectionId],
@@ -39,6 +40,18 @@ export const handler = route(async (event) => {
     await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [
       inspectionId,
     ]);
+    // A finding is the evidence a deposit deduction rests on, so who recorded what goes on file.
+    await audit(
+      {
+        actorSub: access.person.sub,
+        actorRole: access.isLandlord ? 'landlord' : 'tenant',
+        action: 'inspection.findings_saved',
+        entity: 'inspection',
+        entityId: inspectionId,
+        detail: { findings: input.findings },
+      },
+      run,
+    );
     return { saved: input.findings.length };
   });
 

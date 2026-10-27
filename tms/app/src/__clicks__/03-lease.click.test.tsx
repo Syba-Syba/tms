@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route } from 'react-router';
-import { call, ensureLease, mount, signInAs } from './harness';
+import { API, call, ensureLease, mount, signInAs } from './harness';
 import { openedUrls } from './setup';
 import { LeaseReview } from '../screens/lease-review';
 import { LeaseDetail } from '../screens/lease-detail';
@@ -14,7 +14,7 @@ let leaseId: string;
 const APPLICANT = 'queue-applicant@example.co.za';
 
 const signInApplicant = async () => {
-  const session = await fetch('http://localhost:3001/auth/login', {
+  const session = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: APPLICANT, password: 'a-long-password' }),

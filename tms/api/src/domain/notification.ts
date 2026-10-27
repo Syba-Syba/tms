@@ -183,8 +183,8 @@ export const TEMPLATES: Record<string, Template> = {
     urgent: false,
     subject: (d) => `${d('tenant')} is staying at ${d('unit')}`,
     body: (d) =>
-      `${d('tenant')} accepted the renewal. The new lease starts ${d('startDate')}.\n\n` +
-      `Deposit top-up owed: ${d('topUp')}.`,
+      `${d('tenant')} accepted the renewal. The new lease starts ${d('startDate')} once you have both ` +
+      `signed it: open it in the app to sign.\n\nDeposit top-up owed: ${d('topUp')}.`,
   },
   renewal_declined: {
     category: 'lease',

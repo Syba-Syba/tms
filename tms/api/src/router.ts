@@ -19,6 +19,7 @@ import { handler as units_delete } from './handlers/units-delete';
 import { handler as units_update } from './handlers/units-update';
 import { handler as applications_decide } from './handlers/applications-decide';
 import { handler as applications_list } from './handlers/applications-list';
+import { handler as documents_confirm } from './handlers/documents-confirm';
 import { handler as documents_presign } from './handlers/documents-presign';
 import { handler as inspections_create } from './handlers/inspections-create';
 import { handler as inspections_findings } from './handlers/inspections-findings';
@@ -72,6 +73,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/applications', applications_list],
   ['POST', '/applications/{id}/decision', applications_decide],
   ['POST', '/applications/{id}/documents/presign', documents_presign],
+  ['POST', '/applications/{id}/documents/confirm', documents_confirm],
   ['POST', '/applications/{id}/lease', leases_generate],
   ['POST', '/leases/{id}/signature', leases_sign],
   ['POST', '/leases/{id}/render', leases_render],

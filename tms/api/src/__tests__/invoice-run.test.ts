@@ -1,41 +1,61 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PGlite } from '@electric-sql/pglite';
-import { freshDb } from './helpers/db';
-import { seedLease, type Seeded } from './helpers/seed';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-let db: PGlite;
-let seeded: Seeded;
+const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
+const LEASE = '66666666-6666-6666-6666-666666666666';
+
+/** The scheduled invoice run itself, against a real Postgres (PGlite), rather than a copy of
+    its query that drifted from the handler and kept passing. */
+let db: typeof import('../lib/db');
+let run: typeof import('../handlers/invoices-run').handler;
 
 beforeAll(async () => {
-  db = await freshDb();
-  seeded = await seedLease(db);
-}, 60_000);
+  process.env.DB_DRIVER = 'pglite';
+  process.env.PGLITE_DIR = `memory://invoice-run-${Date.now()}`;
+  process.env.NODE_ENV = 'development';
+  process.env.STORAGE_DRIVER = 'local';
+  process.env.STORAGE_DIR = mkdtempSync(join(tmpdir(), 'tms-storage-'));
+  process.env.KMS_DRIVER = 'local';
 
-afterAll(async () => db?.close());
+  db = await import('../lib/db');
+  const read = (name: string) => readFileSync(join(MIGRATIONS, name), 'utf8');
+  const all = readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql')).sort();
+  for (const file of all.filter((n) => !n.includes('seed'))) await db.execScript(read(file));
+  for (const file of all.filter((n) => n.includes('seed'))) await db.execScript(read(file));
+  // Fixed dates, so the months below mean the same thing whenever this runs.
+  await db.query(`update lease set start_date = '2026-09-01', end_date = '2027-08-31' where id = $1`, [LEASE]);
+  ({ handler: run } = await import('../handlers/invoices-run'));
+}, 120_000);
 
-/** The exact selection the scheduled invoice run makes. */
-const dueLeases = async (period: string) => {
-  const { rows } = await db.query<{ id: string }>(
-    `select l.id
-       from lease l
-       join unit u on u.id = l.unit_id
-       left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
-      where l.status = 'active'
-        and l.start_date <= $1
-        and least(l.end_date, coalesce(t.effective_on, l.end_date)) >= $1`,
-    [period],
+const billed = async (period: string) =>
+  db.query<{ total_cents: string }>(
+    'select total_cents::text from invoice where lease_id = $1 and period_start = $2',
+    [LEASE, period],
   );
-  return rows.length;
-};
 
 describe('monthly invoice run', () => {
   it('bills an active lease', async () => {
-    expect(await dueLeases('2026-10-01')).toBe(1);
+    expect(await run({ periods: ['2026-10-01'] })).toEqual({ issued: 1 });
+    expect(await billed('2026-10-01')).toEqual([{ total_cents: '850000' }]);
   });
 
-  it('does not bill before the lease starts or after it ends', async () => {
-    expect(await dueLeases('2026-08-01')).toBe(0);
-    expect(await dueLeases('2027-09-01')).toBe(0);
+  it('bills a month once however often it runs', async () => {
+    expect(await run({ periods: ['2026-10-01'] })).toEqual({ issued: 0 });
+    expect(await billed('2026-10-01')).toHaveLength(1);
+  });
+
+  it('does not bill before the lease starts', async () => {
+    await run({ periods: ['2026-08-01'] });
+    expect(await billed('2026-08-01')).toHaveLength(0);
+  });
+
+  it('keeps billing a tenant holding over past the end date with no notice and no renewal', async () => {
+    // RHA s5(5): the lease continues month to month on the same terms.
+    await run({ periods: ['2027-09-01'] });
+    expect(await billed('2027-09-01')).toHaveLength(1);
   });
 
   it('stops billing once a termination has taken effect', async () => {
@@ -43,15 +63,17 @@ describe('monthly invoice run', () => {
     // leaves. Without this the run bills empty months and they land back on the deposit.
     await db.query(
       `insert into termination (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days)
-       values ($1, 'tenant', 'early_tenant', '2026-08-20', '2026-09-30', 20)`,
-      [seeded.leaseId],
+       values ($1, 'tenant', 'early_tenant', '2026-10-20', '2026-11-30', 20)`,
+      [LEASE],
     );
-    expect(await dueLeases('2026-09-01')).toBe(1);
-    expect(await dueLeases('2026-10-01')).toBe(0);
+    await run({ periods: ['2026-11-01', '2026-12-01'] });
+    expect(await billed('2026-11-01')).toHaveLength(1);
+    expect(await billed('2026-12-01')).toHaveLength(0);
   });
 
   it('bills again if the notice is withdrawn', async () => {
-    await db.query(`update termination set status = 'withdrawn' where lease_id = $1`, [seeded.leaseId]);
-    expect(await dueLeases('2026-10-01')).toBe(1);
+    await db.query(`update termination set status = 'withdrawn' where lease_id = $1`, [LEASE]);
+    await run({ periods: ['2026-12-01'] });
+    expect(await billed('2026-12-01')).toHaveLength(1);
   });
 });

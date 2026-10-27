@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { Route } from 'react-router';
-import { call, ensureLease, mount, signInAs } from './harness';
+import { API, call, ensureLease, mount, signInAs } from './harness';
 import { openedUrls } from './setup';
 import { TicketNew } from '../screens/ticket-new';
 import { TicketDetail } from '../screens/ticket-detail';
@@ -13,7 +13,7 @@ const type = (element: Element, value: string) => fireEvent.change(element, { ta
 const APPLICANT = 'queue-applicant@example.co.za';
 
 const signInApplicant = async () => {
-  const session = await fetch('http://localhost:3001/auth/login', {
+  const session = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: APPLICANT, password: 'a-long-password' }),
@@ -80,20 +80,23 @@ describe('the maintenance lifecycle, clicked', () => {
 describe('the exit, clicked', () => {
   let terminationId: string;
 
-  it('landlord serves notice from the lease page', async () => {
+  it('landlord records the tenant’s written early cancellation from the lease page', async () => {
     await signInAs('landlord@example.co.za');
     const before = await call<any>('GET', `/leases/${leaseId}`);
     mount(`/leases/${leaseId}`, <Route path="/leases/:leaseId" element={<LeaseDetail />} />);
     if (!before.termination) {
-      fireEvent.click(await screen.findByRole('button', { name: 'Serve notice' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Serve it' }));
-      await screen.findByText('Notice served', undefined, { timeout: 8000 });
+      fireEvent.click(await screen.findByRole('button', { name: 'Record a notice' }));
+      // The case that used to be impossible: a tenant cancelling early by letter.
+      fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'early_tenant' } });
+      fireEvent.click(await screen.findByRole('button', { name: 'Record it' }));
+      await screen.findByText('Notice recorded', undefined, { timeout: 8000 });
     } else {
       // A rerun meets the notice already served; the banner is the proof instead.
       await screen.findByText(/Notice served/);
     }
     const lease = await call<any>('GET', `/leases/${leaseId}`);
     terminationId = lease.termination.id;
+    if (!before.termination) expect(lease.termination.reason).toBe('early_tenant');
   });
 
   it('shows a recorded deduction, removes it on click, and refuses early settlement', async () => {

@@ -44,11 +44,13 @@ describe('earliestEffectiveDate, late notice', () => {
     const notice = d('2026-07-27');
     const effective = earliestEffectiveDate('early_tenant', notice, d('2026-06-30'));
     expect(effective >= notice).toBe(true);
-    expect(iso(effective)).toBe('2026-07-27');
+    // Month to month by then, so 20 business days run from the notice.
+    expect(iso(effective)).toBe('2026-08-25');
   });
 
-  it('ends an already-expired lease on the day notice is given', () => {
-    expect(iso(earliestEffectiveDate('end_of_term', d('2026-07-27'), d('2026-06-30')))).toBe('2026-07-27');
+  it('gives an already-expired lease the full notice period, not a same-day exit', () => {
+    expect(iso(earliestEffectiveDate('end_of_term', d('2026-07-27'), d('2026-06-30')))).toBe('2026-08-25');
+    expect(iso(earliestEffectiveDate('mutual', d('2026-07-27'), d('2026-06-30')))).toBe('2026-07-27');
   });
 
   it('still honours the notice period on a lease with time left', () => {

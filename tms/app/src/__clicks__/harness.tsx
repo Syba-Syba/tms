@@ -4,7 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, ToastProvider } from '@hlonie/toolbox/ui';
 
-const API = 'http://localhost:3001';
+/** The development API the suite drives. global-setup starts it here and refuses anything else. */
+export const API = process.env.VITE_API_URL ?? 'http://localhost:3001';
 
 /** Signs in through the real /auth/login and primes the same storage the app uses, so every
     click carries the same Bearer token the browser would send. */
@@ -115,7 +116,7 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
     });
 
     // The fixed applicant: register once, sign in ever after.
-    const register = await fetch('http://localhost:3001/auth/register', {
+    const register = await fetch(`${API}/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -126,7 +127,7 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
     });
     const applicant = register.ok
       ? await register.json()
-      : await fetch('http://localhost:3001/auth/login', {
+      : await fetch(`${API}/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email: 'queue-applicant@example.co.za', password: 'a-long-password' }),
@@ -167,13 +168,12 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
         await call('POST', `/leases/${leaseId}/signature`, {
           party: 'landlord',
           signatureBase64: SIG,
-          otpVerified: true,
           pdfSha256: lease.pdfSha256,
         });
       }
       if (!signedParties.includes('tenant')) {
         const landlordToken = localStorage.getItem('CapacitorStorage.id_token')!;
-        const tenant = await fetch('http://localhost:3001/auth/login', {
+        const tenant = await fetch(`${API}/auth/login`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ email: 'queue-applicant@example.co.za', password: 'a-long-password' }),
@@ -182,7 +182,6 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
         await call('POST', `/leases/${leaseId}/signature`, {
           party: 'tenant',
           signatureBase64: SIG,
-          otpVerified: true,
           pdfSha256: lease.pdfSha256,
         });
         localStorage.setItem('CapacitorStorage.id_token', landlordToken);

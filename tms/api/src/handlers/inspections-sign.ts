@@ -123,7 +123,10 @@ async function sealReport(inspectionId: string) {
     signatures: withImages,
   });
 
-  const pdfKey = `inspections/${inspectionId}/report.pdf`;
+  // Keyed by its hash, so a second seal running alongside (a repeat signature while this one
+  // renders) writes its own object rather than overwriting the report the stored hash names.
+  // Only one of them gets past the status check below; the key and hash are set together.
+  const pdfKey = `inspections/${inspectionId}/report-${rendered.sha256}.pdf`;
   await storage().put(pdfKey, rendered.bytes, 'application/pdf');
   // 'completed' only once the report exists. Marking it first left a failed render as a
   // completed inspection with no document, which nothing could repair.

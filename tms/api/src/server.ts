@@ -163,10 +163,18 @@ const tooLarge = (request: IncomingMessage, response: ServerResponse, limit: num
   response.once('finish', () => request.destroy());
 };
 
-/** The address a request came from, as the rate limiter and the signature records see it. */
+/**
+ * The address a request came from, as the rate limiter and the signature records see it.
+ * Proxies append to X-Forwarded-For, so only the last entry is the one our own proxy wrote;
+ * anything to its left came from the client and can be forged. This assumes one proxy hop.
+ */
 function clientAddress(request: IncomingMessage): string {
   if (TRUST_PROXY) {
-    const forwarded = String(request.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim();
+    const hops = String(request.headers['x-forwarded-for'] ?? '')
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    const forwarded = hops[hops.length - 1];
     if (forwarded) return forwarded;
   }
   return request.socket.remoteAddress ?? '127.0.0.1';
