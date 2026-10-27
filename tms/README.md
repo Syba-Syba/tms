@@ -222,6 +222,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
 | POST | /auth/login, /auth/register | anyone | local sign-in and tenant sign-up; Cognito's job in production |
+| GET | /audit | landlord | the audit log for their own properties and account, newest first (`?entity=&entityId=&before=&limit=`) |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
 | POST | /applications/{id}/documents/confirm | tenant | record an application document once its upload has landed |
@@ -596,6 +597,7 @@ Tenant and landlord share the same app; navigation, permissions and data follow 
 | Applications queue: affordability banding, paperwork, generate the lease | `/applications` | landlord |
 | Lease signing: review the PDF, then each party signs against its fingerprint | `/lease/:id` | both |
 | Maintenance list | `/tickets` | both |
+| Activity: the audit log for your properties and account | `/activity` | landlord |
 | Ticket detail: assign, quote, approve, start, complete, comment, close and rate | `/tickets/:id` | both, by role |
 | Report a problem | `/leases/:id/tickets/new` | tenant |
 | Inspection room list and room detail | `/inspections/:id` | both |

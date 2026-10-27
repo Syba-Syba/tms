@@ -24,11 +24,13 @@ export const handler = route(async (event) => {
       : `select t.lease_id from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1`;
   await requireLeaseAccessVia(event, leaseSql, [input.photoId], 'Photo');
 
-  const [photo] = await query<{ s3_key: string }>(
-    `select s3_key from ${table} where id = $1`,
+  const [photo] = await query<{ s3_key: string; uploaded: boolean }>(
+    `select s3_key, uploaded from ${table} where id = $1`,
     [input.photoId],
   );
   if (!photo) throw notFound('Photo');
+  // Confirming twice is a retry, not a second upload: the kept copy already stands.
+  if (photo.uploaded) return json(200, { confirmed: true, key: photo.s3_key });
 
   let size: number | null;
   try {
@@ -52,13 +54,18 @@ export const handler = route(async (event) => {
   }
   const contentType = type === 'png' ? 'image/png' : 'image/jpeg';
 
+  // The upload link stays valid for five minutes, so the uploader could PUT different bytes to
+  // the same key after this check. The photo that counts is a copy of the bytes checked here,
+  // under a key no upload link was ever issued for.
+  const keptKey = `${photo.s3_key.replace(/\.[a-z]+$/, '')}.kept.${type === 'png' ? 'png' : 'jpg'}`;
+  await storage().put(keptKey, bytes, contentType);
+
   if (input.scope === 'ticket') {
-    await query(`update ticket_photo set uploaded = true, content_type = $2, size_bytes = $3 where id = $1`, [
-      input.photoId,
-      contentType,
-      size,
-    ]);
-    return json(200, { confirmed: true });
+    await query(
+      `update ticket_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
+      [input.photoId, contentType, size, keptKey],
+    );
+    return json(200, { confirmed: true, key: keptKey });
   }
 
   // A confirmed photo goes into the report, so it is evidence only while the findings are
@@ -77,12 +84,11 @@ export const handler = route(async (event) => {
     if (inspection.status !== 'in_progress') {
       throw conflict('This inspection is closed to changes.');
     }
-    await run(`update inspection_photo set uploaded = true, content_type = $2, size_bytes = $3 where id = $1`, [
-      input.photoId,
-      contentType,
-      size,
-    ]);
+    await run(
+      `update inspection_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
+      [input.photoId, contentType, size, keptKey],
+    );
     await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [inspection.id]);
   });
-  return json(200, { confirmed: true });
+  return json(200, { confirmed: true, key: keptKey });
 });

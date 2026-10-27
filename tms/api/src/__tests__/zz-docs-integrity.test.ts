@@ -227,6 +227,8 @@ describe('deduction evidence', () => {
       body: { scope: 'inspection', photoId: presigned.body.photoId },
     });
     expect(confirmed.status).toBe(200);
+    // The photo on file is the copy confirm kept, not the key the upload link points at.
+    photoKey = confirmed.body.key;
     const [stored] = await db.query<{ content_type: string }>(
       'select content_type from inspection_photo where id = $1',
       [presigned.body.photoId],

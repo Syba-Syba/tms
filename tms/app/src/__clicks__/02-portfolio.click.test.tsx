@@ -6,6 +6,7 @@ import { copied } from './setup';
 import { Properties } from '../screens/properties';
 import { ApplyStart } from '../screens/apply-start';
 import { LandlordQueue } from '../screens/landlord-queue';
+import { Activity } from '../screens/activity';
 
 const type = (element: Element, value: string) => fireEvent.change(element, { target: { value } });
 const label = (text: string) => screen.getByLabelText(new RegExp(`^${text}`));
@@ -176,5 +177,25 @@ describe('applying and processing the queue', () => {
     await screen.findByText(/Lease for Queue Applicant/);
     fireEvent.click(screen.getByRole('button', { name: 'Generate and open it' }));
     await screen.findByText('PROBE-LEASE', undefined, { timeout: 15000 });
+  });
+});
+
+describe('the activity screen', () => {
+  beforeAll(async () => {
+    await signInAs('landlord@example.co.za');
+  });
+
+  it('lists the landlord’s own sign-ins and changes, and filters to sign-ins', async () => {
+    mount('/activity', <Route path="/activity" element={<Activity />} />);
+    // Signing in just now and adding a property above are both on the log.
+    expect((await screen.findAllByText('Signed in')).length).toBeGreaterThan(0);
+    await screen.findAllByText('Property added');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Sign-ins' }));
+    // Wait for the filtered list itself, not the moment it is empty while loading.
+    await waitFor(() => {
+      expect(screen.queryByText('Property added')).toBeNull();
+      expect(screen.getAllByText('Signed in').length).toBeGreaterThan(0);
+    });
   });
 });

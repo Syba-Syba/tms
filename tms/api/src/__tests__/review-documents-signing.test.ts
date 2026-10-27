@@ -153,6 +153,29 @@ describe('photos and the inspection draft', () => {
     expect((await sign(inspectionId, 'landlord', draft.body.sha256)).status).toBe(409);
   });
 
+  it('keeps the confirmed bytes when the upload link is used again afterwards', async () => {
+    const inspectionId = await newInspection();
+    const photo = await presign(inspectionId);
+    const original = Buffer.from(ONE_PX, 'base64');
+    await store.put(photo.key, original, 'image/png');
+    expect((await confirm(photo.photoId)).status).toBe(200);
+
+    // The link is still live for a few minutes; a second PUT to it lands on the old key only.
+    await store.put(photo.key, Buffer.from('not the photo that was checked'), 'image/png');
+    const [row] = await db.query<{ s3_key: string }>('select s3_key from inspection_photo where id = $1', [
+      photo.photoId,
+    ]);
+    expect(row!.s3_key).not.toBe(photo.key);
+    expect(Buffer.from(await store.get(row!.s3_key)).equals(original)).toBe(true);
+
+    // A repeated confirm is a retry and leaves the kept copy alone.
+    expect((await confirm(photo.photoId)).status).toBe(200);
+    const [again] = await db.query<{ s3_key: string }>('select s3_key from inspection_photo where id = $1', [
+      photo.photoId,
+    ]);
+    expect(again!.s3_key).toBe(row!.s3_key);
+  });
+
   it('does not fingerprint a draft that a findings save raced', async () => {
     const inspectionId = await newInspection();
     hook = {
