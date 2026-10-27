@@ -36,7 +36,7 @@ The difference that matters is identity. `npm run dev` runs `src/local.ts`, whic
 whatever `x-dev-sub` claims when there is no token, so anyone who can reach the port is the
 landlord. That is why it refuses to start outside development. Self-hosted mode runs
 `src/server.ts` instead, which has no fallback at all: no token is 401, on every route except
-the two that issue tokens.
+the ones that issue tokens or reset a password.
 
     cd api
     cp .env.selfhosted.example .env.selfhosted
@@ -85,8 +85,12 @@ What self-hosted mode does **not** change:
   at startup. Back up `PGLITE_DIR` and `STORAGE_DIR` together, with the server stopped.
 - `STORAGE_SECRET` derives the ID number encryption key. Changing it makes every stored ID
   number permanently unreadable. Back both secrets up somewhere other than the machine.
-- Passwords are scrypt-hashed and tokens expire after seven days. There is no emailed
-  password reset and no refresh; Cognito would have brought those.
+- Passwords are scrypt-hashed and tokens expire after seven days. There is no refresh token.
+- Forgot password emails a link that works once, for 30 minutes. Only a SHA-256 of the token
+  is stored, and the link is wiped from the outbox once used. Set `PUBLIC_APP_URL` to the
+  address people open the app on, or the screen answers that reset is not set up. The email
+  goes through the notification outbox, so it only leaves the machine with `NOTIFY_MODE=send`
+  and a sender configured.
 - Sign-in locks an account for 15 minutes after 10 wrong passwords, and one address for 15
   minutes after 30. Sign-ups are capped at 10 an hour per address. These counts live in
   memory, so restarting the server clears them.
@@ -172,6 +176,13 @@ Apple developer fee, and the service worker gives them offline reads.
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
 | POST | /auth/login, /auth/register | anyone | local sign-in and tenant sign-up; Cognito's job in production |
+| POST | /auth/reset/request, /auth/reset/confirm | anyone | emailed password reset for the local driver |
+| POST | /leases/{id}/payment-proofs, /payment-proofs/{id}/submit | tenant | send a proof of payment slip |
+| GET | /payment-proofs | landlord | slips waiting to be checked |
+| POST | /payment-proofs/{id}/decision | landlord | accept (records the payment) or reject with a reason |
+| POST | /bank-imports | landlord | read a CSV or OFX bank statement into credit lines |
+| GET | /bank-imports, /bank-imports/{id} | landlord | past imports; one import with a suggested lease per line |
+| POST | /bank-imports/{id}/resolve | landlord | confirm lines as payments, or set them aside |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
 | GET | /applications | landlord | queue with rent to income band |
@@ -188,7 +199,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Forty-eight routes in all; the table lists the shape of each family rather than every verb.
+Fifty-nine routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -522,6 +533,31 @@ instants, and a deadline that reads a day early is the kind of thing a tribunal 
 `src/lib/db.ts` overrides the parser for OIDs 1082 and 1182.
 
 
+## Money coming in
+
+Rent arrives by EFT, so the landlord used to type every payment. Two ways in now, both
+ending in ordinary payment rows:
+
+- Proof of payment. The tenant uploads the bank's slip from the rent screen. The landlord
+  checks it against their account and accepts it, optionally with a corrected amount, or
+  rejects it with a reason the tenant sees. While a slip waits, the invoice shows "proof sent"
+  and the overdue reminder holds off.
+- Bank statement import. The landlord uploads the CSV or OFX their bank exports. Only credits
+  are read. Each line gets a suggested lease: high confidence when the `LSE-00101` reference is
+  in the description and the amount fits, or a pending slip matches; medium for a surname and
+  exact amount; low for an amount only one lease owes. Nothing is recorded until the landlord
+  confirms. Re-importing an overlapping statement skips lines already seen. Confirming a line
+  also accepts a pending slip for the same amount, so nobody ticks one payment off twice.
+
+Either way one amount is spread over the lease's open invoices, oldest first, so a tenant
+paying two months at once settles both. More than the lease owes is refused, because there is
+no credit balance to hold it in yet.
+
+CSV layouts differ by bank: FNB puts account details above the header, Capitec splits money
+in and out, some exports use semicolons and decimal commas. The reader finds columns by
+header and falls back to the values when there is none. Dates are read day first. OFX is the
+reliable choice when the bank offers it.
+
 ## Screens
 
 Tenant and landlord share the same app; navigation, permissions and data follow the role.
@@ -532,7 +568,7 @@ Tenant and landlord share the same app; navigation, permissions and data follow 
 | Tenant home: balance, rent, deposit with interest, what needs attention | `/` | tenant |
 | Documents: lease, every inspection, every invoice | `/documents` | tenant |
 | Lease detail: invoices, inspections, renewal, notice, record payment | `/leases/:id` | both, actions landlord only |
-| Rent and deposit statement | `/leases/:id/rent` | both |
+| Rent and deposit statement, EFT reference, send proof of payment | `/leases/:id/rent` | both |
 | Properties: portfolio, add, re-price and remove units, copy application links | `/properties` | landlord |
 | Applications queue: affordability banding, paperwork, generate the lease | `/applications` | landlord |
 | Lease signing: review the PDF, then each party signs against its fingerprint | `/lease/:id` | both |
@@ -543,7 +579,9 @@ Tenant and landlord share the same app; navigation, permissions and data follow 
 | Termination: then-and-now comparison, deductions, settlement | `/terminations/:id` | landlord |
 | Notification preferences | `/settings/notifications` | both |
 | Apply and upload documents | `/apply` | prospective tenant |
+| Payments: slips to check, bank statement import and matching | `/payments` | landlord |
 | Sign in, create an account | `/login`, `/register` | anyone |
+| Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

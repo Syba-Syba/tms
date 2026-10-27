@@ -5,6 +5,7 @@ const LANDLORD = [
   { to: '/', label: 'Home', end: true },
   { to: '/properties', label: 'Properties' },
   { to: '/applications', label: 'Applications' },
+  { to: '/payments', label: 'Payments' },
   { to: '/tickets', label: 'Maintenance' },
   { to: '/settings/notifications', label: 'Settings' },
 ];

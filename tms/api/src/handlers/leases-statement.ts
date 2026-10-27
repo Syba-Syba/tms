@@ -40,6 +40,21 @@ export const handler = route(async (event) => {
     [leaseId],
   );
 
+  const [lease] = await query<{ ref: string }>(
+    `select 'LSE-' || lpad(ref_no::text, 5, '0') as ref from lease where id = $1`,
+    [leaseId],
+  );
+  const proofs = await query<{
+    id: string; target: string; invoice_id: string | null; amount_cents: string; paid_on: string;
+    reference: string | null; status: string; reject_reason: string | null; submitted_at: string;
+  }>(
+    `select id, target, invoice_id, amount_cents, paid_on::text, reference, status, reject_reason,
+            submitted_at::text
+       from payment_proof where lease_id = $1 and status <> 'uploading'
+      order by submitted_at desc limit 50`,
+    [leaseId],
+  );
+
   const today = new Date();
   const invoiced = invoices.reduce((sum, invoice) => sum + Number(invoice.total_cents), 0);
   const received = payments.reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
@@ -60,6 +75,8 @@ export const handler = route(async (event) => {
   }
 
   return json(200, {
+    // The EFT reference the tenant pays with. Bank import matches on it.
+    reference: lease?.ref ?? null,
     balanceCents: invoiced - received,
     ageing,
     depositBalanceCents: depositBalance,
@@ -79,5 +96,16 @@ export const handler = route(async (event) => {
       receivedOn: payment.received_on,
     })),
     deposit,
+    proofs: proofs.map((proof) => ({
+      id: proof.id,
+      target: proof.target,
+      invoiceId: proof.invoice_id,
+      amountCents: Number(proof.amount_cents),
+      paidOn: proof.paid_on,
+      reference: proof.reference,
+      status: proof.status,
+      rejectReason: proof.reject_reason,
+      submittedAt: proof.submitted_at,
+    })),
   });
 });

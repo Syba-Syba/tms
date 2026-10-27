@@ -86,6 +86,9 @@ export function Login() {
           <Button block loading={busy} disabled={!email || !password} onClick={signIn}>
             Sign in
           </Button>
+          <p className="text-center text-[13px]">
+            <Link to="/forgot-password" className="font-bold text-brand-500">Forgot your password?</Link>
+          </p>
           <p className="text-center text-[13px] text-ink-muted">
             Applying for a place?{' '}
             <Link to="/register" className="font-bold text-brand-500">Create an account</Link>

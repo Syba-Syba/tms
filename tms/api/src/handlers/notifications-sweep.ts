@@ -37,7 +37,13 @@ export const handler = async () => {
        join property pr on pr.id = u.property_id
       where i.status in ('issued', 'part_paid')
         and i.due_on < current_date
-        and (current_date - i.due_on) % 7 = 3`,
+        and (current_date - i.due_on) % 7 = 3
+        -- A tenant who sent a slip has done their part. Chasing them while the landlord has
+        -- not looked at it yet reads as an accusation.
+        and not exists (
+          select 1 from payment_proof pp
+           where pp.lease_id = i.lease_id and pp.status = 'pending'
+             and (pp.invoice_id is null or pp.invoice_id = i.id))`,
   );
   for (const row of overdue) {
     if (Number(row.outstanding) <= 0) continue;

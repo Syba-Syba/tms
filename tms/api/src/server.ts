@@ -17,7 +17,7 @@ import { localPathFor, verifyLocalSignature } from './lib/storage';
  * The dev server in src/local.ts falls back to `x-dev-sub` when there is no token, so whoever
  * reaches the port is whoever they say they are. That is fine for a laptop and unusable for
  * anything else, which is why it refuses to run outside development. Nothing here has a
- * fallback: no token means 401, on every route but the two that issue tokens.
+ * fallback: no token means 401, on every route but the ones that issue tokens or reset a password.
  */
 if (mode() !== 'self-hosted') {
   console.error(
@@ -52,8 +52,13 @@ async function currentUser(token: string) {
   return row && credentialVersion(row.password_hash) === user.pv ? user : null;
 }
 
-/** The only two routes that answer without a token, because they are how you get one. */
-const PUBLIC_ROUTES = new Set(['POST /auth/login', 'POST /auth/register']);
+/** The only routes that answer without a token, because they are how you get one. */
+const PUBLIC_ROUTES = new Set([
+  'POST /auth/login',
+  'POST /auth/register',
+  'POST /auth/reset/request',
+  'POST /auth/reset/confirm',
+]);
 
 /**
  * On every response. There were none, so the app could be framed by any page (a sign-in form

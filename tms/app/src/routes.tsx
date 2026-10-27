@@ -30,6 +30,8 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', lazy: screen('login', 'Login') },
       { path: '/register', lazy: screen('register', 'Register') },
+      { path: '/forgot-password', lazy: screen('forgot-password', 'ForgotPassword') },
+      { path: '/reset-password', lazy: screen('reset-password', 'ResetPassword') },
       {
         element: <RequireAuth />,
         children: [
@@ -42,6 +44,7 @@ export const router = createBrowserRouter([
                 lazy: screen('landlord-queue', 'LandlordQueue'),
               },
               { path: '/properties', lazy: screen('properties', 'Properties') },
+              { path: '/payments', lazy: screen('payments', 'Payments') },
               { path: '/documents', lazy: screen('documents', 'Documents') },
               { path: '/tickets', lazy: screen('tickets-list', 'TicketsList') },
               {

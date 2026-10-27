@@ -54,6 +54,22 @@ export const TEMPLATES: Record<string, Template> = {
       `Pay by EFT using the reference ${d('reference')}. If something has gone wrong, reply and tell us before it grows.\n\n` +
       `${d('unit')}`,
   },
+  proof_submitted: {
+    category: 'money',
+    urgent: false,
+    subject: (d) => `Proof of payment from ${d('tenant')}: ${d('amount')}`,
+    body: (d) =>
+      `${d('tenant')} says they paid ${d('amount')} on ${d('paidOn')} for ${d('unit')}, reference ${d('reference')}.\n\n` +
+      `Check your bank account, then accept or reject the slip in the app. Their rent shows as "proof sent" until you do.`,
+  },
+  proof_rejected: {
+    category: 'money',
+    urgent: false,
+    subject: (d) => `Your proof of payment for ${d('amount')} was not accepted`,
+    body: (d) =>
+      `The slip you sent for ${d('amount')} on ${d('paidOn')} was not accepted.\n\nReason: ${d('reason')}\n\n` +
+      `Reply in the app or send a new slip. ${d('unit')}`,
+  },
   ticket_raised: {
     category: 'maintenance',
     urgent: true,

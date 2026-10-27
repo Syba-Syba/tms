@@ -3,6 +3,8 @@ import { handler as applications_create } from './handlers/applications-create';
 import { handler as auth_login } from './handlers/auth-login';
 import { handler as auth_register } from './handlers/auth-register';
 import { handler as auth_password } from './handlers/auth-password';
+import { handler as auth_reset_request } from './handlers/auth-reset-request';
+import { handler as auth_reset_confirm } from './handlers/auth-reset-confirm';
 import { handler as applications_documents } from './handlers/applications-documents';
 import { handler as contractors_list } from './handlers/contractors-list';
 import { handler as files_view } from './handlers/files-view';
@@ -32,6 +34,14 @@ import { handler as leases_sign } from './handlers/leases-sign';
 import { handler as leases_statement } from './handlers/leases-statement';
 import { handler as notifications_preferences } from './handlers/notifications-preferences';
 import { handler as payments_record } from './handlers/payments-record';
+import { handler as payment_proofs_create } from './handlers/payment-proofs-create';
+import { handler as payment_proofs_submit } from './handlers/payment-proofs-submit';
+import { handler as payment_proofs_list } from './handlers/payment-proofs-list';
+import { handler as payment_proofs_decide } from './handlers/payment-proofs-decide';
+import { handler as bank_imports_create } from './handlers/bank-imports-create';
+import { handler as bank_imports_list } from './handlers/bank-imports-list';
+import { handler as bank_imports_get } from './handlers/bank-imports-get';
+import { handler as bank_imports_resolve } from './handlers/bank-imports-resolve';
 import { handler as photos_confirm } from './handlers/photos-confirm';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
@@ -66,6 +76,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
   ['POST', '/auth/password', auth_password],
+  ['POST', '/auth/reset/request', auth_reset_request],
+  ['POST', '/auth/reset/confirm', auth_reset_confirm],
   ['POST', '/applications', applications_create],
   ['GET', '/applications', applications_list],
   ['POST', '/applications/{id}/decision', applications_decide],
@@ -112,6 +124,14 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/inspections/{id}/render', inspections_render],
   ['POST', '/files/view', files_view],
   ['POST', '/renewals/{id}/decision', renewals_decide],
+  ['POST', '/leases/{id}/payment-proofs', payment_proofs_create],
+  ['POST', '/payment-proofs/{id}/submit', payment_proofs_submit],
+  ['GET', '/payment-proofs', payment_proofs_list],
+  ['POST', '/payment-proofs/{id}/decision', payment_proofs_decide],
+  ['POST', '/bank-imports', bank_imports_create],
+  ['GET', '/bank-imports', bank_imports_list],
+  ['GET', '/bank-imports/{id}', bank_imports_get],
+  ['POST', '/bank-imports/{id}/resolve', bank_imports_resolve],
 ];
 
 interface Compiled {
