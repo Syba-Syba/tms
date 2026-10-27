@@ -34,6 +34,14 @@ export async function startSession(token: string, user: SessionUser) {
 }
 
 export async function endSession() {
+  // Revoke the token on the server first, so a copy of it stops working too. Best effort:
+  // there is no such endpoint under Cognito, and being offline must not trap anyone signed in.
+  try {
+    const { api } = await import('../api/client');
+    await api.post('/auth/logout', {});
+  } catch {
+    /* signed out locally regardless */
+  }
   await Preferences.remove({ key: 'id_token' });
   localStorage.removeItem(USER_KEY);
   // A full reload is the honest way to drop identity: every cached query belonged to the

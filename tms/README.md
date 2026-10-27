@@ -57,6 +57,45 @@ that; a build with it unset now fails rather than baking in `http://localhost:30
 insert into `landlord` is in the development seed, which the migration runner skips — so
 without it every landlord route answers 403.
 
+### Background jobs
+
+On AWS, EventBridge runs five jobs. Self-hosted, the server runs them itself (`RUN_JOBS=true`,
+the default). Times are Johannesburg time:
+
+| Job | When |
+| --- | --- |
+| `notifications-dispatch` | every 5 minutes |
+| `leases-activate` | 03:10 daily |
+| `notifications-sweep` | 05:00 daily |
+| `interest-run` | 05:30 on the 1st |
+| `invoices-run` | 06:00 daily (this month; next month too from the 25th) |
+
+Each daily job also runs once about five seconds after startup, so a machine that was off at
+06:00 catches up. All of them are safe to run twice. To drive them from cron instead, set
+`RUN_JOBS=false` and call one by name:
+
+    npm run jobs -- invoices-run
+
+### Email
+
+`NOTIFY_MODE=skip` (the default) logs each message instead of sending it. For a self-hosted
+install, `NOTIFY_MODE=smtp` with `SMTP_URL=smtps://user:password@smtp.example.com:465` sends
+through any mailbox. `NOTIFY_FROM` is the sender and `NOTIFY_REPLY_TO` is where a tenant's
+reply lands. A failed send is retried five times, with the wait between tries growing from
+5 minutes to 4 hours.
+
+### Behind a reverse proxy
+
+Sign-in limits key on the client address. Set `TRUST_PROXY=true` only when a proxy (nginx,
+Caddy, a tunnel) sits in front and sets `X-Forwarded-For`; otherwise anyone could forge that
+header to dodge the limit. Set `PUBLIC_API_URL` to the address people use, so document links
+point there.
+
+### Signing out
+
+Signing out ends every session for the account, on every device: the account's session epoch
+goes up and every token issued before it stops working. Changing the password does the same.
+
 ### Getting at the database
 
 PGlite has no server and no socket. It is one process against one folder, and the API server
@@ -126,29 +165,33 @@ runner in the VPC, or a one-off task — not from a laptop:
 
     cd api
     npm run certs:fetch
-    DB_HOST=<proxy endpoint> DB_NAME=tms DB_SECRET_ARN=<arn> npm run migrate
+    DB_HOST=<proxy endpoint> DB_NAME=tms DB_SECRET_ARN=<arn> npm run migrate:deploy
 
-The seed files are skipped by the runner unless `--seed` is passed, so `npm run migrate` never
+`migrate:deploy` reads only the shell's environment; `npm run migrate` loads `.env`, which
+is the laptop's and does not exist on a bastion. The seed files are skipped by the runner
+unless `--seed` is passed, so neither ever
 puts development data in a real database. A production database has no landlord row at all:
 insert one with the `cognito_sub` of the real landlord before anyone signs in, or every
 landlord route returns 403.
 
-## First run
+## First deploy to AWS
 
-    # 1. database
-    createdb tms
-    psql tms -f db/migrations/0001_init.sql
-    psql tms -f db/migrations/0002_seed_dev.sql
+For a laptop, see "Running it locally" below; for your own machine serving real users, see
+"Running it for real without AWS" above. For the AWS stage:
 
-    # 2. api
     cd api && npm install
     npm run typecheck
-    npx serverless deploy --stage dev
+    npm run deploy:dev                # fetches the RDS CA bundle first
+    # migrations: see "Before the first deploy" (run from inside the VPC)
 
-    # 3. app
-    cd ../app && npm install
+    cd ../app
     echo "VITE_API_URL=https://<your-api-id>.execute-api.af-south-1.amazonaws.com" > .env
-    npm run dev
+    npm run build
+
+The documents bucket must have default encryption set to SSE-KMS with the stage's key.
+Browser uploads go straight to S3 on presigned links, and those links do not carry an
+encryption header (S3 would refuse the upload if they asked for one the browser never sends),
+so the bucket default is what encrypts them.
 
 ## Building the APK
 
@@ -266,7 +309,10 @@ someone else, the same as it would be in production.
 
     npm test
 
-200 tests. They boot their own Postgres, so nothing needs to be running.
+They boot their own Postgres, so nothing needs to be running. The web app's unit tests can run
+on their own, without the API and while the self-hosted server is up:
+
+    npm run test:unit -w tms-app
 
 There is a second kind of test: sixteen click-through tests that render every screen in a
 DOM, press the actual buttons, and let each press hit the running dev API — documents opened

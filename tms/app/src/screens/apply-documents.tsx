@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { Alert, Button, Card, CardBody, PageHeader, UploadTile, type UploadState } from '@hlonie/toolbox/ui';
-import { api } from '../api/client';
+import { Alert, Button, Card, CardBody, PageHeader, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
+import { api, humanError } from '../api/client';
+import { pickPhoto, putFile } from '../lib/photos';
 
 const REQUIRED = [
   { kind: 'id_copy', label: 'ID document' },
@@ -16,31 +16,33 @@ type Kind = (typeof REQUIRED)[number]['kind'];
 export function ApplyDocuments() {
   const { applicationId } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [state, setState] = useState<Record<string, UploadState>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
 
   const capture = async (kind: Kind) => {
-    const photo = await Camera.getPhoto({
-      quality: 70,
-      width: 1600, // capped so embedded report photos stay small
-      resultType: CameraResultType.DataUrl,
-      source: CameraSource.Prompt,
-    });
-    if (!photo.dataUrl) return;
+    let photo: Awaited<ReturnType<typeof pickPhoto>>;
+    try {
+      photo = await pickPhoto();
+    } catch (error) {
+      toast.show({ title: 'Could not read that photo', description: humanError(error), tone: 'danger' });
+      return;
+    }
+    if (!photo) return;
 
-    setPreviews((current) => ({ ...current, [kind]: photo.dataUrl! }));
+    setPreviews((current) => ({ ...current, [kind]: photo.dataUrl }));
     setState((current) => ({ ...current, [kind]: 'uploading' }));
 
-    const blob = await (await fetch(photo.dataUrl)).blob();
     try {
       const { uploadUrl } = await api.post<{ uploadUrl: string }>(
         `/applications/${applicationId}/documents/presign`,
-        { kind, contentType: 'image/jpeg', sizeBytes: blob.size },
+        { kind, contentType: photo.contentType, sizeBytes: photo.blob.size },
       );
-      await fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'content-type': 'image/jpeg' } });
+      await putFile(uploadUrl, photo.blob, photo.contentType);
       setState((current) => ({ ...current, [kind]: 'synced' }));
-    } catch {
+    } catch (error) {
       setState((current) => ({ ...current, [kind]: 'failed' }));
+      toast.show({ title: 'Upload failed', description: humanError(error), tone: 'danger' });
     }
   };
 
@@ -66,10 +68,21 @@ export function ApplyDocuments() {
               <div className="flex-1">
                 <p className="text-sm font-medium">{item.label}</p>
                 <p className="text-xs text-ink-muted">
-                  {state[item.kind] === 'synced' ? 'Received' : 'Not uploaded yet'}
+                  {state[item.kind] === 'synced'
+                    ? 'Received'
+                    : state[item.kind] === 'failed'
+                      ? 'Upload failed. Tap the photo to retry.'
+                      : state[item.kind] === 'uploading'
+                        ? 'Uploading'
+                        : 'Not uploaded yet'}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => capture(item.kind)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={state[item.kind] === 'uploading'}
+                onClick={() => capture(item.kind)}
+              >
                 {state[item.kind] ? 'Replace' : 'Capture'}
               </Button>
             </CardBody>

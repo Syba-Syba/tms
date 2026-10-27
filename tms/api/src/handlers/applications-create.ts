@@ -4,16 +4,20 @@ import { withTransaction } from '../lib/db';
 import { encryptIdNumber } from '../lib/idcrypt';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { createApplicationSchema } from '../domain/application';
+import { isoDate, sastToday } from '../domain/dates';
 
 export const handler = route(async (event) => {
   const person = caller(event);
   const input = parseBody(event, createApplicationSchema);
 
-  if (input.preferredMoveIn < new Date(new Date().toDateString())) {
+  if (isoDate(input.preferredMoveIn) < sastToday()) {
     throw badRequest('The move in date cannot be in the past.');
   }
 
   const encrypted = await encryptIdNumber(input.idNumber);
+  // Notifications go to this address. The signed-in identity's email is the one the person
+  // proved they can read; what they typed on the form is only a fallback.
+  const email = (person.email || input.email).trim().toLowerCase();
 
   const result = await withTransaction(async (run) => {
     const [unit] = await run<{ id: string; status: string }>(
@@ -31,6 +35,7 @@ export const handler = route(async (event) => {
        on conflict (cognito_sub) do update set
          first_name = excluded.first_name,
          last_name = excluded.last_name,
+         email = excluded.email,
          phone = excluded.phone,
          monthly_income_cents = excluded.monthly_income_cents
        returning id`,
@@ -40,13 +45,23 @@ export const handler = route(async (event) => {
         input.lastName,
         encrypted,
         input.idNumber.slice(-4),
-        input.email,
+        email,
         input.phone,
         input.employmentStatus,
         input.employer ?? null,
         input.monthlyIncomeCents,
       ],
     );
+
+    // One open application per person per unit. A double tap, or applying again while the
+    // first is still with the landlord, made a second row for the same decision.
+    const [open] = await run<{ id: string }>(
+      `select id from application
+        where applicant_id = $1 and unit_id = $2 and status in ('draft', 'submitted', 'screening')
+        limit 1`,
+      [applicant!.id, input.unitId],
+    );
+    if (open) throw conflict('You already have an application open for this unit.');
 
     const [application] = await run<{ id: string; status: string }>(
       `insert into application

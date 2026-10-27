@@ -29,14 +29,17 @@ export const handler = route(async (event) => {
     }
 
     await run('delete from property where id = $1', [propertyId]);
-    await audit({
-      actorSub: person.sub,
-      actorRole: 'landlord',
-      action: 'property.deleted',
-      entity: 'property',
-      entityId: propertyId,
-      detail: { name: property.name },
-    });
+    await audit(
+      {
+        actorSub: person.sub,
+        actorRole: 'landlord',
+        action: 'property.deleted',
+        entity: 'property',
+        entityId: propertyId,
+        detail: { name: property.name },
+      },
+      run,
+    );
   });
 
   return json(200, { removed: true });

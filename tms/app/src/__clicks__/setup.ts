@@ -17,7 +17,10 @@ Element.prototype.releasePointerCapture ??= () => {};
 // Every document button funnels through window.open; capturing it lets a test download
 // what the button opened and assert it is a real file.
 export const openedUrls: string[] = [];
-window.open = ((url: string) => { openedUrls.push(String(url)); return null; }) as any;
+// openDocument first opens a blank tab inside the click, then points it at the signed link.
+// The blank open is not a document, so only real URLs are recorded; returning null sends the
+// app down its fallback, which opens the link itself.
+window.open = ((url?: string) => { if (url) openedUrls.push(String(url)); return null; }) as any;
 
 // The copy-link button writes to the clipboard.
 export const copied: string[] = [];

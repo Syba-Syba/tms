@@ -1,10 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Badge,
   Button,
-  ConfirmDialog,
   DataTable,
   Drawer,
   Input,
@@ -14,10 +13,12 @@ import {
   SegmentedControl,
   Spinner,
   StatCard,
+  Textarea,
   useToast,
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, type ApplicationSummary, humanError } from '../api/client';
+import { QueryError } from '../components/query-state';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
@@ -46,14 +47,17 @@ interface PortfolioUnit {
 export function LandlordQueue() {
   const [status, setStatus] = useState<'submitted' | 'approved' | 'declined'>('submitted');
   const [declining, setDeclining] = useState<ApplicationSummary | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
+  const [deciding, setDeciding] = useState<string | null>(null);
   const [viewingDocs, setViewingDocs] = useState<ApplicationSummary | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [generatingFor, setGeneratingFor] = useState<ApplicationSummary | null>(null);
   const [terms, setTerms] = useState({ startDate: '', months: '12', escalationPct: '8' });
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const { data, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['applications', status],
     queryFn: () => api.get<{ items: ApplicationSummary[] }>('/applications', { query: { status } }),
   });
@@ -63,11 +67,24 @@ export function LandlordQueue() {
     queryFn: () => api.get<{ items: { units: PortfolioUnit[] }[] }>('/properties'),
   });
 
+  // One decision at a time, and a failure is said out loud: a double tap used to send two
+  // decisions, and a refused one left the row in place with no explanation.
   const decide = async (id: string, outcome: 'approved' | 'declined', reason?: string) => {
-    await api.post(`/applications/${id}/decision`, { outcome, reason });
-    toast.show({ title: `Application ${outcome}`, tone: outcome === 'approved' ? 'success' : 'info' });
-    setDeclining(null);
-    refetch();
+    if (deciding) return;
+    setDeciding(id);
+    try {
+      await api.post(`/applications/${id}/decision`, { outcome, reason });
+      toast.show({ title: `Application ${outcome}`, tone: outcome === 'approved' ? 'success' : 'info' });
+      setDeclining(null);
+      setDeclineReason('');
+      // Approving holds the unit and declining frees it, which the properties screen shows.
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      refetch();
+    } catch (error) {
+      toast.show({ title: 'Decision not recorded', description: humanError(error), tone: 'danger' });
+    } finally {
+      setDeciding(null);
+    }
   };
 
   const openGenerate = (item: ApplicationSummary) => {
@@ -137,9 +154,18 @@ export function LandlordQueue() {
         ]}
       />
 
+      {isError ? (
+        <div className="mb-4">
+          <QueryError error={error} onRetry={refetch} what="The queue" />
+        </div>
+      ) : null}
+      {isLoading ? (
+        <div className="p-8 text-center"><Spinner /></div>
+      ) : null}
+
       <DataTable
         data={items}
-        emptyTitle="No applications here"
+        emptyTitle={isError ? 'Could not load applications' : 'No applications here'}
         columns={[
           { accessorKey: 'applicant', header: 'Applicant' },
           { accessorKey: 'unit', header: 'Unit' },
@@ -182,10 +208,10 @@ export function LandlordQueue() {
               if (status === 'submitted') {
                 return (
                   <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setDeclining(item)}>
+                    <Button size="sm" variant="ghost" disabled={deciding !== null} onClick={() => setDeclining(item)}>
                       Decline
                     </Button>
-                    <Button size="sm" onClick={() => decide(item.id, 'approved')}>
+                    <Button size="sm" loading={deciding === item.id} disabled={deciding !== null} onClick={() => decide(item.id, 'approved')}>
                       Approve
                     </Button>
                   </div>
@@ -212,14 +238,38 @@ export function LandlordQueue() {
         ]}
       />
 
-      <ConfirmDialog
+      <Modal
         open={!!declining}
-        onOpenChange={() => setDeclining(null)}
+        onOpenChange={(next) => !next && setDeclining(null)}
         title="Decline this application"
         description="The applicant is told the reason, so write something they can act on."
-        confirmLabel="Decline"
-        onConfirm={() => declining && decide(declining.id, 'declined', 'Rent exceeds a third of income.')}
-      />
+        size="sm"
+      >
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-[13px] font-medium">Reason</span>
+            <Textarea
+              rows={3}
+              placeholder="e.g. The rent is more than a third of the income shown on the payslips."
+              value={declineReason}
+              onChange={(event) => setDeclineReason(event.target.value)}
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeclining(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={declineReason.trim().length < 3}
+              loading={deciding === declining?.id}
+              onClick={() => declining && decide(declining.id, 'declined', declineReason.trim())}
+            >
+              Decline
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={!!generatingFor}

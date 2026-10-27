@@ -3,7 +3,7 @@ import { cn } from '../lib/cn';
 
 /** Renders references like a stamped plate: mono, spaced, riveted corners. Click copies. */
 export function TagField({ label, value, className }: { label: string; value: string; className?: string }) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, failed, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
@@ -19,9 +19,10 @@ export function TagField({ label, value, className }: { label: string; value: st
       <span className="absolute bottom-1 left-1 h-1 w-1 rounded-full bg-neutral-400/60" />
       <span className="absolute bottom-1 right-1 h-1 w-1 rounded-full bg-neutral-400/60" />
       <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-muted">
-        {copied ? 'Copied' : label}
+        {copied ? 'Copied' : failed ? 'Select to copy' : label}
       </span>
-      <span className="font-mono text-sm font-medium tracking-[0.14em] text-ink">{value}</span>
+      {/* select-all so a failed copy still leaves the value one long-press from the clipboard. */}
+      <span className="select-all font-mono text-sm font-medium tracking-[0.14em] text-ink">{value}</span>
     </button>
   );
 }

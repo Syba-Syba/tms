@@ -4,6 +4,7 @@ import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { decideRenewalSchema } from '../domain/renewal';
 import { zar } from '../domain/money';
+import { sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
 
 export const handler = route(async (event) => {
@@ -32,7 +33,7 @@ export const handler = route(async (event) => {
     );
     if (!renewal) throw notFound('Renewal');
     if (renewal.status !== 'offered') throw conflict(`This offer is already ${renewal.status}.`);
-    if (new Date(renewal.respond_by) < new Date(new Date().toISOString().slice(0, 10))) {
+    if (renewal.respond_by < sastToday()) {
       throw conflict(`This offer expired on ${renewal.respond_by}. Ask for a new one.`);
     }
 

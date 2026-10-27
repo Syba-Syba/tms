@@ -4,6 +4,10 @@ import { withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { signLeaseSchema } from '../domain/lease';
+import { pngBytesFromDataUrl } from '../lib/images';
+import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
+import { leaseParties } from '../lib/recipients';
 
 export const handler = route(async (event) => {
   const leaseId = event.pathParameters?.id;
@@ -14,16 +18,15 @@ export const handler = route(async (event) => {
   assertSigningAs(access, input.party);
   const person = access.person;
 
-  if (!input.otpVerified) {
-    throw badRequest('Verify the one time PIN before signing.');
-  }
+  // No OTP is issued anywhere, so there is nothing for the client to have verified. The
+  // signature's evidence is the identity behind the token, the device, the address and the
+  // document hash, which are all recorded below.
 
+  // Checked before anything is stored, so a signature that is not a PNG is refused now
+  // rather than discovered when a report tries to embed it.
+  const signaturePng = pngBytesFromDataUrl(input.signatureBase64);
+  if (!signaturePng) throw badRequest('The signature image is not a PNG.');
   const signatureKey = `leases/${leaseId}/signature-${input.party}.png`;
-  await storage().put(
-    signatureKey,
-    Buffer.from(input.signatureBase64.replace(/^data:image\/png;base64,/, ''), 'base64'),
-    'image/png',
-  );
 
   const outcome = await withTransaction(async (run) => {
     const [lease] = await run<{ id: string; status: string; unit_id: string; pdf_sha256: string | null }>(
@@ -43,21 +46,25 @@ export const handler = route(async (event) => {
       throw conflict('The lease changed since you opened it. Reload and read it again.');
     }
 
-    await run(
+    const inserted = await run<{ id: string }>(
       `insert into lease_signature
          (lease_id, party, signature_s3_key, otp_verified, ip_address, user_agent, pdf_sha256)
        values ($1, $2, $3, $4, $5, $6, $7)
-       on conflict (lease_id, party) do nothing`,
+       on conflict (lease_id, party) do nothing
+       returning id`,
       [
         leaseId,
         input.party,
         signatureKey,
-        input.otpVerified,
+        input.otpVerified ?? false,
         event.requestContext.http.sourceIp,
         event.headers['user-agent'] ?? null,
         input.pdfSha256,
       ],
     );
+    // Only a new signature writes its image: a repeat call must not replace the image that
+    // the signature on file was made with.
+    if (inserted.length > 0) await storage().put(signatureKey, signaturePng, 'image/png');
 
     const rows = await run<{ count: string }>(
       'select count(*)::text as count from lease_signature where lease_id = $1',
@@ -82,6 +89,24 @@ export const handler = route(async (event) => {
     entityId: leaseId,
     detail: { party: input.party, fullySigned: outcome.fullySigned },
   });
+
+  // The lease_signed message existed and nothing sent it.
+  if (outcome.fullySigned) {
+    try {
+      const parties = await leaseParties(leaseId);
+      if (parties?.tenant) {
+        await notify({
+          leaseId,
+          to: parties.tenant,
+          kind: 'lease_signed',
+          dedupeKey: `lease_signed:${leaseId}`,
+          data: { reference: parties.reference, unit: parties.unit },
+        });
+      }
+    } catch (error) {
+      logger.error('Lease signed notification failed.', { leaseId, error });
+    }
+  }
 
   return json(200, {
     status: outcome.fullySigned ? 'active' : 'out_for_signature',

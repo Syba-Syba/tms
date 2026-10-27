@@ -105,7 +105,9 @@ export type TerminationReason = keyof typeof NOTICE_BUSINESS_DAYS;
 export const serveNoticeSchema = z.object({
   initiatedBy: z.enum(['tenant', 'landlord', 'mutual']),
   reason: z.enum(['end_of_term', 'early_tenant', 'breach_by_tenant', 'breach_by_landlord', 'mutual']),
-  noticeGivenOn: z.coerce.date(),
+  // The tenant's notice is dated the day it is served, whatever the client sends; a landlord
+  // may record one received up to a month ago. Omitted, it is today.
+  noticeGivenOn: z.coerce.date().optional(),
   // Only supplied when the parties agree a later date than the minimum.
   effectiveOn: z.coerce.date().optional(),
   penaltyCents: z.number().int().min(0).optional(),

@@ -1,22 +1,22 @@
 import { useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import {
   Alert,
   Button,
   Card,
   CardBody,
-  OtpInput,
   PageHeader,
   SignaturePad,
-  Spinner,
   Stepper,
   TagField,
   useToast,
   type SignaturePadHandle,
 } from '@hlonie/toolbox/ui';
-import { api, openDocument, humanError } from '../api/client';
+import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryState } from '../components/query-state';
+import { useOpenDocument } from '../lib/open-document';
 
 interface Lease {
   id: string;
@@ -39,16 +39,19 @@ interface Lease {
 export function LeaseReview() {
   const { leaseId } = useParams();
   const padRef = useRef<SignaturePadHandle>(null);
-  const [otp, setOtp] = useState('');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const openDocument = useOpenDocument();
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],
     queryFn: () => api.get<Lease>(`/leases/${leaseId}`),
   });
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This lease" />;
+  }
 
   const party: 'tenant' | 'landlord' = data.viewer.isLandlord ? 'landlord' : 'tenant';
   const signedParties = data.signatures.map((signature) => signature.party);
@@ -62,16 +65,17 @@ export function LeaseReview() {
     }
     setBusy(true);
     try {
+      // No one-time PIN is sent: nothing on the server issues one, and the screen used to
+      // claim otherwise. The signature is tied to the document by its fingerprint instead.
       await api.post(`/leases/${leaseId}/signature`, {
         party,
         signatureBase64: padRef.current?.toDataUrl(),
-        otpVerified: otp.length === 6,
         // The fingerprint of the exact document rendered for this lease. The server rejects
         // a mismatch, so nobody signs a version they have not seen.
         pdfSha256: data.pdfSha256,
       });
       toast.show({ title: 'Lease signed', tone: 'success' });
-      setOtp('');
+      queryClient.invalidateQueries({ queryKey: ['leases'] });
       refetch();
     } catch (error) {
       toast.show({ title: 'Not signed', description: humanError(error), tone: 'danger' });
@@ -154,12 +158,8 @@ export function LeaseReview() {
       {canSign ? (
         <Card>
           <CardBody className="space-y-4">
-            <div>
-              <p className="mb-2 text-sm font-medium">PIN sent to your mobile</p>
-              <OtpInput value={otp} onChange={setOtp} />
-            </div>
             <SignaturePad ref={padRef} />
-            <Button block loading={busy} disabled={otp.length !== 6} onClick={sign}>
+            <Button block loading={busy} onClick={sign}>
               Sign as the {party}
             </Button>
             <p className="text-xs text-ink-muted">

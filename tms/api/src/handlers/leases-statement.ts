@@ -11,6 +11,12 @@ export const handler = route(async (event) => {
   // A statement lists every payment on the lease, so it needs the same gate as the lease itself.
   await requireLeaseAccess(event, leaseId);
 
+  // The reference a tenant puts on their EFT. The rent screen used to show a fixed one.
+  const [lease] = await query<{ ref: string }>(
+    `select 'LSE-' || lpad(ref_no::text, 5, '0') as ref from lease where id = $1`,
+    [leaseId],
+  );
+
   const invoices = await query<{
     id: string;
     period_start: string;
@@ -60,6 +66,7 @@ export const handler = route(async (event) => {
   }
 
   return json(200, {
+    ref: lease?.ref ?? null,
     balanceCents: invoiced - received,
     ageing,
     depositBalanceCents: depositBalance,

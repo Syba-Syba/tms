@@ -39,6 +39,11 @@ export function Field({
   );
 }
 
+type Rules<T extends FieldValues> = Omit<
+  RegisterOptions<T, Path<T>>,
+  'valueAsNumber' | 'valueAsDate' | 'setValueAs' | 'disabled'
+>;
+
 interface BaseProps<T extends FieldValues> {
   control: Control<T>;
   name: Path<T>;
@@ -46,8 +51,18 @@ interface BaseProps<T extends FieldValues> {
   hint?: string;
   required?: boolean;
   /** react-hook-form rules, so a form can refuse bad input inline before the API does. */
-  rules?: Omit<RegisterOptions<T, Path<T>>, 'valueAsNumber' | 'valueAsDate' | 'setValueAs' | 'disabled'>;
+  rules?: Rules<T>;
 }
+
+/**
+ * `required` used to draw the asterisk and nothing else, so a form marked required all over
+ * still submitted blanks and left the API to refuse them. Now it is a rule as well, unless
+ * the caller wrote their own required message.
+ */
+const withRequired = <T extends FieldValues>(required: boolean | undefined, rules: Rules<T> | undefined): Rules<T> | undefined => {
+  if (!required || rules?.required !== undefined) return rules;
+  return { ...rules, required: 'Required.' } as Rules<T>;
+};
 
 export function TextField<T extends FieldValues>({
   control,
@@ -62,7 +77,7 @@ export function TextField<T extends FieldValues>({
     <Controller
       control={control}
       name={name}
-      rules={rules}
+      rules={withRequired(required, rules)}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
           <Input id={name} invalid={!!fieldState.error} {...field} value={field.value ?? ''} {...input} />
@@ -78,12 +93,14 @@ export function TextAreaField<T extends FieldValues>({
   label,
   hint,
   required,
+  rules,
   ...props
 }: BaseProps<T> & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <Controller
       control={control}
       name={name}
+      rules={withRequired(required, rules)}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
           <Textarea id={name} invalid={!!fieldState.error} {...field} value={field.value ?? ''} {...props} />
@@ -99,6 +116,7 @@ export function SelectField<T extends FieldValues>({
   label,
   hint,
   required,
+  rules,
   options,
   placeholder,
 }: BaseProps<T> & { options: SelectOption[]; placeholder?: string }) {
@@ -106,6 +124,7 @@ export function SelectField<T extends FieldValues>({
     <Controller
       control={control}
       name={name}
+      rules={withRequired(required, rules)}
       render={({ field, fieldState }) => (
         <Field label={label} htmlFor={name} hint={hint} required={required} error={fieldState.error?.message}>
           <Select id={name} options={options} placeholder={placeholder} invalid={!!fieldState.error} {...field} value={field.value ?? ''} />
@@ -115,11 +134,12 @@ export function SelectField<T extends FieldValues>({
   );
 }
 
-export function CheckboxField<T extends FieldValues>({ control, name, label }: BaseProps<T>) {
+export function CheckboxField<T extends FieldValues>({ control, name, label, required, rules }: BaseProps<T>) {
   return (
     <Controller
       control={control}
       name={name}
+      rules={withRequired(required, rules)}
       render={({ field, fieldState }) => (
         <div className="space-y-1">
           <Checkbox id={name} label={label} checked={!!field.value} onChange={field.onChange} />

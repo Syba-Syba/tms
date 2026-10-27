@@ -3,8 +3,10 @@ import { useParams } from 'react-router';
 import { Badge, Button, Card, CardBody, PageHeader, TagField } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api } from '../api/client';
+import { QueryState } from '../components/query-state';
 
 interface Statement {
+  ref: string | null;
   balanceCents: number;
   depositBalanceCents: number;
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string }[];
@@ -34,7 +36,7 @@ function statementCsv(statement: Statement): string {
 
 export function TenantRent() {
   const { leaseId } = useParams();
-  const { data } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['statement', leaseId],
     queryFn: () => api.get<Statement>(`/leases/${leaseId}/statement`),
   });
@@ -51,6 +53,10 @@ export function TenantRent() {
     URL.revokeObjectURL(url);
   };
 
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your statement" />;
+  }
+
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
       <PageHeader
@@ -60,15 +66,16 @@ export function TenantRent() {
       <Card className="mb-4">
         <CardBody className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-ink-muted">Pay by EFT with this reference</p>
-          <TagField label="Reference" value="LSE-00184" />
+          {/* The lease's own reference: it is how the bank statement is matched to this unit. */}
+          <TagField label="Reference" value={data.ref ?? 'Ask your landlord'} />
           <p className="text-xs text-ink-muted">
-            Your deposit stands at {formatZar((data?.depositBalanceCents ?? 0) / 100)}, interest included.
+            Your deposit stands at {formatZar(data.depositBalanceCents / 100)}, interest included.
             It is yours; it grows every month.
           </p>
         </CardBody>
       </Card>
       <div className="space-y-3">
-        {data?.invoices.map((invoice) => (
+        {data.invoices.map((invoice) => (
           <Card key={invoice.id}>
             <CardBody className="flex items-center justify-between">
               <div>
@@ -85,7 +92,7 @@ export function TenantRent() {
           </Card>
         ))}
       </div>
-      <Button block variant="secondary" className="mt-5" disabled={!data} onClick={download}>
+      <Button block variant="secondary" className="mt-5" onClick={download}>
         Download statement
       </Button>
     </main>

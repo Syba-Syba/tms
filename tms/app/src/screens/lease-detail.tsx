@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, Spinner, useToast,
+  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, useToast,
 } from '@hlonie/toolbox/ui';
-import { api, openDocument, humanError } from '../api/client';
+import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryState } from '../components/query-state';
+import { localToday } from '../lib/dates';
+import { randomId } from '../lib/ids';
+import { useOpenDocument } from '../lib/open-document';
 
 interface Lease {
   id: string; ref: string; status: string; unit: string; tenant: string;
@@ -18,33 +22,47 @@ interface Lease {
   invoices: { id: string; period: string; dueOn: string; totalCents: number; paidCents: number; status: string; pdfKey: string | null }[];
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 export function LeaseDetail() {
   const { leaseId } = useParams();
   const toast = useToast();
+  const openDocument = useOpenDocument();
+  const queryClient = useQueryClient();
   const [payment, setPayment] = useState({ amountCents: 0, reference: '', invoiceId: '' });
+  // One key per attempt at recording a payment: a double tap or a retry after a dropped
+  // connection sends the same key, and the server records the money once.
+  const [paymentKey, setPaymentKey] = useState(() => randomId());
   const [showPayment, setShowPayment] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [notice, setNotice] = useState({ reason: 'end_of_term', initiatedBy: 'landlord' });
   const [showRenewal, setShowRenewal] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],
     queryFn: () => api.get<Lease>(`/leases/${leaseId}`),
   });
 
+  // Every action on this screen moves money or changes the lease's state, so one runs at a
+  // time: the buttons are disabled until the request answers. A double tap on "Save" used to
+  // record the payment twice.
   const run = async (fn: () => Promise<unknown>, message: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
       await fn();
       toast.show({ title: message, tone: 'success' });
+      queryClient.invalidateQueries({ queryKey: ['leases'] });
       refetch();
     } catch (error) {
       toast.show({ title: 'That did not work', description: humanError(error), tone: 'danger' });
+    } finally {
+      setBusy(false);
     }
   };
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This lease" />;
+  }
   const landlord = data.viewer.isLandlord;
   const open = data.invoices.filter((i) => i.status !== 'paid');
 
@@ -106,6 +124,7 @@ export function LeaseDetail() {
             {data.viewer.isTenant ? (
               <div className="flex gap-2">
                 <Button
+                  loading={busy}
                   onClick={() =>
                     run(
                       () => api.post(`/renewals/${data.renewal!.id}/decision`, { decision: 'accept' }),
@@ -117,6 +136,7 @@ export function LeaseDetail() {
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={busy}
                   onClick={() =>
                     run(
                       () => api.post(`/renewals/${data.renewal!.id}/decision`, { decision: 'decline' }),
@@ -164,16 +184,18 @@ export function LeaseDetail() {
                 </Badge>
                 <button
                   type="button"
-                  className="text-[13px] font-bold text-brand-500"
-                  onClick={async () => {
-                    let key = invoice.pdfKey;
-                    if (!key) {
-                      const rendered = await api.post<{ key: string }>(`/invoices/${invoice.id}/render`, {});
-                      key = rendered.key;
-                      refetch();
-                    }
-                    await openDocument(key);
-                  }}
+                  className="text-[13px] font-bold text-brand-500 disabled:opacity-40"
+                  disabled={busy}
+                  onClick={() =>
+                    openDocument(
+                      invoice.pdfKey ??
+                        (async () => {
+                          const rendered = await api.post<{ key: string }>(`/invoices/${invoice.id}/render`, {});
+                          refetch();
+                          return rendered.key;
+                        }),
+                    )
+                  }
                 >
                   PDF
                 </button>
@@ -218,9 +240,10 @@ export function LeaseDetail() {
               <Button
                 size="sm"
                 variant="outline"
+                disabled={busy}
                 onClick={() =>
                   run(
-                    () => api.post(`/leases/${leaseId}/inspections`, { kind: 'incoming', scheduledFor: today() }),
+                    () => api.post(`/leases/${leaseId}/inspections`, { kind: 'incoming', scheduledFor: localToday() }),
                     'Move-in inspection created',
                   )
                 }
@@ -230,9 +253,15 @@ export function LeaseDetail() {
               <Button
                 size="sm"
                 variant="outline"
+                disabled={busy}
                 onClick={() =>
                   run(
-                    () => api.post(`/leases/${leaseId}/inspections`, { kind: 'outgoing', scheduledFor: data.endDate }),
+                    () =>
+                      api.post(`/leases/${leaseId}/inspections`, {
+                        kind: 'outgoing',
+                        // The window closes on the day the tenancy actually ends.
+                        scheduledFor: data.termination?.effectiveOn ?? data.endDate,
+                      }),
                     'Move-out inspection created',
                   )
                 }
@@ -246,7 +275,14 @@ export function LeaseDetail() {
 
       {landlord ? (
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setShowPayment(true)}>Record a payment</Button>
+          <Button
+            onClick={() => {
+              setPaymentKey(randomId());
+              setShowPayment(true);
+            }}
+          >
+            Record a payment
+          </Button>
           {!data.renewal && !data.termination ? (
             <Button variant="outline" onClick={() => setShowRenewal(true)}>Offer a renewal</Button>
           ) : null}
@@ -292,6 +328,7 @@ export function LeaseDetail() {
           </p>
           <Button
             block
+            loading={busy}
             disabled={payment.amountCents <= 0}
             onClick={() =>
               run(async () => {
@@ -301,8 +338,11 @@ export function LeaseDetail() {
                   amountCents: payment.amountCents,
                   method: 'eft',
                   reference: payment.reference || undefined,
-                  receivedOn: today(),
+                  receivedOn: localToday(),
+                  idempotencyKey: paymentKey,
                 });
+                setPaymentKey(randomId());
+                setPayment({ amountCents: 0, reference: '', invoiceId: '' });
                 setShowPayment(false);
               }, 'Payment recorded')
             }
@@ -320,6 +360,7 @@ export function LeaseDetail() {
           </p>
           <Button
             block
+            loading={busy}
             onClick={() =>
               run(async () => {
                 await api.post(`/leases/${leaseId}/renewal`, {});
@@ -350,12 +391,13 @@ export function LeaseDetail() {
           </p>
           <Button
             block
+            loading={busy}
             onClick={() =>
               run(async () => {
                 await api.post(`/leases/${leaseId}/termination`, {
-                  initiatedBy: notice.reason === 'early_tenant' ? 'tenant' : 'landlord',
+                  initiatedBy: notice.reason === 'early_tenant' ? 'tenant' : notice.reason === 'mutual' ? 'mutual' : 'landlord',
                   reason: notice.reason,
-                  noticeGivenOn: today(),
+                  noticeGivenOn: localToday(),
                 });
                 setShowNotice(false);
               }, 'Notice served')

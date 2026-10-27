@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
-import { Camera, CameraResultType } from '@capacitor/camera';
 import {
-  Button, Card, CardBody, PageHeader, SegmentedControl, Spinner, Textarea, UploadTile, useToast,
+  Button, Card, CardBody, PageHeader, SegmentedControl, Textarea, UploadTile, useToast,
   type UploadState,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
+import { QueryState } from '../components/query-state';
 import { SignedImage } from '../components/signed-image';
+import { pickPhoto, putFile } from '../lib/photos';
 import type { InspectionState } from './inspection-rooms';
 
 type Condition = 'good' | 'fair' | 'poor' | 'damaged' | 'missing';
@@ -16,12 +17,13 @@ export function InspectionRoom() {
   const { inspectionId, room = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [conditions, setConditions] = useState<Record<string, Condition>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [photos, setPhotos] = useState<Record<string, { src: string; state: UploadState }>>({});
   const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['inspection', inspectionId],
     queryFn: () => api.get<InspectionState>(`/inspections/${inspectionId}`),
   });
@@ -39,26 +41,28 @@ export function InspectionRoom() {
   }, [data?.id, room]);
 
   const capture = async (item: string) => {
-    // 1600px keeps an embedded report photo small enough to email.
-    const photo = await Camera.getPhoto({
-      quality: 70,
-      width: 1600,
-      resultType: CameraResultType.DataUrl,
-    });
-    if (!photo.dataUrl) return;
-    setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl!, state: 'uploading' } }));
-    const blob = await (await fetch(photo.dataUrl)).blob();
+    let photo: Awaited<ReturnType<typeof pickPhoto>>;
+    try {
+      photo = await pickPhoto();
+    } catch (error) {
+      toast.show({ title: 'Could not read that photo', description: humanError(error), tone: 'danger' });
+      return;
+    }
+    if (!photo) return;
+    setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl, state: 'uploading' } }));
     try {
       const { uploadUrl, photoId } = await api.post<{ uploadUrl: string; photoId: string }>(
         `/inspections/${inspectionId}/photos/presign`,
-        { room, item, contentType: 'image/jpeg', sizeBytes: blob.size },
+        { room, item, contentType: photo.contentType, sizeBytes: photo.blob.size },
       );
-      await fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'content-type': 'image/jpeg' } });
+      await putFile(uploadUrl, photo.blob, photo.contentType);
       // The server only puts confirmed photos in the sealed report.
       await api.post('/photos/confirm', { scope: 'inspection', photoId });
-      setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl!, state: 'synced' } }));
-    } catch {
-      setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl!, state: 'failed' } }));
+      setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl, state: 'synced' } }));
+      queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] });
+    } catch (error) {
+      setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl, state: 'failed' } }));
+      toast.show({ title: 'Photo not uploaded', description: humanError(error), tone: 'danger' });
     }
   };
 
@@ -73,6 +77,8 @@ export function InspectionRoom() {
           note: notes[finding.item] || undefined,
         })),
       });
+      // The rooms screen reads the same query; without this it showed the old counts.
+      await queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] });
       navigate(-1);
     } catch (error) {
       toast.show({ title: 'Not saved', description: humanError(error), tone: 'danger' });
@@ -81,7 +87,9 @@ export function InspectionRoom() {
     }
   };
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This inspection" />;
+  }
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
@@ -142,7 +150,12 @@ export function InspectionRoom() {
                     />
                   ) : null}
                   {!locked && condition !== 'good' ? (
-                    <Button size="sm" variant="outline" onClick={() => capture(item)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={photos[item]?.state === 'uploading'}
+                      onClick={() => capture(item)}
+                    >
                       Add a photo
                     </Button>
                   ) : null}

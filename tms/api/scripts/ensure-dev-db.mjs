@@ -13,7 +13,15 @@ const api = join(dirname(fileURLToPath(import.meta.url)), '..');
 if (process.env.DB_DRIVER !== 'pglite') process.exit(0);
 
 const dir = resolve(api, process.env.PGLITE_DIR ?? './.pglite');
-if (existsSync(dir) && readdirSync(dir).length > 0) process.exit(0);
+if (existsSync(dir) && readdirSync(dir).length > 0) {
+  // An existing database still needs the migrations added since it was made, or the API
+  // fails on the first query that touches a new column.
+  execFileSync(process.execPath, ['--env-file=.env', join('scripts', 'migrate.mjs')], {
+    cwd: api,
+    stdio: 'inherit',
+  });
+  process.exit(0);
+}
 
 console.log(`No development database at ${dir}; creating and seeding it.`);
 execFileSync(process.execPath, ['--env-file=.env', join('scripts', 'migrate.mjs'), '--seed'], {

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import {
   Alert,
@@ -9,11 +9,12 @@ import {
   CardBody,
   PageHeader,
   SignaturePad,
-  Spinner,
   useToast,
   type SignaturePadHandle,
 } from '@hlonie/toolbox/ui';
-import { api, openDocument, humanError } from '../api/client';
+import { api, humanError } from '../api/client';
+import { QueryState } from '../components/query-state';
+import { useOpenDocument } from '../lib/open-document';
 
 export interface InspectionState {
   id: string;
@@ -43,16 +44,20 @@ export function InspectionRooms() {
   const { inspectionId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const openDocument = useOpenDocument();
+  const queryClient = useQueryClient();
   const padRef = useRef<SignaturePadHandle>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<{ key: string; sha256: string } | null>(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['inspection', inspectionId],
     queryFn: () => api.get<InspectionState>(`/inspections/${inspectionId}`),
   });
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This inspection" />;
+  }
 
   const rooms = [...new Set(data.findings.map((finding) => finding.room))].map((room) => {
     const inRoom = data.findings.filter((finding) => finding.room === room);
@@ -103,9 +108,17 @@ export function InspectionRooms() {
       });
       toast.show({ title: 'Signed', tone: 'success' });
       setDraft(null);
+      // The lease page lists this inspection's status and report.
+      queryClient.invalidateQueries({ queryKey: ['lease'] });
       refetch();
     } catch (error) {
       toast.show({ title: 'Not signed', description: humanError(error), tone: 'danger' });
+      // 409: the findings changed, or the other party signed an earlier draft. The report has
+      // to be prepared again before anyone can sign it, so drop the one on screen.
+      if ((error as { status?: number }).status === 409) {
+        setDraft(null);
+        refetch();
+      }
     } finally {
       setBusy(false);
     }

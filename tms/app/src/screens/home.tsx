@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { Alert, Badge, Card, CardBody, EmptyState, PageHeader, Spinner } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryState } from '../components/query-state';
 import { isLandlord } from '../lib/session';
 import { TenantHome } from './tenant-home';
 
@@ -32,17 +33,13 @@ export function Home() {
 }
 
 function LandlordHome() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leases'],
     queryFn: () => api.get<{ role: string; items: LeaseRow[] }>('/leases'),
   });
 
-  if (isLoading) {
-    return (
-      <main className="mx-auto flex max-w-5xl justify-center px-5 py-16">
-        <Spinner />
-      </main>
-    );
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your units" />;
   }
 
   const leases = data?.items ?? [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageBucket, monthlyInterestCents, rentForPeriod } from '../money';
+import { ageBucket, monthlyInterestCents, rentForPeriod, zar } from '../money';
 
 const BASE = 850000;
 const START = new Date('2026-09-01');
@@ -55,5 +55,15 @@ describe('monthlyInterestCents', () => {
   });
   it('rounds to the cent rather than carrying fractions', () => {
     expect(Number.isInteger(monthlyInterestCents(123457, 7.3))).toBe(true);
+  });
+});
+
+describe('zar', () => {
+  const nb = '\u00a0';
+  it('formats the en-ZA way without depending on the runtime ICU', () => {
+    expect(zar(850000)).toBe(`R${nb}8${nb}500,00`);
+    expect(zar(5)).toBe(`R${nb}0,05`);
+    expect(zar(123456789)).toBe(`R${nb}1${nb}234${nb}567,89`);
+    expect(zar(-150000)).toBe(`-R${nb}1${nb}500,00`);
   });
 });

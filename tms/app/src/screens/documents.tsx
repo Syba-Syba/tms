@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, Card, CardBody, EmptyState, PageHeader, Spinner } from '@hlonie/toolbox/ui';
-import { api, openDocument } from '../api/client';
+import { Badge, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
+import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryState } from '../components/query-state';
+import { useOpenDocument } from '../lib/open-document';
 
 interface Lease {
   id: string; ref: string; unit: string; startDate: string; endDate: string; hasDocument: boolean;
@@ -14,25 +16,36 @@ interface Lease {
 /** Everything on the tenancy that is a document, in one place, because when something is
     disputed this is the list a tribunal asks for. */
 export function Documents() {
-  const { data: list } = useQuery({
+  const openDocument = useOpenDocument();
+  const list = useQuery({
     queryKey: ['leases'],
     queryFn: () => api.get<{ items: { id: string }[] }>('/leases'),
   });
-  const leaseId = list?.items[0]?.id;
+  const leaseId = list.data?.items[0]?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],
     queryFn: () => api.get<Lease>(`/leases/${leaseId}`),
     enabled: Boolean(leaseId),
   });
 
-  if (isLoading || !data) {
-    return leaseId ? (
-      <main className="p-16 text-center"><Spinner /></main>
-    ) : (
-      <main className="mx-auto max-w-2xl px-5 py-6">
-        <EmptyState title="Nothing filed yet" description="Documents appear as your tenancy produces them." />
-      </main>
+  if (!data) {
+    // "Nothing filed yet" is only true once the list has actually answered with no lease.
+    if (list.isSuccess && !leaseId) {
+      return (
+        <main className="mx-auto max-w-2xl px-5 py-6">
+          <EmptyState title="Nothing filed yet" description="Documents appear as your tenancy produces them." />
+        </main>
+      );
+    }
+    return (
+      <QueryState
+        isLoading={list.isLoading || isLoading}
+        isError={list.isError || isError}
+        error={list.error ?? error}
+        onRetry={() => (list.isError ? list.refetch() : refetch())}
+        what="Your documents"
+      />
     );
   }
 
@@ -141,11 +154,12 @@ export function Documents() {
                 <button
                   type="button"
                   className="text-[13px] font-bold text-brand-500"
-                  onClick={async () => {
-                    const key = invoice.pdfKey
-                      ?? (await api.post<{ key: string }>(`/invoices/${invoice.id}/render`, {})).key;
-                    await openDocument(key);
-                  }}
+                  onClick={() =>
+                    openDocument(
+                      invoice.pdfKey ??
+                        (async () => (await api.post<{ key: string }>(`/invoices/${invoice.id}/render`, {})).key),
+                    )
+                  }
                 >
                   PDF
                 </button>

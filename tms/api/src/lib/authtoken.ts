@@ -20,9 +20,15 @@ export interface TokenUser {
   pv?: string;
 }
 
-/** Changes whenever the password does, and reveals nothing about it. */
-export const credentialVersion = (passwordHash: string) =>
-  createHash('sha256').update(passwordHash).digest('base64url').slice(0, 16);
+/**
+ * Changes whenever the password does, or the account signs out, and reveals nothing about
+ * either. Epoch 0 hashes the password alone, so tokens issued before the epoch existed still work.
+ */
+export const credentialVersion = (passwordHash: string, sessionEpoch = 0) =>
+  createHash('sha256')
+    .update(sessionEpoch ? `${passwordHash}:${sessionEpoch}` : passwordHash)
+    .digest('base64url')
+    .slice(0, 16);
 
 // Anyone holding the example value from this repository could otherwise mint a landlord
 // session, so outside development it has to be a real one.

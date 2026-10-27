@@ -1,6 +1,4 @@
-import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2';
 import { query } from '../lib/db';
-import { env } from '../lib/env';
 import { jobLogger } from '../lib/logger';
 
 const log = jobLogger('notifications-dispatch');
@@ -12,19 +10,22 @@ const maskRecipient = (to: string) => {
   return to.length > 4 ? `***${to.slice(-4)}` : '***';
 };
 
-const ses = new SESv2Client({ region: env.AWS_REGION });
-
 const FROM = process.env.NOTIFY_FROM ?? 'no-reply@example.invalid';
+/** Where a tenant's reply lands. Without it a reply to a no-reply sender goes nowhere. */
+const REPLY_TO = process.env.NOTIFY_REPLY_TO;
 const MAX_ATTEMPTS = 5;
 const BATCH = 50;
 
 /**
  * 'skip' drains the outbox without sending anything, logging what each message would have been.
  * That is the default, so a fresh deploy cannot email a real tenant from an unverified address
- * or pile up failures against a domain that does not exist yet. Set NOTIFY_MODE=send once the
- * sending domain is verified and out of the SES sandbox.
+ * or pile up failures against a domain that does not exist yet.
+ *
+ *   send  Amazon SES, for the AWS deployment, once the sending domain is verified.
+ *   smtp  Any mailbox with SMTP, for a self-hosted install: SMTP_URL=smtps://user:pass@host:465
  */
-const MODE = process.env.NOTIFY_MODE === 'send' ? 'send' : 'skip';
+const MODE =
+  process.env.NOTIFY_MODE === 'send' ? 'send' : process.env.NOTIFY_MODE === 'smtp' ? 'smtp' : 'skip';
 
 /**
  * A notification is worth sending while it is still news. Left pending long enough, it becomes
@@ -44,12 +45,21 @@ interface Pending {
   stale: boolean;
 }
 
-async function deliver(row: Pending): Promise<void> {
-  if (row.channel === 'email') {
+type Sender = (row: Pending) => Promise<void>;
+
+/* Both senders load lazily: the self-hosted server has no AWS credentials and the Lambda has
+   no SMTP mailbox, and neither should pay for the other's client at import time. */
+let sender: Promise<Sender> | undefined;
+
+async function sesSender(): Promise<Sender> {
+  const { SendEmailCommand, SESv2Client } = await import('@aws-sdk/client-sesv2');
+  const ses = new SESv2Client({ region: process.env.AWS_REGION ?? 'af-south-1' });
+  return async (row) => {
     await ses.send(
       new SendEmailCommand({
         FromEmailAddress: FROM,
         Destination: { ToAddresses: [row.recipient_to] },
+        ...(REPLY_TO ? { ReplyToAddresses: [REPLY_TO] } : {}),
         Content: {
           Simple: {
             Subject: { Data: row.subject, Charset: 'UTF-8' },
@@ -58,6 +68,30 @@ async function deliver(row: Pending): Promise<void> {
         },
       }),
     );
+  };
+}
+
+async function smtpSender(): Promise<Sender> {
+  const url = process.env.SMTP_URL;
+  if (!url) throw new Error('NOTIFY_MODE=smtp needs SMTP_URL, e.g. smtps://user:password@smtp.example.com:465');
+  const nodemailer = await import('nodemailer');
+  const transport = nodemailer.createTransport(url);
+  return async (row) => {
+    await transport.sendMail({
+      from: FROM,
+      to: row.recipient_to,
+      ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
+      subject: row.subject,
+      text: row.body,
+    });
+  };
+}
+
+const emailSender = () => (sender ??= MODE === 'smtp' ? smtpSender() : sesSender());
+
+async function deliver(row: Pending): Promise<void> {
+  if (row.channel === 'email') {
+    await (await emailSender())(row);
     return;
   }
   // WhatsApp and push are modelled but not connected. Failing them would retry forever, so
@@ -67,6 +101,9 @@ async function deliver(row: Pending): Promise<void> {
 
 const park = (id: string, reason: string) =>
   query(`update notification set status = 'skipped', last_error = $2 where id = $1`, [id, reason]);
+
+/** Five tries in twenty-five minutes rode straight through any outage. The gaps now grow. */
+const retryDelayMinutes = (attempt: number) => Math.min(5 * 2 ** (attempt - 1), 240);
 
 /** Runs every few minutes. Claims a batch, then sends or parks each row on its own merits. */
 export const handler = async () => {
@@ -101,7 +138,7 @@ export const handler = async () => {
         notificationId: row.id,
         to: maskRecipient(row.recipient_to),
         channel: row.channel,
-        subject: row.subject,
+        kind: row.subject.slice(0, 40),
       });
       await park(row.id, 'NOTIFY_MODE=skip');
       counts.skipped += 1;
@@ -116,11 +153,18 @@ export const handler = async () => {
       const message = error instanceof Error ? error.message : String(error);
       const parked = (error as { skip?: boolean }).skip === true;
       const exhausted = row.attempts >= MAX_ATTEMPTS;
-      await query(`update notification set status = $2, last_error = $3 where id = $1`, [
-        row.id,
-        parked ? 'skipped' : exhausted ? 'failed' : 'pending',
-        message.slice(0, 500),
-      ]);
+      await query(
+        `update notification
+            set status = $2, last_error = $3,
+                send_after = case when $2 = 'pending' then now() + ($4 || ' minutes')::interval else send_after end
+          where id = $1`,
+        [
+          row.id,
+          parked ? 'skipped' : exhausted ? 'failed' : 'pending',
+          message.slice(0, 500),
+          String(retryDelayMinutes(row.attempts)),
+        ],
+      );
       if (parked) counts.skipped += 1;
       else counts.failed += 1;
     }

@@ -2,9 +2,31 @@ import { requireLeaseAccess } from '../lib/access';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
-import { earliestEffectiveDate, NOTICE_BUSINESS_DAYS, serveNoticeSchema } from '../domain/termination';
+import {
+  earliestEffectiveDate,
+  NOTICE_BUSINESS_DAYS,
+  serveNoticeSchema,
+  type TerminationReason,
+} from '../domain/termination';
+import { addDaysIso, dateFromIso, isoDate, sastToday } from '../domain/dates';
+import { trimInvoicesAfter } from '../lib/billing';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
+
+/**
+ * Which reasons each side may give. The reason sets the notice period, so letting a tenant
+ * pick 'mutual' (no notice) or 'end_of_term' on a lease that had already run out ended the
+ * lease the same day; backdating noticeGivenOn ended it in the past. Both sides are now held
+ * to the reasons that are theirs to give, and the tenant's notice date is today, full stop.
+ */
+const REASONS_BY_INITIATOR: Record<'tenant' | 'landlord' | 'mutual', readonly TerminationReason[]> = {
+  tenant: ['early_tenant', 'breach_by_landlord', 'end_of_term'],
+  landlord: ['breach_by_tenant', 'end_of_term'],
+  mutual: ['mutual'],
+};
+
+/** A landlord may record a paper notice received a little while ago, not rewrite last year. */
+const LANDLORD_BACKDATE_DAYS = 30;
 
 export const handler = route(async (event) => {
   const leaseId = event.pathParameters?.id;
@@ -15,14 +37,28 @@ export const handler = route(async (event) => {
 
   // You may only serve notice as yourself. Mutual needs both, so the landlord records it.
   if (input.initiatedBy === 'tenant' && !access.isTenant) {
-    throw forbidden('Only the tenant serves the tenant\u2019s notice.');
+    throw forbidden('Only the tenant serves the tenant’s notice.');
   }
   if (input.initiatedBy !== 'tenant' && !access.isLandlord) {
     throw forbidden('Only the landlord records this notice.');
   }
+  if (!REASONS_BY_INITIATOR[input.initiatedBy].includes(input.reason)) {
+    throw badRequest(`A notice from the ${input.initiatedBy} cannot be given as "${input.reason.replace(/_/g, ' ')}".`, {
+      reason: `Choose one of: ${REASONS_BY_INITIATOR[input.initiatedBy].map((r) => r.replace(/_/g, ' ')).join(', ')}.`,
+    });
+  }
   // A penalty is a landlord's charge under CPA s14. A tenant cannot set one on themselves.
   if (penaltyCents > 0 && !access.isLandlord) {
     throw forbidden('Only the landlord sets a cancellation penalty.');
+  }
+
+  const today = sastToday();
+  // The tenant's notice is given the moment it is served; the clock cannot be wound back.
+  const noticeGivenOn =
+    access.isTenant && !access.isLandlord ? today : input.noticeGivenOn ? isoDate(input.noticeGivenOn) : today;
+  if (noticeGivenOn > today) throw badRequest('The notice date cannot be in the future.');
+  if (noticeGivenOn < addDaysIso(today, -LANDLORD_BACKDATE_DAYS)) {
+    throw badRequest(`A notice can be recorded up to ${LANDLORD_BACKDATE_DAYS} days after it was given, not earlier.`);
   }
 
   const result = await withTransaction(async (run) => {
@@ -33,15 +69,19 @@ export const handler = route(async (event) => {
     if (!lease) throw badRequest('That lease no longer exists.');
     if (lease.status !== 'active') throw conflict(`This lease is ${lease.status}.`);
 
-    const leaseEnd = new Date(lease.end_date);
-    const earliest = earliestEffectiveDate(input.reason, input.noticeGivenOn, leaseEnd);
-    const effective = input.effectiveOn ?? earliest;
+    const leaseEnd = dateFromIso(lease.end_date);
+    const earliest = earliestEffectiveDate(input.reason, dateFromIso(noticeGivenOn), leaseEnd);
+    const effective = input.effectiveOn ? dateFromIso(isoDate(input.effectiveOn)) : earliest;
     // The parties may agree a later date than the minimum, never an earlier one.
     if (effective < earliest) {
       throw badRequest(
-        `The earliest lawful end date is ${earliest.toISOString().slice(0, 10)}. ` +
-          `${NOTICE_BUSINESS_DAYS[input.reason]} business days\u2019 notice applies.`,
+        `The earliest lawful end date is ${isoDate(earliest)}. ` +
+          `${NOTICE_BUSINESS_DAYS[input.reason]} business days’ notice applies.`,
       );
+    }
+    // Nor can a lease end before today: the tenancy that ran until now happened.
+    if (isoDate(effective) < today) {
+      throw badRequest(`The end date cannot be before today (${today}).`);
     }
 
     const [termination] = await run<{ id: string }>(
@@ -54,18 +94,23 @@ export const handler = route(async (event) => {
         leaseId,
         input.initiatedBy,
         input.reason,
-        input.noticeGivenOn,
-        effective,
+        noticeGivenOn,
+        isoDate(effective),
         NOTICE_BUSINESS_DAYS[input.reason],
         penaltyCents,
       ],
     );
     if (!termination) throw conflict('Notice has already been served on this lease.');
 
+    // Next month's rent may already have been invoiced in full on the 25th.
+    const trimmed = await trimInvoicesAfter(run, leaseId, isoDate(effective));
+
     return {
       id: termination.id,
-      effectiveOn: effective.toISOString().slice(0, 10),
-      earliestLawful: earliest.toISOString().slice(0, 10),
+      effectiveOn: isoDate(effective),
+      earliestLawful: isoDate(earliest),
+      noticeGivenOn,
+      invoicesAdjusted: trimmed,
     };
   });
 
@@ -86,7 +131,7 @@ export const handler = route(async (event) => {
   );
   const noticeData = {
     unit: parties?.unit ?? '',
-    noticeGivenOn: input.noticeGivenOn.toISOString().slice(0, 10),
+    noticeGivenOn,
     effectiveOn: result.effectiveOn,
   };
   // Both parties, because the exit inspection deadline binds both of them.
@@ -115,7 +160,13 @@ export const handler = route(async (event) => {
     action: 'termination.notice_served',
     entity: 'termination',
     entityId: result.id,
-    detail: { reason: input.reason, effectiveOn: result.effectiveOn },
+    detail: {
+      reason: input.reason,
+      initiatedBy: input.initiatedBy,
+      noticeGivenOn,
+      effectiveOn: result.effectiveOn,
+      invoicesAdjusted: result.invoicesAdjusted,
+    },
   });
 
   return json(201, result);

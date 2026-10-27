@@ -3,6 +3,8 @@ import { requireApplicationAccess, requireLeaseAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { json, notFound, parseBody, route } from '../lib/http';
 import { storage } from '../lib/storage';
+import { audit } from '../lib/audit';
+import { caller } from '../lib/auth';
 
 const schema = z.object({ key: z.string().min(1).max(500) });
 
@@ -42,6 +44,8 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
 
 export const handler = route(async (event) => {
   const { key } = parseBody(event, schema);
+  let entity: 'application' | 'lease';
+  let entityId: string;
 
   if (key.startsWith('applications/')) {
     // ID copies, payslips and bank statements. Membership of the landlord group used to be
@@ -54,6 +58,8 @@ export const handler = route(async (event) => {
     await requireApplicationAccess(event, document.application_id).catch(() => {
       throw notFound('Document');
     });
+    entity = 'application';
+    entityId = document.application_id;
   } else {
     const leaseId = await leaseIdFor(key);
     if (!leaseId) throw notFound('Document');
@@ -61,7 +67,20 @@ export const handler = route(async (event) => {
     await requireLeaseAccess(event, leaseId).catch(() => {
       throw notFound('Document');
     });
+    entity = 'lease';
+    entityId = leaseId;
   }
+
+  // Who opened an ID copy or a payslip, and when, is a POPIA question the log has to answer.
+  const person = caller(event);
+  await audit({
+    actorSub: person.sub,
+    actorRole: person.groups[0] ?? 'unknown',
+    action: 'file.viewed',
+    entity,
+    entityId,
+    detail: { key },
+  });
 
   const viewUrl = await storage().presignGet(key, 300);
   return json(200, { viewUrl, expiresInSeconds: 300 });

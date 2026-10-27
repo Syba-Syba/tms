@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, Combobox, CurrencyInput, Input, PageHeader, Spinner, Textarea, useToast,
+  Alert, Badge, Button, Card, CardBody, Combobox, CurrencyInput, Input, PageHeader, Textarea, useToast,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryState } from '../components/query-state';
 import { SignedImage } from '../components/signed-image';
 
 interface DirectoryEntry {
@@ -70,12 +71,17 @@ function ArchRating({ value, onChange }: { value: number; onChange?: (next: numb
 export function TicketDetail() {
   const { ticketId } = useParams();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [quote, setQuote] = useState(0);
-  const [comment, setComment] = useState('');
+  // The closing note and a message on the thread used to share one state, so typing a
+  // message filled the rating note and vice versa.
+  const [message, setMessage] = useState('');
+  const [ratingNote, setRatingNote] = useState('');
   const [rating, setRating] = useState(0);
   const [contractor, setContractor] = useState({ name: '', trade: '', phone: '' });
+  const [busy, setBusy] = useState(false);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['ticket', ticketId],
     queryFn: () => api.get<Ticket>(`/tickets/${ticketId}`),
   });
@@ -86,17 +92,30 @@ export function TicketDetail() {
     enabled: Boolean(data?.viewer.isLandlord),
   });
 
-  const act = async (body: unknown, message: string) => {
+  // One request at a time, every failure shown. The close and message buttons used to await
+  // bare calls with no catch, so a refusal was an unhandled rejection and a silent button.
+  const perform = async (fn: () => Promise<unknown>, title: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
-      await api.post(`/tickets/${ticketId}/actions`, body);
-      toast.show({ title: message, tone: 'success' });
+      await fn();
+      toast.show({ title, tone: 'success' });
+      // The list screen caches its own copy of this ticket's status.
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['leases'] });
       refetch();
     } catch (error) {
       toast.show({ title: 'That did not work', description: humanError(error), tone: 'danger' });
+    } finally {
+      setBusy(false);
     }
   };
+  const act = (body: unknown, message: string) =>
+    perform(() => api.post(`/tickets/${ticketId}/actions`, body), message);
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This ticket" />;
+  }
 
   const landlord = data.viewer.isLandlord;
 
@@ -157,7 +176,7 @@ export function TicketDetail() {
           <CardBody className="space-y-3">
             <p className="text-[10.5px] font-bold uppercase tracking-widest text-brand-500">Quote</p>
             <Ledger cents={data.quoteCents} className="text-[26px]" />
-            <Button onClick={() => act({ action: 'approve_quote' }, 'Quote approved')}>
+            <Button loading={busy} onClick={() => act({ action: 'approve_quote' }, 'Quote approved')}>
               Approve and let them start
             </Button>
           </CardBody>
@@ -203,6 +222,7 @@ export function TicketDetail() {
               onChange={(e) => setContractor({ ...contractor, phone: e.target.value })}
             />
             <Button
+              loading={busy}
               disabled={!contractor.name || !contractor.trade || contractor.phone.length < 9}
               onClick={() => act({ action: 'assign', contractor }, 'Contractor assigned')}
             >
@@ -219,12 +239,13 @@ export function TicketDetail() {
             <CurrencyInput cents={quote} onCentsChange={(next) => setQuote(next ?? 0)} />
             <div className="flex gap-2">
               <Button
+                loading={busy}
                 disabled={quote <= 0}
                 onClick={() => act({ action: 'quote', quoteCents: quote }, 'Quote added')}
               >
                 Add quote
               </Button>
-              <Button variant="outline" onClick={() => act({ action: 'start' }, 'Work started')}>
+              <Button variant="outline" disabled={busy} onClick={() => act({ action: 'start' }, 'Work started')}>
                 Start now
               </Button>
             </div>
@@ -235,6 +256,7 @@ export function TicketDetail() {
       {landlord && ['quote_approved', 'in_progress'].includes(data.status) ? (
         <Button
           className="mb-4"
+          loading={busy}
           onClick={() =>
             act(
               { action: data.status === 'quote_approved' ? 'start' : 'complete' },
@@ -256,16 +278,18 @@ export function TicketDetail() {
             </p>
             <Textarea
               placeholder="Anything to add"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              value={ratingNote}
+              onChange={(e) => setRatingNote(e.target.value)}
             />
             <Button
+              loading={busy}
               disabled={rating === 0}
-              onClick={async () => {
-                await api.post(`/tickets/${ticketId}/close`, { rating, note: comment || undefined });
-                toast.show({ title: 'Ticket closed', tone: 'success' });
-                refetch();
-              }}
+              onClick={() =>
+                perform(
+                  () => api.post(`/tickets/${ticketId}/close`, { rating, note: ratingNote.trim() || undefined }),
+                  'Ticket closed',
+                )
+              }
             >
               Close ticket
             </Button>
@@ -288,17 +312,19 @@ export function TicketDetail() {
           <CardBody className="space-y-3">
             <Textarea
               placeholder="Add a message to this ticket"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
             />
             <Button
               variant="outline"
-              disabled={!comment.trim()}
-              onClick={async () => {
-                await api.post(`/tickets/${ticketId}/comments`, { note: comment });
-                setComment('');
-                refetch();
-              }}
+              loading={busy}
+              disabled={!message.trim()}
+              onClick={() =>
+                perform(async () => {
+                  await api.post(`/tickets/${ticketId}/comments`, { note: message.trim() });
+                  setMessage('');
+                }, 'Message sent')
+              }
             >
               Send
             </Button>

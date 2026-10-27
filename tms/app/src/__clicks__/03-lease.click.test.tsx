@@ -23,12 +23,6 @@ const signInApplicant = async () => {
   localStorage.setItem('tms.user', JSON.stringify(session.user));
 };
 
-const fillOtp = (scope: typeof screen = screen) => {
-  for (let digit = 1; digit <= 6; digit += 1) {
-    type(scope.getByLabelText(`Digit ${digit}`), String(digit));
-  }
-};
-
 /** window.open fires after the signed-URL roundtrip, so wait for the capture first. */
 const openedIsPdf = async (before: number) => {
   await waitFor(() => expect(openedUrls.length).toBeGreaterThan(before), { timeout: 8000 });
@@ -46,10 +40,9 @@ beforeAll(async () => {
 describe('signing the lease', () => {
   const signIfAsked = async (party: 'landlord' | 'tenant') => {
     // A rerun meets a lease that is already signed; then the active state is the assertion.
-    const digit = screen.queryByLabelText('Digit 1');
-    if (digit) {
-      fillOtp();
-      fireEvent.click(screen.getByRole('button', { name: `Sign as the ${party}` }));
+    const button = screen.queryByRole('button', { name: `Sign as the ${party}` });
+    if (button) {
+      fireEvent.click(button);
       await screen.findByText('Lease signed', undefined, { timeout: 8000 });
     }
   };

@@ -33,6 +33,12 @@ export const handler = route(async (event) => {
         [inspectionId, finding.room, finding.item, finding.condition, finding.note ?? null],
       );
     }
+    // The draft both parties review no longer describes these findings. Withdrawing its
+    // fingerprint means a signature needs a fresh render; before this, findings could change
+    // after review and a signature over the old draft would still have been accepted.
+    await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [
+      inspectionId,
+    ]);
     return { saved: input.findings.length };
   });
 

@@ -47,10 +47,31 @@ export interface ApplicationSummary {
   leaseStatus: string | null;
 }
 
-/** Fetches a short-lived signed link for a stored document and opens it in a new tab. */
-export async function openDocument(key: string) {
-  const { viewUrl } = await api.post<{ viewUrl: string }>('/files/view', { key });
-  window.open(viewUrl, '_blank', 'noopener');
+/**
+ * Fetches a short-lived signed link for a stored document and opens it in a new tab.
+ *
+ * The tab is opened before anything is awaited: browsers only allow window.open inside the
+ * click itself, and the signed-link round trip used to push it past that, so on phones the
+ * popup was blocked and the document never appeared. The key may be a function (render the
+ * invoice, then open it) and still gets the tab, for the same reason.
+ */
+export async function openDocument(key: string | (() => Promise<string>)) {
+  const tab = window.open('', '_blank');
+  try {
+    const resolved = typeof key === 'string' ? key : await key();
+    const { viewUrl } = await api.post<{ viewUrl: string }>('/files/view', { key: resolved });
+    if (tab) {
+      // The document page must not be able to reach back into the app.
+      tab.opener = null;
+      tab.location.replace(viewUrl);
+    } else if (!window.open(viewUrl, '_blank', 'noopener')) {
+      // Blocked outright: show it here. Back returns to the app.
+      window.location.assign(viewUrl);
+    }
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
 }
 
 /** Fetches a short-lived signed link without opening it, for inline images. */
