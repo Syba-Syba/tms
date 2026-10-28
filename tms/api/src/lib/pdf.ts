@@ -383,6 +383,24 @@ export interface InvoiceData {
   lines: { description: string; amountCents: number }[];
   totalCents: number;
   paymentReference: string;
+  bank?: BankDetails | null;
+}
+
+export interface BankDetails {
+  name: string;
+  holder: string;
+  accountNumber: string;
+  branchCode: string;
+}
+
+/** The account to pay into, as a block of pairs. Without one, the reference alone. */
+function payTo(ctx: Ctx, bank: BankDetails | null | undefined, reference: string) {
+  if (!bank) return;
+  pair(ctx, 'Bank', bank.name);
+  pair(ctx, 'Account holder', bank.holder);
+  pair(ctx, 'Account number', bank.accountNumber);
+  pair(ctx, 'Branch code', bank.branchCode);
+  pair(ctx, 'Reference', reference);
 }
 
 export async function renderInvoicePdf(input: InvoiceData) {
@@ -406,7 +424,8 @@ export async function renderInvoicePdf(input: InvoiceData) {
   ctx.y -= 30;
   rule(ctx);
   text(ctx, 'How to pay', { bold: true, size: 11, gap: 7 });
-  text(ctx, `EFT to the account on your lease. Use the reference ${data.paymentReference} exactly, or the payment cannot be matched to your unit.`, { color: MUTED, size: 9 });
+  payTo(ctx, data.bank, data.paymentReference);
+  text(ctx, `${data.bank ? 'EFT to the account above' : 'EFT to the account on your lease'}. Use the reference ${data.paymentReference} exactly, or the payment cannot be matched to your unit.`, { color: MUTED, size: 9 });
   return seal(ctx);
 }
 
@@ -593,6 +612,7 @@ export interface LetterOfDemandData {
   remedyBy: string;
   remedyBusinessDays: number;
   paymentReference: string;
+  bank?: BankDetails | null;
 }
 
 export async function renderLetterOfDemandPdf(input: LetterOfDemandData) {
@@ -622,7 +642,8 @@ export async function renderLetterOfDemandPdf(input: LetterOfDemandData) {
 
   text(ctx, 'Demand', { bold: true, size: 11, gap: 7 });
   text(ctx, `You are in breach of the lease. Demand is hereby made that you pay the full amount of ${zar(data.totalCents)} on or before ${data.remedyBy}, being ${data.remedyBusinessDays} business days from the date of this letter, as section 14 of the Consumer Protection Act 68 of 2008 requires before a lease may be cancelled.`, { gap: 10 });
-  text(ctx, `Pay by EFT to the account on your lease, using the reference ${data.paymentReference} exactly, so the payment is matched to your unit.`, { gap: 10 });
+  text(ctx, `Pay by EFT to ${data.bank ? 'the account below' : 'the account on your lease'}, using the reference ${data.paymentReference} exactly, so the payment is matched to your unit.`, { gap: 10 });
+  payTo(ctx, data.bank, data.paymentReference);
   text(ctx, 'If the full amount is not paid by that date, the landlord may cancel the lease, require you to vacate the premises, and recover the arrears, together with any further rent, damages and legal costs allowed by law. This letter does not waive any of the landlord\'s rights under the lease or the law.', { gap: 10 });
   text(ctx, 'If you have already paid, send your proof of payment in the app or to the contact details below. If you cannot pay in full, contact the landlord before the date above to discuss a written payment arrangement.', { gap: 10 });
   rule(ctx);

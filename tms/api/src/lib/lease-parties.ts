@@ -1,4 +1,6 @@
 import { query } from './db';
+import { bankOf } from './landlord-account';
+import type { BankDetails } from './pdf';
 
 export interface LeaseParties {
   leaseId: string;
@@ -14,6 +16,7 @@ export interface LeaseParties {
   landlordName: string;
   landlordEmail: string;
   landlordPhone: string;
+  bank: BankDetails | null;
 }
 
 /**
@@ -24,7 +27,8 @@ export async function leaseParties(leaseId: string): Promise<LeaseParties | null
   const [row] = await query<{
     ref: string; start_date: string; unit: string; premises: string; tenant_sub: string; tenant_name: string;
     tenant_email: string; tenant_phone: string; landlord_sub: string | null; landlord_name: string;
-    landlord_email: string; landlord_phone: string;
+    landlord_email: string; landlord_phone: string; bank_name: string | null; bank_account_holder: string | null;
+    bank_account_number: string | null; bank_branch_code: string | null;
   }>(
     `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, l.start_date::text,
             p.name || ' ' || u.code as unit,
@@ -32,7 +36,7 @@ export async function leaseParties(leaseId: string): Promise<LeaseParties | null
             coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub,
             a.first_name || ' ' || a.last_name as tenant_name, a.email as tenant_email, a.phone as tenant_phone,
             ll.cognito_sub as landlord_sub, ll.trading_name as landlord_name, ll.email as landlord_email,
-            ll.phone as landlord_phone
+            ll.phone as landlord_phone, ll.bank_name, ll.bank_account_holder, ll.bank_account_number, ll.bank_branch_code
        from lease l
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id
@@ -56,5 +60,6 @@ export async function leaseParties(leaseId: string): Promise<LeaseParties | null
     landlordName: row.landlord_name,
     landlordEmail: row.landlord_email,
     landlordPhone: row.landlord_phone,
+    bank: bankOf(row),
   };
 }

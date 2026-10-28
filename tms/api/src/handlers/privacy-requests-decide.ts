@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { landlordIdFor } from '../lib/access';
+import { requireOwner } from '../lib/access';
 import { audit } from '../lib/audit';
 import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
@@ -20,7 +20,8 @@ export const handler = route(async (event) => {
   const requestId = event.pathParameters?.id;
   if (!requestId) throw badRequest('A request id is required.');
   const person = requireLandlord(event);
-  const landlordId = await landlordIdFor(person);
+  // The landlord answers as the responsible party under POPIA, so an agent cannot.
+  const { landlordId } = await requireOwner(person);
   const input = parseBody(event, schema);
 
   const [request] = await query<{ person_sub: string; status: string; email: string; first_name: string }>(

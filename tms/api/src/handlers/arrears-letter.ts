@@ -76,6 +76,7 @@ export const handler = route(async (event) => {
       remedyBy: longDate(deadline),
       remedyBusinessDays: REMEDY_BUSINESS_DAYS,
       paymentReference: parties.ref,
+      bank: parties.bank,
     });
     const key = `arrears/${leaseId}/${arrearsCase.id}/letter-of-demand.pdf`;
     await storage().put(key, rendered.bytes, 'application/pdf');

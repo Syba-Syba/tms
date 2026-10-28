@@ -35,6 +35,14 @@ import { handler as leases_list } from './handlers/leases-list';
 import { handler as leases_render } from './handlers/leases-render';
 import { handler as leases_sign } from './handlers/leases-sign';
 import { handler as leases_statement } from './handlers/leases-statement';
+import { handler as landlord_get } from './handlers/landlord-get';
+import { handler as landlord_update } from './handlers/landlord-update';
+import { handler as landlord_team } from './handlers/landlord-team';
+import { handler as landlord_invite } from './handlers/landlord-invite';
+import { handler as landlord_invite_revoke } from './handlers/landlord-invite-revoke';
+import { handler as landlord_member_remove } from './handlers/landlord-member-remove';
+import { handler as invites_lookup } from './handlers/invites-lookup';
+import { handler as invites_accept } from './handlers/invites-accept';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -166,6 +174,14 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/me/erasure-request', me_erasure],
   ['GET', '/privacy-requests', privacy_requests_list],
   ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
+  ['GET', '/landlord', landlord_get],
+  ['PUT', '/landlord', landlord_update],
+  ['GET', '/landlord/team', landlord_team],
+  ['POST', '/landlord/invites', landlord_invite],
+  ['POST', '/landlord/invites/{id}/revoke', landlord_invite_revoke],
+  ['POST', '/landlord/members/{sub}/remove', landlord_member_remove],
+  ['POST', '/invites/lookup', invites_lookup],
+  ['POST', '/invites/accept', invites_accept],
 ];
 
 interface Compiled {

@@ -13,8 +13,7 @@ export const handler = route(async (event) => {
   await withTransaction(async (run) => {
     const [property] = await run<{ id: string; name: string }>(
       `select p.id, p.name from property p
-         join landlord l on l.id = p.landlord_id
-        where p.id = $1 and l.cognito_sub = $2
+        where p.id = $1 and p.landlord_id = (select landlord_id from landlord_member where sub = $2 and role = 'owner')
         for update`,
       [propertyId, person.sub],
     );

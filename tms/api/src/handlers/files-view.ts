@@ -55,11 +55,12 @@ export const handler = route(async (event) => {
   if (key.startsWith('expenses/')) {
     // An expense slip belongs to a landlord, not a lease, so no tenant can ever reach one.
     const person = caller(event);
-    const [slip] = await query<{ id: string; cognito_sub: string | null }>(
-      `select e.id, ll.cognito_sub from expense e join landlord ll on ll.id = e.landlord_id where e.slip_s3_key = $1`,
-      [key],
+    const [slip] = await query<{ id: string; is_member: boolean }>(
+      `select e.id, exists (select 1 from landlord_member m where m.landlord_id = e.landlord_id and m.sub = $2) as is_member
+         from expense e where e.slip_s3_key = $1`,
+      [key, person.sub],
     );
-    if (!slip || slip.cognito_sub !== person.sub || !person.groups.includes('landlord')) throw notFound('Document');
+    if (!slip || !slip.is_member || !person.groups.includes('landlord')) throw notFound('Document');
     entity = 'expense';
     entityId = slip.id;
   } else if (key.startsWith('applications/')) {

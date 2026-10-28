@@ -24,7 +24,7 @@ export const handler = route(async (event) => {
   const sets = entries.map(([field], index) => `${COLUMNS[field]} = $${index + 3}`).join(', ');
   const [updated] = await query<{ id: string }>(
     `update property set ${sets}
-      where id = $1 and landlord_id = (select id from landlord where cognito_sub = $2)
+      where id = $1 and landlord_id = (select landlord_id from landlord_member where sub = $2)
       returning id`,
     [propertyId, person.sub, ...entries.map(([, value]) => value)],
   );

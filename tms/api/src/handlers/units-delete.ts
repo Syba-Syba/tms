@@ -15,8 +15,7 @@ export const handler = route(async (event) => {
     const [unit] = await run<{ id: string; code: string }>(
       `select u.id, u.code from unit u
          join property p on p.id = u.property_id
-         join landlord l on l.id = p.landlord_id
-        where u.id = $1 and l.cognito_sub = $2
+        where u.id = $1 and p.landlord_id = (select landlord_id from landlord_member where sub = $2 and role = 'owner')
         for update`,
       [unitId, person.sub],
     );

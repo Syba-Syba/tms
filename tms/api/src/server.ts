@@ -66,6 +66,9 @@ const PUBLIC_ROUTES = new Set([
   'POST /auth/register',
   'POST /auth/reset/request',
   'POST /auth/reset/confirm',
+  // The token in the body is the credential: it only ever opens its own invitation.
+  'POST /invites/lookup',
+  'POST /invites/accept',
 ]);
 
 /**

@@ -2,6 +2,7 @@ import { requireLeaseAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
 import { ageBucket } from '../domain/money';
+import { bankOf } from '../lib/landlord-account';
 
 /** One statement per lease: invoices as debits, payments as credits, running balance,
     the deposit ledger alongside. Tenant and landlord see the identical document. */
@@ -12,8 +13,15 @@ export const handler = route(async (event) => {
   await requireLeaseAccess(event, leaseId);
 
   // The reference a tenant puts on their EFT. The rent screen used to show a fixed one.
-  const [lease] = await query<{ ref: string }>(
-    `select 'LSE-' || lpad(ref_no::text, 5, '0') as ref from lease where id = $1`,
+  const [lease] = await query<{
+    ref: string; landlord: string; bank_name: string | null; bank_account_holder: string | null;
+    bank_account_number: string | null; bank_branch_code: string | null;
+  }>(
+    `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, ll.trading_name as landlord,
+            ll.bank_name, ll.bank_account_holder, ll.bank_account_number, ll.bank_branch_code
+       from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
+       join landlord ll on ll.id = p.landlord_id
+      where l.id = $1`,
     [leaseId],
   );
 
@@ -80,6 +88,9 @@ export const handler = route(async (event) => {
     // The EFT reference the tenant pays with. Bank import matches on it.
     reference: lease?.ref ?? null,
     ref: lease?.ref ?? null,
+    // Where to pay: the landlord's account, or null until they add one.
+    landlord: lease?.landlord ?? null,
+    bank: lease ? bankOf(lease) : null,
     balanceCents: invoiced - received,
     ageing,
     depositBalanceCents: depositBalance,

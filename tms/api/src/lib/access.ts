@@ -8,6 +8,8 @@ export interface LeaseAccess {
   leaseId: string;
   isLandlord: boolean;
   isTenant: boolean;
+  /** Which kind of team member, when acting for the landlord. */
+  landlordRole: 'owner' | 'agent' | null;
 }
 
 /** Every lease-scoped route funnels through here. Being signed in is not the same as being
@@ -17,22 +19,23 @@ export async function requireLeaseAccess(
   leaseId: string,
 ): Promise<LeaseAccess> {
   const person = caller(event);
-  const [row] = await query<{ tenant_sub: string | null; landlord_sub: string | null }>(
-    `select a.cognito_sub as tenant_sub, ll.cognito_sub as landlord_sub
+  const [row] = await query<{ tenant_sub: string | null; member_role: 'owner' | 'agent' | null }>(
+    `select a.cognito_sub as tenant_sub,
+            (select m.role from landlord_member m where m.landlord_id = p.landlord_id and m.sub = $2) as member_role
        from lease l
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id
        join property p on p.id = u.property_id
-       join landlord ll on ll.id = p.landlord_id
       where l.id = $1`,
-    [leaseId],
+    [leaseId, person.sub],
   );
   if (!row) throw notFound('Lease');
 
-  const isLandlord = person.groups.includes('landlord') && row.landlord_sub === person.sub;
+  // The owner or one of their agents: anyone on the landlord's team acts for the landlord.
+  const isLandlord = person.groups.includes('landlord') && row.member_role !== null;
   const isTenant = row.tenant_sub === person.sub;
   if (!isLandlord && !isTenant) throw forbidden('You are not a party to this lease.');
-  return { person, leaseId, isLandlord, isTenant };
+  return { person, leaseId, isLandlord, isTenant, landlordRole: isLandlord ? row.member_role : null };
 }
 
 /** Same check, reached through a child record. */
@@ -69,19 +72,19 @@ export async function requireApplicationAccess(
   applicationId: string,
 ): Promise<ApplicationAccess> {
   const person = caller(event);
-  const [row] = await query<{ applicant_sub: string | null; landlord_sub: string | null }>(
-    `select ap.cognito_sub as applicant_sub, ll.cognito_sub as landlord_sub
+  const [row] = await query<{ applicant_sub: string | null; is_member: boolean }>(
+    `select ap.cognito_sub as applicant_sub,
+            exists (select 1 from landlord_member m where m.landlord_id = p.landlord_id and m.sub = $2) as is_member
        from application a
        join applicant ap on ap.id = a.applicant_id
        join unit u on u.id = a.unit_id
        join property p on p.id = u.property_id
-       join landlord ll on ll.id = p.landlord_id
       where a.id = $1`,
-    [applicationId],
+    [applicationId, person.sub],
   );
   if (!row) throw notFound('Application');
 
-  const isLandlord = person.groups.includes('landlord') && row.landlord_sub === person.sub;
+  const isLandlord = person.groups.includes('landlord') && row.is_member;
   const isApplicant = row.applicant_sub === person.sub;
   if (!isLandlord && !isApplicant) throw forbidden('You are not a party to this application.');
   return { person, applicationId, isLandlord, isApplicant };
@@ -89,11 +92,31 @@ export async function requireApplicationAccess(
 
 /** The landlord row behind a sign-in, for the routes that list rather than fetch one record. */
 export async function landlordIdFor(person: Caller): Promise<string> {
-  const [own] = await query<{ id: string }>('select id from landlord where cognito_sub = $1', [
-    person.sub,
-  ]);
-  if (!own) throw forbidden('No landlord profile is linked to this sign-in.');
-  return own.id;
+  return (await membershipOf(person)).landlordId;
+}
+
+export interface Membership {
+  landlordId: string;
+  role: 'owner' | 'agent';
+}
+
+/** The landlord account a sign-in works for, and as what. Owner and agents alike. */
+export async function membershipOf(person: Caller): Promise<Membership> {
+  if (!person.groups.includes('landlord')) throw forbidden('Landlord access only.');
+  const [own] = await query<{ landlord_id: string; role: 'owner' | 'agent' }>(
+    'select landlord_id, role from landlord_member where sub = $1',
+    [person.sub],
+  );
+  if (!own) throw forbidden('No landlord account is linked to this sign-in.');
+  return { landlordId: own.landlord_id, role: own.role };
+}
+
+/** For what only the account holder decides: the team, the bank account, deleting property,
+    and answering POPIA requests, which the landlord answers as the responsible party. */
+export async function requireOwner(person: Caller): Promise<Membership> {
+  const membership = await membershipOf(person);
+  if (membership.role !== 'owner') throw forbidden('Only the account owner can do that.');
+  return membership;
 }
 
 /** A party may only sign as themselves. Without this, any signed-in user could sign as either side. */

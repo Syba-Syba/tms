@@ -6,6 +6,8 @@ import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { recordConsent } from '../lib/privacy';
 import { PRIVACY_VERSION } from '../domain/privacy';
+import { landlordSignUpSchema } from '../domain/landlord';
+import { freeSlug } from '../lib/landlord-account';
 import { mode } from '../lib/mode';
 import { registrationsByAddress } from '../lib/ratelimit';
 import { badRequest, conflict, json, parseBody, route, tooManyRequests, ApiError } from '../lib/http';
@@ -17,6 +19,8 @@ const schema = z.object({
   // The notice version the person ticked. The app always sends it; without it, the app asks for
   // consent on first sign-in instead, so nobody uses the system without having agreed.
   consentVersion: z.string().max(20).optional(),
+  // Present when a landlord signs themselves up: their business, which becomes the account.
+  landlord: landlordSignUpSchema.optional(),
 });
 
 const requireLocalDriver = () => {
@@ -25,8 +29,9 @@ const requireLocalDriver = () => {
   }
 };
 
-/** Registration is for tenants: an applicant needs an identity before applying. Landlords are
-    provisioned, not self-served, exactly as they would be in the Cognito user pool. */
+/** Tenants register to apply for a unit. Landlords register with their business details, which
+    open a landlord account with them as its owner. Agents never register here: they join by
+    an owner's invitation, so nobody can attach themselves to someone else's account. */
 export const handler = route(async (event) => {
   requireLocalDriver();
   const address = event.requestContext.http?.sourceIp ?? 'unknown';
@@ -43,26 +48,37 @@ export const handler = route(async (event) => {
   const sub = `local-${randomUUID()}`;
   const passwordHash = hashPassword(input.password);
   registrationsByAddress.record(address);
-  await withTransaction(async (run) => {
+  const role = input.landlord ? ('landlord' as const) : ('tenant' as const);
+  const landlordId = await withTransaction(async (run) => {
     const existing = await run('select 1 from local_credential where email = $1', [email]);
     if (existing.length > 0) throw conflict('That email already has an account. Sign in instead.');
     await run(
       `insert into local_credential (sub, email, name, role, password_hash)
-       values ($1, $2, $3, 'tenant', $4)`,
-      [sub, email, input.name, passwordHash],
+       values ($1, $2, $3, $4, $5)`,
+      [sub, email, input.name, role, passwordHash],
     );
+    let created: string | null = null;
+    if (input.landlord) {
+      // The trigger on landlord makes this sign-in the account's owner.
+      const [account] = await run<{ id: string }>(
+        `insert into landlord (trading_name, email, phone, cognito_sub, slug) values ($1, $2, $3, $4, $5) returning id`,
+        [input.landlord.tradingName, email, input.landlord.phone, sub, await freeSlug(run, input.landlord.tradingName)],
+      );
+      created = account!.id;
+    }
     if (input.consentVersion) {
       await recordConsent(run, event, { sub, kind: 'privacy_notice', version: input.consentVersion });
     }
+    return created;
   });
 
-  const user = { sub, role: 'tenant' as const, name: input.name, email };
+  const user = { sub, role, name: input.name, email };
   await audit({
     actorSub: sub,
-    actorRole: 'tenant',
+    actorRole: role,
     action: 'auth.register',
-    entity: 'credential',
-    entityId: null,
+    entity: landlordId ? 'landlord' : 'credential',
+    entityId: landlordId,
     detail: { email },
   });
   return json(201, { token: signToken({ ...user, pv: credentialVersion(passwordHash) }), user });

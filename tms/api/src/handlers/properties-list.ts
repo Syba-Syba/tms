@@ -25,7 +25,7 @@ interface UnitRow {
 
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
-  const [own] = await query<{ id: string }>('select id from landlord where cognito_sub = $1', [
+  const [own] = await query<{ id: string }>('select landlord_id as id from landlord_member where sub = $1', [
     person.sub,
   ]);
   if (!own) throw forbidden('No landlord profile is linked to this sign-in.');
