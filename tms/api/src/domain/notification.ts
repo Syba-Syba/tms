@@ -38,6 +38,15 @@ export const TEMPLATES: Record<string, Template> = {
       `Pay by EFT using the reference ${d('reference')} exactly, or the payment cannot be matched to your unit.\n\n` +
       `${d('unit')}`,
   },
+  charge_added: {
+    category: 'money',
+    urgent: false,
+    subject: (d) => `${d('description')}: ${d('amount')} added to your ${d('period')} invoice`,
+    body: (d) =>
+      `Your landlord added ${d('description')} of ${d('amount')} to your ${d('period')} invoice for ${d('unit')}. ` +
+      `It now comes to ${d('total')}.\n\nPay by EFT using the reference ${d('reference')}. ` +
+      `If you think it is wrong, ask your landlord for the meter reading or the account it comes from.`,
+  },
   payment_received: {
     category: 'money',
     urgent: false,

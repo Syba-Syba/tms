@@ -116,7 +116,7 @@ export const handler = async (input?: { periods?: string[] }) => {
              returning id`,
             [lease.id, periodIso, rent, window.from, window.to],
           );
-          if (!invoice) return false;
+          if (!invoice) return null;
           await run(
             `insert into invoice_line (invoice_id, kind, description, amount_cents)
              values ($1, 'rent', $2, $3)`,
@@ -126,7 +126,25 @@ export const handler = async (input?: { periods?: string[] }) => {
               rent,
             ],
           );
-          return true;
+          // Charges the landlord added for this month before it was billed: water, levies.
+          const extras = await run<{ kind: string; description: string; amount_cents: string }>(
+            `delete from pending_charge where lease_id = $1 and period_start = $2
+             returning kind, description, amount_cents::text`,
+            [lease.id, periodIso],
+          );
+          for (const extra of extras) {
+            await run(
+              `insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, $2, $3, $4)`,
+              [invoice.id, extra.kind, extra.description, extra.amount_cents],
+            );
+          }
+          if (extras.length > 0) {
+            await run(
+              'update invoice set total_cents = total_cents + $2 where id = $1',
+              [invoice.id, extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0)],
+            );
+          }
+          return { totalCents: rent + extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0) };
         });
         if (!created) continue;
         issued += 1;
@@ -138,7 +156,7 @@ export const handler = async (input?: { periods?: string[] }) => {
             dedupeKey: `invoice_issued:${lease.id}:${periodIso}`,
             data: {
               period: periodIso.slice(0, 7),
-              amount: zar(rent),
+              amount: zar(created.totalCents),
               dueOn: periodIso,
               reference: lease.lease_ref,
               unit: lease.unit_label,

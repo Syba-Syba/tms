@@ -91,6 +91,19 @@ export const handler = route(async (event) => {
     [leaseId],
   );
 
+  // Water, levies and the like: on an invoice already, or waiting for that month's.
+  const charges = await query<{ id: string; period: string; kind: string; description: string; amount_cents: string; billed: boolean }>(
+    `select il.id, to_char(i.period_start, 'YYYY-MM') as period, il.kind, il.description, il.amount_cents::text, true as billed
+       from invoice_line il join invoice i on i.id = il.invoice_id
+      where i.lease_id = $1 and il.kind in ('utility', 'other') and i.status <> 'void'
+     union all
+     select id, to_char(period_start, 'YYYY-MM'), kind, description, amount_cents::text, false
+       from pending_charge where lease_id = $1
+     order by period desc
+     limit 36`,
+    [leaseId],
+  );
+
   return json(200, {
     id: lease.id,
     ref: lease.ref,
@@ -109,6 +122,10 @@ export const handler = route(async (event) => {
     // 'import': the paperwork was done before Threshold, so there is no lease document or signatures here.
     source: lease.source,
     tenantHasAccount: lease.tenant_has_account,
+    charges: charges.map((row) => ({
+      id: row.id, period: row.period, kind: row.kind, description: row.description,
+      amountCents: Number(row.amount_cents), billed: row.billed,
+    })),
     tenantInviteSentAt: access.isLandlord ? lease.invite_sent_at : null,
     signatures: signatures.map((row) => ({ party: row.party, signedAt: row.signed_at })),
     viewer: { isLandlord: access.isLandlord, isTenant: access.isTenant },

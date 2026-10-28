@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Ninety-four routes in all; the table lists the shape of each family rather than every verb.
+Ninety-six routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -767,6 +767,29 @@ subscriptions API.
 Before going live, run the whole flow in the PayFast sandbox (merchant 10000100): a first
 payment, a plan change, a cancellation. In particular check that `billing_date` set to the
 trial's end starts the monthly charges on that date as intended.
+
+## WhatsApp
+
+Every notification already queued a WhatsApp copy for anyone with a phone number; nothing sent
+it. With `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` set (Meta's WhatsApp Cloud API), the
+dispatcher sends it. WhatsApp only lets a business start a conversation with an approved
+template, so every message goes through one, `WHATSAPP_TEMPLATE` (default `threshold_update`):
+create it in Meta Business Manager as a Utility template with one body parameter, for example
+"Threshold update: {{1}} Open the app for the details." The notice's subject and text fill the
+parameter, flattened to one line under 900 characters as Meta requires. A number that is not
+on WhatsApp is parked, not retried; email still reaches the person. `WHATSAPP_API_VERSION`
+defaults to v23.0: move it up as Meta retires versions.
+
+## Charges on top of rent
+
+Landlords add water, electricity, levies or one-off charges on the lease page.
+`POST /leases/{id}/charges` takes the month, kind (`utility` or `other`), what it is for and the
+amount. A charge goes on that month's invoice while it is not due yet, and the tenant is told.
+For a month already due it goes on the next invoice instead, named for its month ("Water
+(October 2026)"), so a charge is never overdue the day it is added. For a month not invoiced
+yet it waits in `pending_charge` and the monthly run adds it. A charge comes off only while it
+is unpaid. Invoice totals move by the charge's amount rather than being summed from lines,
+because older invoices carry a total with no lines.
 
 ## Expenses and reports
 

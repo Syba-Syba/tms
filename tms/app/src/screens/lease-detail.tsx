@@ -7,6 +7,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { ArrearsPanel } from '../components/arrears-panel';
+import { ChargesPanel, type Charge } from '../components/charges-panel';
 import { Ledger } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
@@ -19,6 +20,7 @@ interface Lease {
   startDate: string; endDate: string; monthlyRentCents: number; escalationPct: number;
   depositCents: number; hasDocument: boolean; pdfKey: string | null;
   source: 'online' | 'import'; tenantHasAccount: boolean; tenantInviteSentAt: string | null;
+  charges: Charge[];
   viewer: { isLandlord: boolean; isTenant: boolean };
   inspections: { id: string; kind: string; status: string; scheduledFor: string; findings: number; flagged: number; reportKey: string | null }[];
   termination: { id: string; status: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null; deductions: number; statementKey: string | null } | null;
@@ -366,6 +368,16 @@ export function LeaseDetail() {
           ))}
         </CardBody>
       </Card>
+
+      <ChargesPanel
+        leaseId={data.id}
+        charges={data.charges}
+        landlord={landlord}
+        onChanged={() => {
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ['arrears', leaseId] });
+        }}
+      />
 
       <p className="label mb-2">Inspections</p>
       <Card className="mb-4">

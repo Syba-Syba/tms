@@ -62,6 +62,10 @@ provider:
     PAYFAST_SANDBOX: ${ssm:/tms/${self:provider.stage}/payfast-sandbox, 'true'}
     PUBLIC_APP_URL: ${ssm:/tms/${self:provider.stage}/public-app-url}
     PUBLIC_API_URL: ${ssm:/tms/${self:provider.stage}/public-api-url}
+    # WhatsApp is optional: with no token, WhatsApp messages are parked and email still goes.
+    WHATSAPP_TOKEN: ${ssm:/tms/${self:provider.stage}/whatsapp-token, ''}
+    WHATSAPP_PHONE_NUMBER_ID: ${ssm:/tms/${self:provider.stage}/whatsapp-phone-number-id, ''}
+    WHATSAPP_TEMPLATE: ${ssm:/tms/${self:provider.stage}/whatsapp-template, 'threshold_update'}
   # The database sits in a private subnet behind an RDS Proxy, which a Lambda outside the VPC
   # cannot route to at all. Note that attaching a VPC also removes the default route to the
   # internet: Secrets Manager, S3, KMS and SES then need either interface endpoints in that

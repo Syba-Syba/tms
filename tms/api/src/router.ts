@@ -51,6 +51,7 @@ import { handler as billing_checkout } from './handlers/billing-checkout';
 import { handler as billing_plan } from './handlers/billing-plan';
 import { handler as billing_notify } from './handlers/billing-notify';
 import { handler as billing_simulate } from './handlers/billing-simulate';
+import { handler as leases_charges } from './handlers/leases-charges';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -132,6 +133,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/leases/{id}/statement', leases_statement],
   ['POST', '/leases/import', leases_import],
   ['POST', '/leases/{id}/tenant-invite', leases_tenant_invite],
+  ['POST', '/leases/{id}/charges', leases_charges],
+  ['DELETE', '/leases/{id}/charges/{chargeId}', leases_charges],
   ['GET', '/leases/{id}/arrears', arrears_get],
   ['POST', '/leases/{id}/arrears/letter', arrears_letter],
   ['POST', '/leases/{id}/arrears/pause', arrears_pause],
