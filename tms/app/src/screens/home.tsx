@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
+import { SetupChecklist } from '../components/setup-checklist';
 import { isLandlord } from '../lib/session';
 import { TenantHome } from './tenant-home';
 
@@ -200,6 +201,7 @@ function LandlordHome() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 sm:px-5">
       <PageHeader title="Overview" description={`${rows.length} lease${rows.length === 1 ? '' : 's'} running.`} />
+      <SetupChecklist />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Collected this month" value={month.data ? zar(month.data.totals.collectedCents) : '...'}

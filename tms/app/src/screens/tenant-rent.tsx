@@ -6,7 +6,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
-import { formatDate, status } from '../lib/format';
+import { formatDate, formatMonth, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { ArrearsPanel } from '../components/arrears-panel';
 
@@ -23,6 +23,8 @@ interface Proof {
 
 interface Statement {
   reference: string | null;
+  landlord: string | null;
+  bank: { name: string; holder: string; accountNumber: string; branchCode: string } | null;
   balanceCents: number;
   depositBalanceCents: number;
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string }[];
@@ -147,7 +149,23 @@ export function TenantRent() {
       />
       <Card className="mb-4">
         <CardBody className="space-y-3">
-          <p className="label">Pay by EFT with this reference</p>
+          <p className="label">Pay by EFT</p>
+          {data.bank ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[14px]">
+              <dt className="text-ink-muted">Bank</dt>
+              <dd>{data.bank.name}</dd>
+              <dt className="text-ink-muted">Account holder</dt>
+              <dd>{data.bank.holder}</dd>
+              <dt className="text-ink-muted">Account number</dt>
+              <dd className="font-mono tabular-nums">{data.bank.accountNumber}</dd>
+              <dt className="text-ink-muted">Branch code</dt>
+              <dd className="font-mono tabular-nums">{data.bank.branchCode}</dd>
+            </dl>
+          ) : (
+            <p className="text-[13px] text-ink-muted">
+              {data.landlord ?? 'Your landlord'} has not added their bank account here yet. Use the one on your lease.
+            </p>
+          )}
           <TagField label="Reference" value={data?.reference ?? '...'} />
           <p className="text-xs text-ink-muted">
             Use it exactly, so your payment is matched to your unit. Your deposit stands at{' '}
@@ -174,7 +192,7 @@ export function TenantRent() {
             <Card key={invoice.id}>
               <CardBody className="flex items-center justify-between">
                 <div>
-                  <p className="text-[15px] font-semibold text-ink">{invoice.period}</p>
+                  <p className="text-[15px] font-semibold text-ink">{formatMonth(invoice.period)}</p>
                   <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
                 </div>
                 <div className="flex items-center gap-3">

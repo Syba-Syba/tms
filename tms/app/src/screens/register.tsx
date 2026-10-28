@@ -1,14 +1,20 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router';
-import { Button, Card, CardBody, Checkbox, Input, useToast } from '@hlonie/toolbox/ui';
+import { useNavigate, Link, useSearchParams } from 'react-router';
+import { Button, Card, CardBody, Checkbox, Input, SegmentedControl, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
 
-/** Tenants self-serve because an applicant needs an identity before applying. Landlords are
-    provisioned, the same split a Cognito user pool would enforce. */
+type Kind = 'tenant' | 'landlord';
+
+/** Tenants sign up to apply for a unit; landlords to open an account for their rentals. Agents
+    never sign up here: they join through the owner's invitation. /register?as=landlord opens
+    on the landlord form, for a link from a landlord's own website. */
 export function Register() {
+  const [params] = useSearchParams();
+  const [kind, setKind] = useState<Kind>(params.get('as') === 'landlord' ? 'landlord' : 'tenant');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [business, setBusiness] = useState({ tradingName: '', phone: '' });
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -20,9 +26,15 @@ export function Register() {
       const result = await api.post<{ token: string; user: SessionUser }>('/auth/register', {
         ...form,
         consentVersion: PRIVACY_VERSION,
+        ...(kind === 'landlord' ? { landlord: business } : {}),
       });
       await startSession(result.token, result.user);
-      navigate('/apply', { replace: true });
+      // A landlord lands on the dashboard, where the setup checklist waits. An applicant goes
+      // back to the listing they came from, if they followed a landlord's link.
+      const listing = params.get('landlord');
+      navigate(kind === 'landlord' ? '/' : listing ? `/apply?landlord=${encodeURIComponent(listing)}` : '/apply', {
+        replace: true,
+      });
     } catch (error) {
       toast.show({ title: 'Account not created', description: humanError(error), tone: 'danger' });
     } finally {
@@ -34,6 +46,8 @@ export function Register() {
     form.name.trim().length < 2 ? 'your full name' : null,
     !form.email.includes('@') ? 'a valid email' : null,
     form.password.length < 8 ? 'a password of at least 8 characters' : null,
+    kind === 'landlord' && business.tradingName.trim().length < 2 ? 'your business name' : null,
+    kind === 'landlord' && !/^\+?[0-9 ]{9,16}$/.test(business.phone.trim()) ? 'a phone number' : null,
     !consent ? 'your agreement to the privacy notice' : null,
   ].filter(Boolean);
   const ready = missing.length === 0;
@@ -42,12 +56,43 @@ export function Register() {
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
       <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Create an account</h1>
       <p className="mb-5 text-[14px] text-ink-muted">
-        One account carries your application through to the lease, the deposit and beyond.
+        {kind === 'landlord'
+          ? 'Leases, rent, deposits and repairs for your rentals, kept the way the law asks.'
+          : 'One account carries your application through to the lease, the deposit and beyond.'}
       </p>
       <Card>
         <CardBody className="space-y-3">
+          <SegmentedControl
+            options={[
+              { value: 'tenant', label: 'I am renting' },
+              { value: 'landlord', label: 'I let property' },
+            ]}
+            value={kind}
+            onChange={setKind}
+          />
+          {kind === 'landlord' ? (
+            <>
+              <Input
+                placeholder="Business name, or your own name"
+                aria-label="Business name"
+                name="organization"
+                autoComplete="organization"
+                value={business.tradingName}
+                onChange={(event) => setBusiness({ ...business, tradingName: event.target.value })}
+              />
+              <Input
+                type="tel"
+                placeholder="Phone, for tenants to reach you"
+                aria-label="Phone"
+                name="tel"
+                autoComplete="tel"
+                value={business.phone}
+                onChange={(event) => setBusiness({ ...business, phone: event.target.value })}
+              />
+            </>
+          ) : null}
           <Input
-            placeholder="Full name"
+            placeholder={kind === 'landlord' ? 'Your full name' : 'Full name'}
             name="name"
             autoComplete="name"
             value={form.name}

@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Seventy-seven routes in all; the table lists the shape of each family rather than every verb.
+Eighty-five routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -667,6 +667,34 @@ case, so the lease shows who was told what, when, and for how much.
 
 Routes: `GET /leases/{id}/arrears`, `POST /leases/{id}/arrears/letter`,
 `POST /leases/{id}/arrears/pause` with `{ until, reason }`, or `{ until: null }` to resume.
+
+## Landlord accounts
+
+One installation serves many landlords, and each landlord account has a team: one owner and
+any number of agents. Every access check asks whether the caller is a member of the landlord
+that owns the record. `landlord.cognito_sub` still names the owner and a trigger keeps it in
+step with `landlord_member`, so seeds and landlord notifications work as before.
+
+- **Sign-up.** `/register?as=landlord` takes a business name and phone and opens the account
+  with the person as owner. The dashboard shows a setup checklist until there is a bank account,
+  a property, a unit and a tenant on a lease.
+- **Agents.** The owner invites by email from Settings, Team. The link works once, for 7 days,
+  and only a hash of it is stored. Agents do everything on leases, rent, maintenance,
+  inspections and applications, under their own name in Activity. Only the owner changes the
+  business details, the bank account or the team, deletes a property or unit, or answers a
+  POPIA request. Removing an agent moves their session epoch, so they are signed out at once.
+- **Bank details** print on invoices and the letter of demand and show on the tenant's rent
+  screen. A change is in Activity with the old and new last four digits.
+- **Listings link.** Each landlord has `/apply?landlord=their-name`. With more than one landlord
+  on the installation, the vacant-unit list needs it, so no landlord shows another's units.
+
+Limits for now: landlord sign-up and invitations use the local auth driver; under Cognito they
+need a sign-up flow that puts the person in the `landlord` group, which is not built. Landlord
+notifications go to the owner and the business email, not to each agent.
+
+Routes: `GET /landlord`, `PUT /landlord`, `GET /landlord/team`, `POST /landlord/invites`,
+`POST /landlord/invites/{id}/revoke`, `POST /landlord/members/{sub}/remove`, and the public
+`POST /invites/lookup` and `POST /invites/accept`, which take the token in the body.
 
 ## Expenses and reports
 

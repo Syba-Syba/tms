@@ -20,6 +20,11 @@ export function Login() {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  // Someone who followed a landlord's listings link and has no account yet keeps the link
+  // through sign-up, so they land on that landlord's units afterwards.
+  const returnTo = (location.state as { from?: string } | null)?.from ?? '';
+  const listing = returnTo.startsWith('/apply') ? new URLSearchParams(returnTo.split('?')[1] ?? '').get('landlord') : null;
+  const registerLink = listing ? `/register?landlord=${encodeURIComponent(listing)}` : '/register';
 
   const signIn = async () => {
     setBusy(true);
@@ -95,7 +100,7 @@ export function Login() {
           </p>
           <p className="text-center text-[13px] text-ink-muted">
             Applying for a place?{' '}
-            <Link to="/register" className="font-bold text-brand-500">Create an account</Link>
+            <Link to={registerLink} className="font-bold text-brand-500">Create an account</Link>
           </p>
           <p className="text-center text-[12px]">
             <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>

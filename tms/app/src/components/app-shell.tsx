@@ -26,14 +26,14 @@ const LANDLORD: Item[] = [
   { to: '/applications', label: 'Applications', icon: InboxIcon },
   { to: '/reports', label: 'Reports', icon: ChartIcon },
   { to: '/activity', label: 'Activity', icon: ActivityIcon },
-  { to: '/settings/notifications', label: 'Settings', icon: SettingsIcon },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const TENANT: Item[] = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/documents', label: 'Documents', icon: FileIcon },
   { to: '/tickets', label: 'Maintenance', icon: WrenchIcon },
-  { to: '/settings/notifications', label: 'Settings', icon: SettingsIcon },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const BAR_SIZE = 4;

@@ -9,6 +9,7 @@ import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { copyText } from '@hlonie/toolbox/hooks';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
+import { useLandlord } from '../lib/landlord';
 import { Ledger } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
@@ -287,6 +288,8 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
 }) {
   const toast = useToast();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // Removing stock is the owner's call; an agent's attempt would be refused anyway.
+  const isOwner = useLandlord().data?.me.role === 'owner';
   const { control, handleSubmit, reset, formState } = useForm<PropertyForm>({
     values: property
       ? (property.fields as unknown as PropertyForm)
@@ -348,7 +351,7 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
             rules={{ required: 'Needed.', pattern: { value: /^\d{4}$/, message: 'Four digits, e.g. 2194.' } }} />
         </div>
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
-        {property ? (
+        {property && isOwner ? (
           <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
             Remove this property
           </Button>
@@ -375,6 +378,7 @@ function UnitDrawer({ property, unit, onClose, onSaved }: {
 }) {
   const toast = useToast();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const isOwner = useLandlord().data?.me.role === 'owner';
   const open = Boolean(property || unit);
 
   const remove = async () => {
@@ -456,7 +460,7 @@ function UnitDrawer({ property, unit, onClose, onSaved }: {
           </p>
         ) : null}
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
-        {unit ? (
+        {unit && isOwner ? (
           <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
             Remove this unit
           </Button>

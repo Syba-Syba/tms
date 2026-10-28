@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
+import { SettingsNav } from '../components/settings-nav';
 import { PrivacyRequests } from '../components/privacy-requests';
 import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
@@ -73,6 +74,7 @@ export function NotificationPreferences() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-6">
       <PageHeader title="Settings" description="Your password, what reaches you, and your data." />
+      <SettingsNav />
 
       <div className="mb-6">
         <ChangePassword />
