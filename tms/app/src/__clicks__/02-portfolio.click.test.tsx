@@ -75,7 +75,8 @@ describe('the portfolio screen', () => {
     await screen.findByText('Unit removed');
 
     // Remove the now-empty property the same way.
-    fireEvent.click(within(cardOf('Click Street')).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(cardOf('Click Street')).getByRole('button', { name: 'Edit property' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove this property' }));
     await screen.findByText(/only goes once it has no units/);
     fireEvent.click((await screen.findAllByRole('button', { name: 'Remove' })).at(-1)!);
     await screen.findByText('Property removed');
@@ -147,6 +148,7 @@ describe('applying and processing the queue', () => {
     fireEvent.blur(label('Gross monthly income'));
     type(label('Occupants'), '1');
     type(label('Move in'), daysFromNow(30));
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to documents' }));
     await screen.findByText('PROBE-DOCS', undefined, { timeout: 10000 });
   });
@@ -163,16 +165,19 @@ describe('applying and processing the queue', () => {
     await screen.findAllByText('Applications');
 
     // Approve if the application is still waiting; reruns find it already approved.
-    const waiting = await screen
-      .findByText('Queue Applicant', undefined, { timeout: 3000 })
-      .catch(() => null);
+    // The screen renders phone cards and a laptop table; CSS picks one, jsdom has both.
+    const waiting = (
+      await screen.findAllByText('Queue Applicant', undefined, { timeout: 3000 }).catch(() => [] as HTMLElement[])
+    ).find((node) => node.closest('tr'));
     if (waiting) {
       fireEvent.click(within(waiting.closest('tr')!).getByRole('button', { name: 'Approve' }));
       await screen.findByText('Application approved');
     }
 
     fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
-    const approvedRow = (await screen.findAllByText('Queue Applicant', undefined, { timeout: 5000 }))[0]!;
+    const approvedRow = (await screen.findAllByText('Queue Applicant', undefined, { timeout: 5000 })).find((node) =>
+      node.closest('tr'),
+    )!;
     fireEvent.click(within(approvedRow.closest('tr')!).getByRole('button', { name: 'Generate lease' }));
     await screen.findByText(/Lease for Queue Applicant/);
     fireEvent.click(screen.getByRole('button', { name: 'Generate and open it' }));

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { currentLease } from '../lib/leases';
 import { useOpenDocument } from '../lib/open-document';
@@ -58,16 +59,16 @@ export function Documents() {
         description="Your lease, every inspection and every invoice. Keep these; they are what settles a dispute."
       />
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Lease</p>
+      <p className="label mb-2">Lease</p>
       <Card className="mb-5">
-        <CardBody className="flex items-center justify-between">
-          <div>
+        <CardBody className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-[15px] font-semibold">{data.ref}</p>
             <p className="text-xs text-ink-muted">
-              {data.unit} · {data.startDate} to {data.endDate}
+              {data.unit} · {formatDate(data.startDate)} to {formatDate(data.endDate)}
             </p>
           </div>
-          <span className="flex items-center gap-3">
+          <span className="flex shrink-0 items-center gap-3">
             {data.pdfKey ? (
               <Button size="sm" variant="outline" onClick={() => openDocument(data.pdfKey!)}>
                 Open
@@ -80,7 +81,7 @@ export function Documents() {
         </CardBody>
       </Card>
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+      <p className="label mb-2">
         Inspections
       </p>
       <Card className="mb-5">
@@ -94,7 +95,7 @@ export function Documents() {
             <div key={inspection.id} className="flex items-center justify-between">
               <div>
                 <p className="text-[14px] font-semibold capitalize">
-                  {inspection.kind === 'incoming' ? 'Move in' : 'Move out'} · {inspection.scheduledFor}
+                  {inspection.kind === 'incoming' ? 'Move in' : 'Move out'} · {formatDate(inspection.scheduledFor)}
                 </p>
                 <p className="text-xs text-ink-muted">
                   {inspection.flagged > 0 ? `${inspection.flagged} items flagged` : 'Nothing flagged'}
@@ -107,7 +108,7 @@ export function Documents() {
                   </Button>
                 ) : null}
                 <Badge tone={inspection.status === 'completed' ? 'success' : 'warning'}>
-                  {inspection.status.replace(/_/g, ' ')}
+                  {status(inspection.status).label}
                 </Badge>
               </span>
             </div>
@@ -117,7 +118,7 @@ export function Documents() {
 
       {data.termination?.statementKey ? (
         <>
-          <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+          <p className="label mb-2">
             Deposit statement
           </p>
           <Card className="mb-5">
@@ -133,7 +134,7 @@ export function Documents() {
         </>
       ) : null}
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Invoices</p>
+      <p className="label mb-2">Invoices</p>
       <Card>
         <CardBody className="space-y-2">
           {data.invoices.length === 0 ? (
@@ -146,13 +147,11 @@ export function Documents() {
             >
               <div>
                 <p className="text-[14px] font-semibold">{invoice.period}</p>
-                <p className="text-xs text-ink-muted">Due {invoice.dueOn}</p>
+                <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
               </div>
               <div className="flex items-center gap-3">
                 <Ledger cents={invoice.totalCents} className="text-[15px]" />
-                <Badge tone={invoice.status === 'paid' ? 'success' : 'warning'}>
-                  {invoice.status.replace('_', ' ')}
-                </Badge>
+                <Badge tone={status(invoice.status).tone}>{status(invoice.status).label}</Badge>
                 <button
                   type="button"
                   className="text-[13px] font-bold text-brand-500"

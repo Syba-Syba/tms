@@ -3,6 +3,8 @@ import { handler as applications_create } from './handlers/applications-create';
 import { handler as auth_login } from './handlers/auth-login';
 import { handler as auth_register } from './handlers/auth-register';
 import { handler as auth_password } from './handlers/auth-password';
+import { handler as auth_reset_request } from './handlers/auth-reset-request';
+import { handler as auth_reset_confirm } from './handlers/auth-reset-confirm';
 import { handler as auth_logout } from './handlers/auth-logout';
 import { handler as audit_list } from './handlers/audit-list';
 import { handler as applications_documents } from './handlers/applications-documents';
@@ -33,8 +35,37 @@ import { handler as leases_list } from './handlers/leases-list';
 import { handler as leases_render } from './handlers/leases-render';
 import { handler as leases_sign } from './handlers/leases-sign';
 import { handler as leases_statement } from './handlers/leases-statement';
+import { handler as landlord_get } from './handlers/landlord-get';
+import { handler as landlord_update } from './handlers/landlord-update';
+import { handler as landlord_team } from './handlers/landlord-team';
+import { handler as landlord_invite } from './handlers/landlord-invite';
+import { handler as landlord_invite_revoke } from './handlers/landlord-invite-revoke';
+import { handler as landlord_member_remove } from './handlers/landlord-member-remove';
+import { handler as invites_lookup } from './handlers/invites-lookup';
+import { handler as invites_accept } from './handlers/invites-accept';
+import { handler as arrears_get } from './handlers/arrears-get';
+import { handler as arrears_letter } from './handlers/arrears-letter';
+import { handler as arrears_pause } from './handlers/arrears-pause';
 import { handler as notifications_preferences } from './handlers/notifications-preferences';
 import { handler as payments_record } from './handlers/payments-record';
+import { handler as payment_proofs_create } from './handlers/payment-proofs-create';
+import { handler as payment_proofs_submit } from './handlers/payment-proofs-submit';
+import { handler as payment_proofs_list } from './handlers/payment-proofs-list';
+import { handler as payment_proofs_decide } from './handlers/payment-proofs-decide';
+import { handler as bank_imports_create } from './handlers/bank-imports-create';
+import { handler as bank_imports_list } from './handlers/bank-imports-list';
+import { handler as bank_imports_get } from './handlers/bank-imports-get';
+import { handler as bank_imports_resolve } from './handlers/bank-imports-resolve';
+import { handler as expenses_create } from './handlers/expenses-create';
+import { handler as expenses_list } from './handlers/expenses-list';
+import { handler as expenses_update } from './handlers/expenses-update';
+import { handler as reports_income_expense } from './handlers/reports-income-expense';
+import { handler as reports_arrears } from './handlers/reports-arrears';
+import { handler as me_privacy } from './handlers/me-privacy';
+import { handler as me_data_export } from './handlers/me-data-export';
+import { handler as me_erasure } from './handlers/me-erasure';
+import { handler as privacy_requests_list } from './handlers/privacy-requests-list';
+import { handler as privacy_requests_decide } from './handlers/privacy-requests-decide';
 import { handler as photos_confirm } from './handlers/photos-confirm';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
@@ -69,6 +100,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
   ['POST', '/auth/password', auth_password],
+  ['POST', '/auth/reset/request', auth_reset_request],
+  ['POST', '/auth/reset/confirm', auth_reset_confirm],
   ['POST', '/auth/logout', auth_logout],
   ['GET', '/audit', audit_list],
   ['POST', '/applications', applications_create],
@@ -87,6 +120,9 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/leases', leases_list],
   ['GET', '/leases/{id}', leases_get],
   ['GET', '/leases/{id}/statement', leases_statement],
+  ['GET', '/leases/{id}/arrears', arrears_get],
+  ['POST', '/leases/{id}/arrears/letter', arrears_letter],
+  ['POST', '/leases/{id}/arrears/pause', arrears_pause],
   ['POST', '/invoices/{id}/render', invoices_render],
   ['POST', '/leases/{id}/tickets', tickets_create],
   ['GET', '/tickets', tickets_list],
@@ -118,6 +154,34 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/inspections/{id}/render', inspections_render],
   ['POST', '/files/view', files_view],
   ['POST', '/renewals/{id}/decision', renewals_decide],
+  ['POST', '/leases/{id}/payment-proofs', payment_proofs_create],
+  ['POST', '/payment-proofs/{id}/submit', payment_proofs_submit],
+  ['GET', '/payment-proofs', payment_proofs_list],
+  ['POST', '/payment-proofs/{id}/decision', payment_proofs_decide],
+  ['POST', '/bank-imports', bank_imports_create],
+  ['GET', '/bank-imports', bank_imports_list],
+  ['GET', '/bank-imports/{id}', bank_imports_get],
+  ['POST', '/bank-imports/{id}/resolve', bank_imports_resolve],
+  ['POST', '/expenses', expenses_create],
+  ['GET', '/expenses', expenses_list],
+  ['PUT', '/expenses/{id}', expenses_update],
+  ['DELETE', '/expenses/{id}', expenses_update],
+  ['GET', '/reports/income-expense', reports_income_expense],
+  ['GET', '/reports/arrears', reports_arrears],
+  ['GET', '/me/privacy', me_privacy],
+  ['POST', '/me/consents', me_privacy],
+  ['GET', '/me/data-export', me_data_export],
+  ['POST', '/me/erasure-request', me_erasure],
+  ['GET', '/privacy-requests', privacy_requests_list],
+  ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
+  ['GET', '/landlord', landlord_get],
+  ['PUT', '/landlord', landlord_update],
+  ['GET', '/landlord/team', landlord_team],
+  ['POST', '/landlord/invites', landlord_invite],
+  ['POST', '/landlord/invites/{id}/revoke', landlord_invite_revoke],
+  ['POST', '/landlord/members/{sub}/remove', landlord_member_remove],
+  ['POST', '/invites/lookup', invites_lookup],
+  ['POST', '/invites/accept', invites_accept],
 ];
 
 interface Compiled {

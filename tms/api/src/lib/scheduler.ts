@@ -3,12 +3,14 @@ import { handler as interestRun } from '../handlers/interest-run';
 import { handler as leasesActivate } from '../handlers/leases-activate';
 import { handler as notificationsDispatch } from '../handlers/notifications-dispatch';
 import { handler as notificationsSweep } from '../handlers/notifications-sweep';
+import { handler as privacySweep } from '../handlers/privacy-sweep';
+import { handler as arrearsRun } from '../handlers/arrears-run';
 import { sastToday } from '../domain/dates';
 import { audit } from './audit';
 import { logger } from './logger';
 
 /**
- * The five jobs EventBridge runs in the AWS deployment, run from inside the self-hosted
+ * The jobs EventBridge runs in the AWS deployment, run from inside the self-hosted
  * process instead. Without this a self-hosted install never issued an invoice, never credited
  * deposit interest, never activated a renewal and never sent a notification: the handlers
  * existed, and nothing called them.
@@ -36,7 +38,9 @@ export interface Job {
 export const JOBS: Job[] = [
   { name: 'notifications-dispatch', run: notificationsDispatch, everyMinutes: 5 },
   { name: 'leases-activate', run: leasesActivate, dailyAt: '03:10' },
+  { name: 'privacy-sweep', run: privacySweep, dailyAt: '04:30' },
   { name: 'notifications-sweep', run: notificationsSweep, dailyAt: '05:00' },
+  { name: 'arrears-run', run: () => arrearsRun(), dailyAt: '05:15' },
   { name: 'interest-run', run: interestRun, dailyAt: '05:30', onDay: 1 },
   { name: 'invoices-run', run: () => invoicesRun(), dailyAt: '06:00' },
 ];

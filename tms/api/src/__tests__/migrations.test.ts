@@ -24,8 +24,9 @@ describe('migrations', () => {
   });
 
   it('keeps the dev seeds out of what gets applied', () => {
-    // Two seeds: the world (0002) and the sign-ins for its people (0014).
-    expect(all.length - files.length).toBe(2);
+    // Three seeds: the world (0002), the sign-ins for its people (0014) and the landlord's
+    // account details (0026).
+    expect(all.length - files.length).toBe(3);
     expect(files.some((name) => name.includes('seed'))).toBe(false);
   });
 

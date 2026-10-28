@@ -44,6 +44,9 @@ export const createApplicationSchema = z.object({
   preferredMoveIn: z.coerce.date(),
   pets: z.boolean().default(false),
   notes: z.string().max(2000).optional(),
+  // POPIA: the applicant agrees, for this application, to their ID, income and documents being
+  // used to decide it. The version is the privacy notice they were shown.
+  consentVersion: z.string({ error: 'Agree to the privacy notice to apply.' }).max(20),
 });
 
 export type CreateApplication = z.infer<typeof createApplicationSchema>;

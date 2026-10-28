@@ -18,14 +18,14 @@ export function Tabs({
 }) {
   return (
     <RadixTabs.Root defaultValue={defaultValue ?? items[0]?.value} className={className}>
-      <RadixTabs.List className="flex gap-1 border-b border-line">
+      <RadixTabs.List className="flex gap-5 overflow-x-auto border-b border-line">
         {items.map((item) => (
           <RadixTabs.Trigger
             key={item.value}
             value={item.value}
             className={cn(
-              'px-4 py-2 text-sm text-ink-muted transition-colors hover:text-ink',
-              'data-[state=active]:border-b-2 data-[state=active]:border-brand-500 data-[state=active]:text-ink',
+              '-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5 pt-1 text-[14px] text-ink-muted transition-colors hover:text-ink',
+              'data-[state=active]:border-ink data-[state=active]:font-medium data-[state=active]:text-ink',
             )}
           >
             {item.label}

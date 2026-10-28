@@ -26,8 +26,7 @@ export const handler = route(async (event) => {
     `update unit set ${sets}
       where id = $1 and property_id in (
         select p.id from property p
-          join landlord ll on ll.id = p.landlord_id
-         where ll.cognito_sub = $2)
+         where p.landlord_id = (select landlord_id from landlord_member where sub = $2))
       returning id`,
     [unitId, person.sub, ...entries.map(([, value]) => value)],
   );

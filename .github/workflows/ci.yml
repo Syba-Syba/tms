@@ -1,0 +1,49 @@
+# Runs on every push and pull request: install from the lockfile, typecheck, lint, test, build.
+# The same commands a contributor runs locally, so a red check reproduces on a laptop.
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci fails on a lockfile that is out of step with package.json, or that is missing
+      # a platform's native build, which is the point: both broke installs here before.
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # Copies .env.example files. Tests run against in-process PGlite, so nothing else is needed.
+      - name: Environment
+        run: npm run env
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint toolbox
+        run: npm run lint -w @hlonie/toolbox
+
+      - name: Test
+        run: npm test
+
+      - name: Build self-hosted web app
+        run: npm run selfhost:build

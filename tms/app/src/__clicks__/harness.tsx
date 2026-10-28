@@ -1,11 +1,12 @@
+import { PRIVACY_VERSION } from '../lib/privacy';
 import type { ReactElement } from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, ToastProvider } from '@hlonie/toolbox/ui';
 
-/** The development API the suite drives. global-setup starts it here and refuses anything else. */
-export const API = process.env.VITE_API_URL ?? 'http://localhost:3001';
+/** The suite's own API, started by global-setup.ts on a throwaway database. */
+export const API = 'http://localhost:3101';
 
 /** Signs in through the real /auth/login and primes the same storage the app uses, so every
     click carries the same Bearer token the browser would send. */
@@ -146,6 +147,7 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
       monthlyIncomeCents: 4000000,
       occupants: 1,
       preferredMoveIn: daysFromNow(30),
+      consentVersion: PRIVACY_VERSION,
       pets: false,
     });
     localStorage.setItem('CapacitorStorage.id_token', landlordToken);

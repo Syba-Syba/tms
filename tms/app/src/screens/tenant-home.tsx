@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
-import { Alert, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
+import { Link, useNavigate } from 'react-router';
+import { Alert, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { ChevronRightIcon } from '@hlonie/toolbox/icons';
+import { daysUntil, formatDate } from '../lib/format';
+import { currentUser } from '../lib/session';
 import { QueryState } from '../components/query-state';
 
 interface LeaseRow {
@@ -11,7 +14,6 @@ interface LeaseRow {
   openTickets: number; terminationEffectiveOn: string | null; renewalOffered: boolean;
 }
 
-const daysUntil = (date: string) => Math.round((new Date(date).getTime() - Date.now()) / 86400000);
 
 /**
  * A tenant has one home, not a portfolio. So this leads with the two things they actually
@@ -47,51 +49,53 @@ export function TenantHome() {
   const settled = lease.outstandingCents === 0;
   const endingIn = daysUntil(lease.endDate);
 
+  const firstName = currentUser()?.name.split(' ')[0];
+  const actions = [
+    { label: 'Rent and deposit', hint: 'Statement, EFT reference, send proof of payment', to: `/leases/${lease.id}/rent` },
+    {
+      label: 'Maintenance',
+      hint: lease.openTickets ? `${lease.openTickets} open request${lease.openTickets === 1 ? '' : 's'}` : 'Everything you have reported',
+      to: '/tickets',
+    },
+    { label: 'Your lease', hint: `${lease.ref}, runs to ${formatDate(lease.endDate)}`, to: `/leases/${lease.id}` },
+    { label: 'Documents', hint: 'Lease, inspections and invoices', to: '/documents' },
+  ];
+
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
-      <PageHeader title={lease.unit} description={`${lease.ref} · your lease runs to ${lease.endDate}`} />
+    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-5">
+      <p className="text-[15px] text-ink-muted">{firstName ? `Hi ${firstName}` : 'Hi'}</p>
+      <h1 className="mb-5 font-display text-[30px] font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
 
-      <Card className="mb-4">
-        <CardBody className="space-y-1 py-7 text-center">
-          <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
-            {settled ? 'Balance' : 'Outstanding'}
+      {/* The one warm panel in the app: the tenant's own money, said plainly. */}
+      <section
+        className={`mb-4 rounded-md px-5 py-6 ${
+          settled ? 'bg-brand-50' : 'bg-[color-mix(in_srgb,var(--tb-danger)_7%,var(--tb-surface))]'
+        }`}
+      >
+        <p className="text-[14px] text-ink-muted">{settled ? 'You owe nothing' : 'You owe'}</p>
+        <Ledger cents={lease.outstandingCents} className={`block text-[44px] leading-tight ${settled ? '' : 'text-danger'}`} />
+        {settled ? (
+          <p className="mt-1 text-[14px] text-brand-600">Fully paid up. Thank you.</p>
+        ) : (
+          <p className="mt-1 text-[14px] text-ink">
+            Pay by EFT with the reference <b className="font-mono font-medium">{lease.ref}</b> exactly, so the bank
+            can match it to your unit.
           </p>
-          <Ledger
-            cents={lease.outstandingCents}
-            className={`block text-[44px] ${settled ? '' : 'text-danger'}`}
-          />
-          {settled ? (
-            <p className="text-[13px] font-bold text-success">Fully paid up</p>
-          ) : (
-            <p className="text-[13px] text-ink-muted">
-              Pay by EFT using the reference <b className="font-mono text-ink">{lease.ref}</b> exactly,
-              or the bank cannot match it to your unit.
-            </p>
-          )}
-        </CardBody>
-      </Card>
-
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <Card>
-          <CardBody>
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Rent</p>
-            <Ledger cents={lease.monthlyRentCents} className="text-[21px]" />
-            <p className="mt-1 text-xs text-ink-muted">a month</p>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
-              Your deposit
-            </p>
-            <Ledger cents={lease.depositBalanceCents} className="text-[21px]" />
-            <p className="mt-1 text-xs text-ink-muted">interest included, and it keeps growing</p>
-          </CardBody>
-        </Card>
-      </div>
+        )}
+        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-black/10 pt-4">
+          <div>
+            <p className="text-[13px] text-ink-muted">Rent a month</p>
+            <Ledger cents={lease.monthlyRentCents} className="text-[20px]" />
+          </div>
+          <div>
+            <p className="text-[13px] text-ink-muted">Your deposit, with interest</p>
+            <Ledger cents={lease.depositBalanceCents} className="text-[20px]" />
+          </div>
+        </div>
+      </section>
 
       {upcoming ? (
-        <Alert tone="info" title={`Your renewal ${upcoming.ref} starts ${upcoming.startDate}`} className="mb-4">
+        <Alert tone="info" title={`Your renewal ${upcoming.ref} starts ${formatDate(upcoming.startDate)}`} className="mb-4">
           It only starts once you and your landlord have both signed it.{' '}
           <button type="button" className="font-bold text-brand-500" onClick={() => navigate(`/lease/${upcoming.id}`)}>
             Open the new lease
@@ -104,7 +108,7 @@ export function TenantHome() {
           Open your lease to see the new rent and dates, then accept or decline.
         </Alert>
       ) : lease.terminationEffectiveOn ? (
-        <Alert tone="warning" title={`Your lease ends ${lease.terminationEffectiveOn}`} className="mb-4">
+        <Alert tone="warning" title={`Your lease ends ${formatDate(lease.terminationEffectiveOn)}`} className="mb-4">
           The exit inspection must happen in the final three days, with you there. If it does not
           happen, the law treats the place as undamaged and nothing can be deducted from your
           deposit.
@@ -115,20 +119,25 @@ export function TenantHome() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Button block onClick={() => navigate(`/leases/${lease.id}/tickets/new`)}>
-          Report a problem
-        </Button>
-        <Button block variant="outline" onClick={() => navigate(`/leases/${lease.id}/rent`)}>
-          Rent and deposit
-        </Button>
-        <Button block variant="outline" onClick={() => navigate(`/leases/${lease.id}`)}>
-          Your lease
-        </Button>
-        <Button block variant="outline" onClick={() => navigate('/tickets')}>
-          Maintenance{lease.openTickets ? ` (${lease.openTickets} open)` : ''}
-        </Button>
-      </div>
+      <Button block size="lg" className="mb-4" onClick={() => navigate(`/leases/${lease.id}/tickets/new`)}>
+        Report a problem
+      </Button>
+
+      <Card>
+        <ul className="divide-y divide-line-soft">
+          {actions.map((action) => (
+            <li key={action.label}>
+              <Link to={action.to} className="flex items-center gap-3 px-4 py-3.5 hover:bg-neutral-50">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-medium text-ink">{action.label}</span>
+                  <span className="block truncate text-[13px] text-ink-muted">{action.hint}</span>
+                </span>
+                <ChevronRightIcon className="shrink-0 text-ink-muted" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
     </main>
   );
 }

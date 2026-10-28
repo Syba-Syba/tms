@@ -86,9 +86,13 @@ describe('the exit, clicked', () => {
     mount(`/leases/${leaseId}`, <Route path="/leases/:leaseId" element={<LeaseDetail />} />);
     if (!before.termination) {
       fireEvent.click(await screen.findByRole('button', { name: 'Record a notice' }));
+      const dialog = await screen.findByRole('dialog');
       // The case that used to be impossible: a tenant cancelling early by letter.
-      fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'early_tenant' } });
-      fireEvent.click(await screen.findByRole('button', { name: 'Record it' }));
+      fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'early_tenant' } });
+      // Recording stays disabled until the landlord confirms what it does.
+      expect(within(dialog).getByRole('button', { name: 'Record it' })).toBeDisabled();
+      fireEvent.click(within(dialog).getByRole('checkbox'));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Record it' }));
       await screen.findByText('Notice recorded', undefined, { timeout: 8000 });
     } else {
       // A rerun meets the notice already served; the banner is the proof instead.

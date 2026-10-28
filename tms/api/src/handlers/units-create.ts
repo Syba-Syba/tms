@@ -12,8 +12,7 @@ export const handler = route(async (event) => {
 
   const [property] = await query<{ id: string }>(
     `select p.id from property p
-       join landlord ll on ll.id = p.landlord_id
-      where p.id = $1 and ll.cognito_sub = $2`,
+      where p.id = $1 and p.landlord_id = (select landlord_id from landlord_member where sub = $2)`,
     [propertyId, person.sub],
   );
   if (!property) throw notFound('Property');

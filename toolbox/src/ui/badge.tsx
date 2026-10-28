@@ -1,7 +1,8 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../lib/cn';
 
-const badge = cva('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', {
+// A badge is a label, never a paragraph: it keeps to one line and the row around it wraps instead.
+const badge = cva('inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium', {
   variants: {
     tone: {
       neutral: 'bg-surface-muted text-ink',

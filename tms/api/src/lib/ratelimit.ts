@@ -59,3 +59,14 @@ export const registrationsByAddress = new AttemptLimiter(10, 60 * MINUTE);
 
 /** Password changes per account, which also run scrypt twice. */
 export const passwordChangesByAccount = new AttemptLimiter(10, 15 * MINUTE);
+
+/**
+ * Reset requests send email, so they are capped per address and per account. The account cap
+ * is silent (the caller always gets the same answer) so it cannot be used to learn which
+ * emails exist, and it stops anyone flooding a tenant's inbox.
+ */
+export const resetRequestsByAddress = new AttemptLimiter(10, 60 * MINUTE);
+export const resetRequestsByAccount = new AttemptLimiter(3, 60 * MINUTE);
+
+/** Guesses at a reset token. 256 bits cannot be guessed, but each attempt still costs scrypt. */
+export const resetConfirmsByAddress = new AttemptLimiter(20, 15 * MINUTE);

@@ -21,44 +21,10 @@ export const handler = async () => {
   const today = sastToday();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`Bad date ${today}`);
   const sqlToday = `'${today}'::date`;
-  const counts = { overdueRent: 0, slaSoon: 0, slaBreached: 0, inspections: 0, refunds: 0,
+  const counts = { slaSoon: 0, slaBreached: 0, inspections: 0, refunds: 0,
                    leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
 
-  /* Rent that has gone unpaid. Chased on day 3, then weekly, rather than every morning. */
-  const overdue = await query<{
-    lease_id: string; invoice_id: string; period: string; due_on: string;
-    outstanding: string; sub: string; email: string; phone: string; unit: string; lease_ref: string;
-  }>(
-    `select i.lease_id, i.id as invoice_id, to_char(i.period_start, 'FMMonth YYYY') as period,
-            i.due_on::text, (i.total_cents - coalesce((
-              select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0))::text as outstanding,
-            a.cognito_sub as sub, a.email, a.phone,
-            pr.name || ' ' || u.code as unit,
-            'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref
-       from invoice i
-       join lease l on l.id = i.lease_id
-       join applicant a on a.id = l.applicant_id
-       join unit u on u.id = l.unit_id
-       join property pr on pr.id = u.property_id
-      where i.status in ('issued', 'part_paid')
-        and i.due_on < ${sqlToday}
-        and (${sqlToday} - i.due_on) % 7 = 3`,
-  );
-  for (const row of overdue) {
-    if (Number(row.outstanding) <= 0) continue;
-    const late = days(row.due_on, now);
-    await notify({
-      leaseId: row.lease_id,
-      to: { sub: row.sub, email: row.email, phone: row.phone },
-      kind: 'rent_overdue',
-      dedupeKey: `rent_overdue:${row.invoice_id}:${today}`,
-      data: {
-        period: row.period, amount: zar(Number(row.outstanding)), dueOn: row.due_on,
-        daysLate: String(late), reference: row.lease_ref, unit: row.unit,
-      },
-    });
-    counts.overdueRent += 1;
-  }
+  // Unpaid rent is chased by the arrears run, which keeps the ladder on the lease.
 
   /* Maintenance about to breach its target, and maintenance that already has. */
   const tickets = await query<{

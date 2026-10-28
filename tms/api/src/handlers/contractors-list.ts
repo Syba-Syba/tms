@@ -19,7 +19,7 @@ export const handler = route(async (event) => {
        from contractor c
        join landlord ll on ll.id = c.landlord_id
        left join ticket t on t.contractor_id = c.id
-      where ll.cognito_sub = $1
+      where ll.id = (select landlord_id from landlord_member where sub = $1)
       group by c.id
       order by max(t.created_at) desc nulls last, c.name`,
     [person.sub],

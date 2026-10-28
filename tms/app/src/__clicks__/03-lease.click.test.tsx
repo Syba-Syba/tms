@@ -85,7 +85,8 @@ describe('the inspection, clicked end to end', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Book move-in' }));
       await screen.findByText('Move-in inspection created', undefined, { timeout: 8000 });
     }
-    await screen.findByText(/incoming/i);
+    // Listed by its plain name, not the database's 'incoming'.
+    await screen.findByText(/Move-in ·/);
     const state = await call<any>('GET', `/leases/${leaseId}`);
     inspectionId = state.inspections[0].id;
   });

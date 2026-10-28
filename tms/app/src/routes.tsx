@@ -1,7 +1,8 @@
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router';
 import { AppShell } from './components/app-shell';
 import { RouteError } from './components/route-error';
-import { currentUser } from './lib/session';
+import { ConsentGate } from './components/consent-gate';
+import { currentUser, isLandlord } from './lib/session';
 
 /** Each screen loads when its route is first visited, so the sign-in page does not pay for
     the inspection or termination code. The router suspends navigation until a chunk lands. */
@@ -12,6 +13,11 @@ const screen = (name: string, exportName: string) => async () => {
 
 /** Nothing renders for nobody: without a session every path lands on the sign-in screen,
     which sends you back to where you were headed once you are someone. */
+/** Landlords open on their account; tenants have only their own settings. */
+function SettingsIndex() {
+  return <Navigate to={isLandlord() ? '/settings/account' : '/settings/notifications'} replace />;
+}
+
 function RequireAuth() {
   const location = useLocation();
   if (!currentUser()) {
@@ -19,7 +25,11 @@ function RequireAuth() {
       <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
     );
   }
-  return <Outlet />;
+  return (
+    <ConsentGate>
+      <Outlet />
+    </ConsentGate>
+  );
 }
 
 export const router = createBrowserRouter([
@@ -30,6 +40,12 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', lazy: screen('login', 'Login') },
       { path: '/register', lazy: screen('register', 'Register') },
+      { path: '/forgot-password', lazy: screen('forgot-password', 'ForgotPassword') },
+      { path: '/reset-password', lazy: screen('reset-password', 'ResetPassword') },
+      // An agent's invitation: public, because they have no sign-in until they finish it.
+      { path: '/join', lazy: screen('join', 'Join') },
+      // Public, so it can be read before signing up.
+      { path: '/privacy', lazy: screen('privacy', 'Privacy') },
       {
         element: <RequireAuth />,
         children: [
@@ -42,6 +58,8 @@ export const router = createBrowserRouter([
                 lazy: screen('landlord-queue', 'LandlordQueue'),
               },
               { path: '/properties', lazy: screen('properties', 'Properties') },
+              { path: '/payments', lazy: screen('payments', 'Payments') },
+              { path: '/reports', lazy: screen('reports', 'Reports') },
               { path: '/documents', lazy: screen('documents', 'Documents') },
               { path: '/tickets', lazy: screen('tickets-list', 'TicketsList') },
               { path: '/activity', lazy: screen('activity', 'Activity') },
@@ -57,6 +75,9 @@ export const router = createBrowserRouter([
                 path: '/terminations/:terminationId',
                 lazy: screen('termination', 'Termination'),
               },
+              { path: '/settings', element: <SettingsIndex /> },
+              { path: '/settings/account', lazy: screen('settings-account', 'SettingsAccount') },
+              { path: '/settings/team', lazy: screen('settings-team', 'SettingsTeam') },
               {
                 path: '/settings/notifications',
                 lazy: screen('notification-preferences', 'NotificationPreferences'),

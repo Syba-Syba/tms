@@ -20,6 +20,11 @@ export function Login() {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  // Someone who followed a landlord's listings link and has no account yet keeps the link
+  // through sign-up, so they land on that landlord's units afterwards.
+  const returnTo = (location.state as { from?: string } | null)?.from ?? '';
+  const listing = returnTo.startsWith('/apply') ? new URLSearchParams(returnTo.split('?')[1] ?? '').get('landlord') : null;
+  const registerLink = listing ? `/register?landlord=${encodeURIComponent(listing)}` : '/register';
 
   const signIn = async () => {
     setBusy(true);
@@ -48,7 +53,11 @@ export function Login() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 text-[26px] font-extrabold tracking-tight">Sign in</h1>
+      <span className="mb-8 flex items-center gap-2" aria-hidden>
+        <span className="h-[18px] w-[14px] rounded-t-full border-[1.5px] border-b-0 border-ink" />
+        <b className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">Threshold</b>
+      </span>
+      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Sign in</h1>
       <p className="mb-5 text-[14px] text-ink-muted">
         Your lease, rent, inspections and maintenance, in one place.
       </p>
@@ -86,9 +95,15 @@ export function Login() {
           <Button block loading={busy} disabled={!email || !password} onClick={signIn}>
             Sign in
           </Button>
+          <p className="text-center text-[13px]">
+            <Link to="/forgot-password" className="font-bold text-brand-500">Forgot your password?</Link>
+          </p>
           <p className="text-center text-[13px] text-ink-muted">
             Applying for a place?{' '}
-            <Link to="/register" className="font-bold text-brand-500">Create an account</Link>
+            <Link to={registerLink} className="font-bold text-brand-500">Create an account</Link>
+          </p>
+          <p className="text-center text-[12px]">
+            <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>
           </p>
         </CardBody>
       </Card>

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
 import { allowsLocalDrivers, secretFor } from './mode';
@@ -20,6 +20,8 @@ export interface Storage {
   sizeOf(key: string): Promise<number | null>;
   presignPut(key: string, contentType: string, expiresInSeconds: number): Promise<string>;
   presignGet(key: string, expiresInSeconds: number): Promise<string>;
+  /** Deletes the object. A key that is already gone is not an error: erasure must be repeatable. */
+  remove(key: string): Promise<void>;
 }
 
 const s3Driver = (): Storage => {
@@ -65,6 +67,9 @@ const s3Driver = (): Storage => {
     },
     presignGet(key, expiresIn) {
       return getSignedUrl(s3, new GetObjectCommand({ Bucket, Key: key }), { expiresIn });
+    },
+    async remove(key) {
+      await s3.send(new DeleteObjectCommand({ Bucket, Key: key }));
     },
   };
 };
@@ -126,6 +131,9 @@ const localDriver = (): Storage => {
     },
     presignPut: async (key, _contentType, expiresIn) => url('PUT', key, expiresIn),
     presignGet: async (key, expiresIn) => url('GET', key, expiresIn),
+    async remove(key) {
+      await rm(localPathFor(key), { force: true });
+    },
   };
 };
 

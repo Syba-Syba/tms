@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
+import { SettingsNav } from '../components/settings-nav';
+import { PrivacyRequests } from '../components/privacy-requests';
+import { YourData } from '../components/your-data';
+import { isLandlord } from '../lib/session';
 import { QueryState } from '../components/query-state';
 
 interface Preference {
@@ -69,13 +73,14 @@ export function NotificationPreferences() {
 
   return (
     <main className="mx-auto max-w-2xl px-5 py-6">
-      <PageHeader title="Settings" description="Your password, and what reaches you." />
+      <PageHeader title="Settings" description="Your password, what reaches you, and your data." />
+      <SettingsNav />
 
       <div className="mb-6">
         <ChangePassword />
       </div>
 
-      <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">Notifications</h2>
+      <h2 className="label mb-1">Notifications</h2>
       <p className="mb-3 text-xs text-ink-muted">Sent by email to the address on your account.</p>
 
       <div className="space-y-3">
@@ -122,6 +127,11 @@ export function NotificationPreferences() {
       <Button className="mt-4" loading={saving} onClick={save}>
         Save preferences
       </Button>
+
+      <div className="mt-8 space-y-8">
+        {isLandlord() ? <PrivacyRequests /> : null}
+        <YourData />
+      </div>
     </main>
   );
 }

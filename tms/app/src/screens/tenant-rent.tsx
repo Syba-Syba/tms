@@ -1,19 +1,43 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
-import { Badge, Button, Card, CardBody, PageHeader, TagField } from '@hlonie/toolbox/ui';
+import {
+  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, TagField, useToast,
+} from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
-import { api } from '../api/client';
+import { api, humanError } from '../api/client';
+import { formatDate, formatMonth, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
+import { ArrearsPanel } from '../components/arrears-panel';
+
+interface Proof {
+  id: string;
+  target: 'invoice' | 'deposit';
+  invoiceId: string | null;
+  amountCents: number;
+  paidOn: string;
+  reference: string | null;
+  status: 'pending' | 'accepted' | 'rejected';
+  rejectReason: string | null;
+}
 
 interface Statement {
-  ref: string | null;
+  reference: string | null;
+  landlord: string | null;
+  bank: { name: string; holder: string; accountNumber: string; branchCode: string } | null;
   balanceCents: number;
   depositBalanceCents: number;
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string }[];
   payments: { id: string; amountCents: number; receivedOn: string; reference: string | null }[];
+  proofs: Proof[];
 }
 
-const tone = { paid: 'success', part_paid: 'warning', issued: 'neutral' } as const;
+const proofTone = { pending: 'info', accepted: 'success', rejected: 'danger' } as const;
+const proofLabel = { pending: 'Waiting for landlord', accepted: 'Accepted', rejected: 'Not accepted' } as const;
+
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+const MAX_BYTES = 10 * 1024 * 1024;
+const today = () => new Date().toISOString().slice(0, 10);
 
 const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -34,23 +58,83 @@ function statementCsv(statement: Statement): string {
   return rows.map((row) => row.map(csvCell).join(',')).join('\n');
 }
 
+const blankSlip = { invoiceId: '', amountCents: null as number | null, paidOn: today(), reference: '' };
+
 export function TenantRent() {
   const { leaseId } = useParams();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['statement', leaseId],
     queryFn: () => api.get<Statement>(`/leases/${leaseId}/statement`),
   });
 
+  const [showSlip, setShowSlip] = useState(false);
+  const [slip, setSlip] = useState(blankSlip);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
   const balance = data?.balanceCents ?? 0;
+  const open = data?.invoices.filter((invoice) => invoice.status === 'issued' || invoice.status === 'part_paid') ?? [];
+  const pendingFor = new Set(
+    data?.proofs.filter((proof) => proof.status === 'pending').map((proof) => proof.invoiceId ?? 'any') ?? [],
+  );
+
+  const fileProblem = !file
+    ? null
+    : !ACCEPTED_TYPES.includes(file.type)
+      ? 'Send a photo (JPG or PNG) or a PDF.'
+      : file.size > MAX_BYTES
+        ? 'That file is over 10 MB.'
+        : null;
+  const ready = Boolean(file) && !fileProblem && (slip.amountCents ?? 0) > 0 && Boolean(slip.paidOn);
 
   const download = () => {
     if (!data) return;
     const url = URL.createObjectURL(new Blob([statementCsv(data)], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `statement-${leaseId}.csv`;
+    link.download = `statement-${data.reference ?? leaseId}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  /** Three calls: say what was paid, upload the file to the signed link, then send it. */
+  const sendSlip = async () => {
+    if (!file || !slip.amountCents) return;
+    setBusy(true);
+    try {
+      const isDeposit = slip.invoiceId === 'deposit';
+      const created = await api.post<{ proofId: string; uploadUrl: string }>(`/leases/${leaseId}/payment-proofs`, {
+        target: isDeposit ? 'deposit' : 'invoice',
+        invoiceId: isDeposit || !slip.invoiceId ? undefined : slip.invoiceId,
+        amountCents: slip.amountCents,
+        paidOn: slip.paidOn,
+        reference: slip.reference || undefined,
+        contentType: file.type,
+        sizeBytes: file.size,
+      });
+      const uploaded = await fetch(created.uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'content-type': file.type },
+      });
+      if (!uploaded.ok) throw new Error('The upload did not go through. Try again.');
+      await api.post(`/payment-proofs/${created.proofId}/submit`, {});
+      await queryClient.invalidateQueries({ queryKey: ['statement', leaseId] });
+      setShowSlip(false);
+      setSlip(blankSlip);
+      setFile(null);
+      toast.show({ title: 'Proof sent', description: 'Your landlord checks it against their account.', tone: 'success' });
+    } catch (error) {
+      toast.show({
+        title: 'Proof not sent',
+        description: error instanceof Error && !('status' in error) ? error.message : humanError(error),
+        tone: 'danger',
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!data) {
@@ -65,36 +149,138 @@ export function TenantRent() {
       />
       <Card className="mb-4">
         <CardBody className="space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-ink-muted">Pay by EFT with this reference</p>
-          {/* The lease's own reference: it is how the bank statement is matched to this unit. */}
-          <TagField label="Reference" value={data.ref ?? 'Ask your landlord'} />
+          <p className="label">Pay by EFT</p>
+          {data.bank ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[14px]">
+              <dt className="text-ink-muted">Bank</dt>
+              <dd>{data.bank.name}</dd>
+              <dt className="text-ink-muted">Account holder</dt>
+              <dd>{data.bank.holder}</dd>
+              <dt className="text-ink-muted">Account number</dt>
+              <dd className="font-mono tabular-nums">{data.bank.accountNumber}</dd>
+              <dt className="text-ink-muted">Branch code</dt>
+              <dd className="font-mono tabular-nums">{data.bank.branchCode}</dd>
+            </dl>
+          ) : (
+            <p className="text-[13px] text-ink-muted">
+              {data.landlord ?? 'Your landlord'} has not added their bank account here yet. Use the one on your lease.
+            </p>
+          )}
+          <TagField label="Reference" value={data?.reference ?? '...'} />
           <p className="text-xs text-ink-muted">
-            Your deposit stands at {formatZar(data.depositBalanceCents / 100)}, interest included.
-            It is yours; it grows every month.
+            Use it exactly, so your payment is matched to your unit. Your deposit stands at{' '}
+            {formatZar((data?.depositBalanceCents ?? 0) / 100)}, interest included.
           </p>
+          <Button block variant="outline" disabled={!data} onClick={() => setShowSlip(true)}>
+            Send proof of payment
+          </Button>
         </CardBody>
       </Card>
+
+      {data?.proofs.some((proof) => proof.status === 'rejected') ? (
+        <Alert tone="warning" title="A slip was not accepted" className="mb-4">
+          {data.proofs.find((proof) => proof.status === 'rejected')?.rejectReason}
+        </Alert>
+      ) : null}
+
+      {leaseId ? <ArrearsPanel leaseId={leaseId} landlord={false} /> : null}
+
       <div className="space-y-3">
-        {data.invoices.map((invoice) => (
-          <Card key={invoice.id}>
-            <CardBody className="flex items-center justify-between">
-              <div>
-                <p className="text-[15px] font-semibold text-ink">{invoice.period}</p>
-                <p className="text-xs text-ink-muted">Due {invoice.dueOn}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-sm">{formatZar(invoice.totalCents / 100)}</span>
-                <Badge tone={tone[invoice.status as keyof typeof tone] ?? 'neutral'}>
-                  {invoice.status.replace('_', ' ')}
-                </Badge>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
+        {data?.invoices.map((invoice) => {
+          const proofSent = invoice.status !== 'paid' && (pendingFor.has(invoice.id) || pendingFor.has('any'));
+          return (
+            <Card key={invoice.id}>
+              <CardBody className="flex items-center justify-between">
+                <div>
+                  <p className="text-[15px] font-semibold text-ink">{formatMonth(invoice.period)}</p>
+                  <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums text-sm">{formatZar(invoice.totalCents / 100)}</span>
+                  <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
+                    {proofSent ? 'Proof sent' : status(invoice.status).label}
+                  </Badge>
+                </div>
+              </CardBody>
+            </Card>
+          );
+        })}
       </div>
-      <Button block variant="secondary" className="mt-5" onClick={download}>
+
+      {data && data.proofs.length > 0 ? (
+        <section className="mt-6">
+          <h2 className="label mb-2">Slips you sent</h2>
+          <div className="space-y-2">
+            {data.proofs.map((proof) => (
+              <Card key={proof.id}>
+                <CardBody className="flex items-center justify-between">
+                  <div>
+                    <p className="tabular-nums text-sm">{formatZar(proof.amountCents / 100)}</p>
+                    <p className="text-xs text-ink-muted">
+                      Paid {formatDate(proof.paidOn)}
+                      {proof.target === 'deposit' ? ', deposit' : ''}
+                      {proof.reference ? `, ref ${proof.reference}` : ''}
+                    </p>
+                  </div>
+                  <Badge tone={proofTone[proof.status]}>{proofLabel[proof.status]}</Badge>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <Button block variant="secondary" className="mt-5" disabled={!data} onClick={download}>
         Download statement
       </Button>
+
+      <Modal
+        open={showSlip}
+        onOpenChange={(next) => setShowSlip(next)}
+        title="Send proof of payment"
+        description="Upload the slip or screenshot your bank gave you."
+      >
+        <div className="space-y-3">
+          <Select
+            value={slip.invoiceId}
+            onChange={(event) => setSlip({ ...slip, invoiceId: event.target.value })}
+            options={[
+              { value: '', label: 'Rent, oldest month first' },
+              ...open.map((invoice) => ({ value: invoice.id, label: `Rent for ${invoice.period}` })),
+              { value: 'deposit', label: 'Deposit' },
+            ]}
+          />
+          <CurrencyInput
+            cents={slip.amountCents}
+            onCentsChange={(next) => setSlip({ ...slip, amountCents: next })}
+            aria-label="Amount paid"
+          />
+          <Input
+            type="date"
+            aria-label="Date paid"
+            max={today()}
+            value={slip.paidOn}
+            onChange={(event) => setSlip({ ...slip, paidOn: event.target.value })}
+          />
+          <Input
+            placeholder="Reference you used (optional)"
+            maxLength={60}
+            value={slip.reference}
+            onChange={(event) => setSlip({ ...slip, reference: event.target.value })}
+          />
+          <input
+            type="file"
+            accept={ACCEPTED_TYPES.join(',')}
+            aria-label="Slip file"
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-500"
+          />
+          {fileProblem ? <p className="text-xs text-danger">{fileProblem}</p> : null}
+          <Button block loading={busy} disabled={!ready} onClick={sendSlip}>
+            Send
+          </Button>
+        </div>
+      </Modal>
     </main>
   );
 }

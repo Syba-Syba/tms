@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { PRIVACY_VERSION } from '../domain/privacy';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -68,6 +69,7 @@ const apply = async (unitId: string) =>
       monthlyIncomeCents: 4000000,
       occupants: 1,
       preferredMoveIn: '2099-01-01',
+      consentVersion: PRIVACY_VERSION,
     },
   });
 

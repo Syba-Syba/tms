@@ -10,7 +10,7 @@ export const Textarea = forwardRef<
       ref={ref}
       aria-invalid={invalid || undefined}
       className={cn(
-        'min-h-24 w-full rounded-sm border-0 bg-surface-muted px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-muted focus:ring-2 focus:ring-[var(--tb-ring)]',
+        'min-h-24 w-full rounded-sm border border-line bg-surface px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-muted focus:border-brand-500 focus:ring-1 focus:ring-brand-500',
         invalid && 'border-danger',
         className,
       )}

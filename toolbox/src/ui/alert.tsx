@@ -1,10 +1,11 @@
 import { cn } from '../lib/cn';
 
+/* A tinted panel with the title in the state colour. No side bar, no shadow. */
 const tones = {
-  info: 'border-info text-info',
-  success: 'border-success text-success',
-  warning: 'border-warning text-warning',
-  danger: 'border-danger text-danger',
+  info: 'bg-[color-mix(in_srgb,var(--tb-info)_7%,var(--tb-surface))] text-info',
+  success: 'bg-[color-mix(in_srgb,var(--tb-success)_7%,var(--tb-surface))] text-success',
+  warning: 'bg-[color-mix(in_srgb,var(--tb-warning)_8%,var(--tb-surface))] text-warning',
+  danger: 'bg-[color-mix(in_srgb,var(--tb-danger)_7%,var(--tb-surface))] text-danger',
 };
 
 export function Alert({
@@ -21,10 +22,10 @@ export function Alert({
   return (
     <div
       role="alert"
-      className={cn('rounded-md border-l-4 bg-surface p-4 shadow-sm', tones[tone], className)}
+      className={cn('rounded-md px-4 py-3', tones[tone], className)}
     >
       <p className="text-sm font-semibold">{title}</p>
-      {children ? <div className="mt-1 text-sm text-ink-muted">{children}</div> : null}
+      {children ? <div className="mt-0.5 text-sm text-ink">{children}</div> : null}
     </div>
   );
 }

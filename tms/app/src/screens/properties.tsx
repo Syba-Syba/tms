@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
-  Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, Drawer, EmptyState, PageHeader, useToast,
+  Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, Drawer, EmptyState, Input, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
+import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { copyText } from '@hlonie/toolbox/hooks';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
+import { useLandlord } from '../lib/landlord';
 import { Ledger } from '../components/money';
+import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 
 interface Unit {
@@ -29,10 +32,9 @@ interface Property {
   id: string;
   name: string;
   address: string;
+  fields: Record<string, string>;
   units: Unit[];
 }
-
-const STATUS_TONE = { vacant: 'warning', held: 'info', occupied: 'success' } as const;
 
 interface PropertyForm {
   name: string;
@@ -57,27 +59,17 @@ const PROVINCES = [
 export function Properties() {
   const toast = useToast();
   const [addingProperty, setAddingProperty] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [addingUnitTo, setAddingUnitTo] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [removingProperty, setRemovingProperty] = useState<Property | null>(null);
+  const [search, setSearch] = useState('');
+  // Ids the landlord has opened or closed by hand; everything else follows the default.
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['properties'],
     queryFn: () => api.get<{ items: Property[] }>('/properties'),
   });
-
-  const removeProperty = async (property: Property) => {
-    try {
-      await api.delete(`/properties/${property.id}`);
-      toast.show({ title: 'Property removed', tone: 'info' });
-      refetch();
-    } catch (error) {
-      // The server refuses while units exist; the message says exactly that.
-      toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
-    } finally {
-      setRemovingProperty(null);
-    }
-  };
 
   const copyApplicationLink = async (unit: Unit) => {
     const link = `${window.location.origin}/apply?unit=${unit.id}`;
@@ -106,8 +98,28 @@ export function Properties() {
   const totals = items.flatMap((property) => property.units);
   const occupied = totals.filter((unit) => unit.status === 'occupied');
 
+  const needle = search.trim().toLowerCase();
+  const shown = needle
+    ? items.filter((property) =>
+        [property.name, property.address, ...property.units.flatMap((unit) => [unit.code, unit.tenant ?? ''])]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle),
+      )
+    : items;
+  // A short portfolio opens fully; a long one starts folded so it reads as a list of buildings.
+  const openByDefault = items.length <= 5 || Boolean(needle);
+  const isOpen = (id: string) => (toggled.has(id) ? !openByDefault : openByDefault);
+  const toggle = (id: string) =>
+    setToggled((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-6">
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
       <PageHeader
         title="Properties"
         description={
@@ -118,96 +130,138 @@ export function Properties() {
         actions={<Button size="sm" onClick={() => setAddingProperty(true)}>Add a property</Button>}
       />
 
+      {items.length > 3 ? (
+        <Input
+          className="mb-4"
+          placeholder="Search property, address, unit or tenant"
+          aria-label="Search properties"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      ) : null}
+
       {items.length === 0 ? (
         <EmptyState
           title="Nothing here yet"
           description="A property holds its units; applications and leases hang off those."
         />
+      ) : shown.length === 0 ? (
+        <p className="text-[13px] text-ink-muted">Nothing matches "{search}".</p>
       ) : null}
 
       <div className="space-y-4">
-        {items.map((property) => (
-          <Card key={property.id}>
-            <CardBody className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="text-[16px] font-semibold">{property.name}</p>
-                  <p className="text-xs text-ink-muted">{property.address}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setAddingUnitTo(property)}>
-                    Add a unit
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setRemovingProperty(property)}>
-                    Remove
-                  </Button>
-                </div>
-              </div>
-
-              {property.units.length === 0 ? (
-                <p className="text-[13.5px] text-ink-muted">No units yet.</p>
-              ) : null}
-
-              <div className="space-y-2">
-                {property.units.map((unit) => (
-                  <div
-                    key={unit.id}
-                    className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2 last:border-0 last:pb-0"
+        {shown.map((property) => {
+          const vacant = property.units.filter((unit) => unit.status === 'vacant').length;
+          const open = isOpen(property.id);
+          return (
+            <Card key={property.id}>
+              <CardBody className="space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    aria-expanded={open}
+                    onClick={() => toggle(property.id)}
                   >
-                    <div>
-                      <p className="text-[14.5px] font-semibold">
-                        {unit.code}
-                        <span className="ml-2 text-xs font-normal text-ink-muted">
-                          {unit.bedrooms} bed · {unit.bathrooms} bath
-                        </span>
-                      </p>
-                      <p className="text-xs text-ink-muted">
-                        {unit.status === 'occupied' && unit.tenant
-                          ? `${unit.tenant}${unit.leaseEnd ? ` · until ${unit.leaseEnd}` : ''}`
-                          : unit.openApplications > 0
-                            ? `${unit.openApplications} application${unit.openApplications > 1 ? 's' : ''} waiting`
-                            : 'No applications yet'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Ledger cents={unit.monthlyRentCents} className="text-[15px]" />
-                      <Badge tone={STATUS_TONE[unit.status]}>{unit.status}</Badge>
-                      {unit.status === 'occupied' && unit.leaseId ? (
-                        <Link
-                          to={`/leases/${unit.leaseId}`}
-                          className="text-[13px] font-bold text-brand-500"
-                        >
-                          Lease
-                        </Link>
-                      ) : (
-                        <button
-                          type="button"
-                          className="text-[13px] font-bold text-brand-500"
-                          onClick={() => copyApplicationLink(unit)}
-                        >
-                          Copy link
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="text-[13px] font-semibold text-ink-muted hover:text-ink"
-                        onClick={() => setEditingUnit(unit)}
-                      >
-                        Edit
-                      </button>
-                    </div>
+                    <p className="flex items-center gap-2 text-[16px] font-semibold">
+                      <ChevronRightIcon className={`shrink-0 text-ink-muted transition-transform ${open ? 'rotate-90' : ''}`} />
+                      {property.name}
+                    </p>
+                    <p className="pl-6 text-xs text-ink-muted">
+                      {property.address}
+                      <span className="block">
+                        {property.units.length} unit{property.units.length === 1 ? '' : 's'}
+                        {vacant > 0 ? `, ${vacant} vacant` : property.units.length > 0 ? ', fully let' : ''}
+                      </span>
+                    </p>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-2 pl-6 sm:pl-0">
+                    <Button size="sm" variant="outline" onClick={() => setAddingUnitTo(property)}>
+                      Add a unit
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingProperty(property)}>
+                      Edit property
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-        ))}
+                </div>
+
+                {open && property.units.length === 0 ? (
+                  <p className="text-[13.5px] text-ink-muted">No units yet.</p>
+                ) : null}
+
+                {open ? (
+                  <div className="space-y-2">
+                    {property.units.map((unit) => {
+                      const shownStatus = status(unit.status);
+                      return (
+                        <div
+                          key={unit.id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2 last:border-0 last:pb-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[14.5px] font-semibold">
+                              {unit.code}
+                              <span className="ml-2 text-xs font-normal text-ink-muted">
+                                {unit.bedrooms} bed · {unit.bathrooms} bath
+                              </span>
+                            </p>
+                            <p className="text-xs text-ink-muted">
+                              {unit.status === 'occupied' && unit.tenant
+                                ? `${unit.tenant}${unit.leaseEnd ? ` · until ${formatDate(unit.leaseEnd)}` : ''}`
+                                : unit.openApplications > 0
+                                  ? `${unit.openApplications} application${unit.openApplications > 1 ? 's' : ''} waiting`
+                                  : 'No applications yet'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Ledger cents={unit.monthlyRentCents} className="text-[15px]" />
+                            <Badge tone={shownStatus.tone}>{shownStatus.label}</Badge>
+                            {unit.status === 'occupied' && unit.leaseId ? (
+                              <Link
+                                to={`/leases/${unit.leaseId}`}
+                                className="text-[13px] font-bold text-brand-500"
+                              >
+                                Lease
+                              </Link>
+                            ) : (
+                              <button
+                                type="button"
+                                className="text-[13px] font-bold text-brand-500"
+                                onClick={() => copyApplicationLink(unit)}
+                              >
+                                Copy link
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="text-[13px] font-semibold text-ink-muted hover:text-ink"
+                              onClick={() => setEditingUnit(unit)}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </CardBody>
+            </Card>
+          );
+        })}
       </div>
 
-      <AddPropertyDrawer
+      <PropertyDrawer
         open={addingProperty}
+        property={null}
         onClose={() => setAddingProperty(false)}
         onSaved={() => { setAddingProperty(false); refetch(); }}
+      />
+      <PropertyDrawer
+        open={Boolean(editingProperty)}
+        property={editingProperty}
+        onClose={() => setEditingProperty(null)}
+        onSaved={() => { setEditingProperty(null); refetch(); }}
       />
       <UnitDrawer
         property={addingUnitTo}
@@ -221,32 +275,32 @@ export function Properties() {
         onClose={() => setEditingUnit(null)}
         onSaved={() => { setEditingUnit(null); refetch(); }}
       />
-      <ConfirmDialog
-        open={!!removingProperty}
-        onOpenChange={() => setRemovingProperty(null)}
-        title={removingProperty ? `Remove ${removingProperty.name}` : 'Remove'}
-        description="A property only goes once it has no units. Nothing with lease history can be removed."
-        confirmLabel="Remove"
-        onConfirm={() => removingProperty && removeProperty(removingProperty)}
-      />
     </main>
   );
 }
 
-function AddPropertyDrawer({ open, onClose, onSaved }: {
+/** Adds a property, or edits one. Removing lives here too, away from the everyday buttons. */
+function PropertyDrawer({ open, property, onClose, onSaved }: {
   open: boolean;
+  property: Property | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const toast = useToast();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // Removing stock is the owner's call; an agent's attempt would be refused anyway.
+  const isOwner = useLandlord().data?.me.role === 'owner';
   const { control, handleSubmit, reset, formState } = useForm<PropertyForm>({
-    defaultValues: { province: 'Gauteng' },
+    values: property
+      ? (property.fields as unknown as PropertyForm)
+      : { name: '', addressLine1: '', suburb: '', city: '', province: 'Gauteng', postalCode: '' },
   });
 
   const submit = handleSubmit(async (values) => {
     try {
-      await api.post('/properties', values);
-      toast.show({ title: 'Property added', tone: 'success' });
+      if (property) await api.put(`/properties/${property.id}`, values);
+      else await api.post('/properties', values);
+      toast.show({ title: property ? 'Property updated' : 'Property added', tone: 'success' });
       reset();
       onSaved();
     } catch (error) {
@@ -254,8 +308,21 @@ function AddPropertyDrawer({ open, onClose, onSaved }: {
     }
   });
 
+  const remove = async () => {
+    try {
+      await api.delete(`/properties/${property!.id}`);
+      toast.show({ title: 'Property removed', tone: 'info' });
+      onSaved();
+    } catch (error) {
+      // The server refuses while units exist; the message says exactly that.
+      toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
+    } finally {
+      setConfirmingRemove(false);
+    }
+  };
+
   return (
-    <Drawer open={open} onOpenChange={(next) => !next && onClose()} title="Add a property">
+    <Drawer open={open} onOpenChange={(next) => !next && onClose()} title={property ? `Edit ${property.name}` : 'Add a property'}>
       <div className="space-y-3">
         <TextField
           control={control}
@@ -284,7 +351,20 @@ function AddPropertyDrawer({ open, onClose, onSaved }: {
             rules={{ required: 'Needed.', pattern: { value: /^\d{4}$/, message: 'Four digits, e.g. 2194.' } }} />
         </div>
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
+        {property && isOwner ? (
+          <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
+            Remove this property
+          </Button>
+        ) : null}
       </div>
+      <ConfirmDialog
+        open={confirmingRemove}
+        onOpenChange={setConfirmingRemove}
+        title={property ? `Remove ${property.name}` : 'Remove'}
+        description="A property only goes once it has no units. Nothing with lease history can be removed."
+        confirmLabel="Remove"
+        onConfirm={remove}
+      />
     </Drawer>
   );
 }
@@ -298,6 +378,7 @@ function UnitDrawer({ property, unit, onClose, onSaved }: {
 }) {
   const toast = useToast();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const isOwner = useLandlord().data?.me.role === 'owner';
   const open = Boolean(property || unit);
 
   const remove = async () => {
@@ -379,7 +460,7 @@ function UnitDrawer({ property, unit, onClose, onSaved }: {
           </p>
         ) : null}
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
-        {unit ? (
+        {unit && isOwner ? (
           <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
             Remove this unit
           </Button>

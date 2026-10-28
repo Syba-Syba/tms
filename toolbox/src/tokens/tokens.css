@@ -1,88 +1,102 @@
-/* Threshold. Apple's discipline, nobody's chrome. The subject is home, so the language is
-   architecture: limestone surfaces, one plum accent used sparingly, doorway arches at the
-   moments that matter, ledger numerals for money. Neutral on every platform. */
+/* Threshold, "ledger" edition.
+   References: Mercury's calm (paper-white pages, black primary actions, room to breathe),
+   Stripe's data handling (hairline rules, aligned figures, colour only for state), and
+   Monzo's warmth on the tenant side. What it avoids on purpose: soft drop shadows, big pill
+   radii, gradients, purple, and beige-on-beige, which is what generated interfaces default to.
+
+   One accent, bottle green, for links, focus and the active tab. Money and page titles are set
+   in a serif, like a bank statement; everything else in IBM Plex. Panels are flat white with a
+   1px rule; depth comes from the rule, never a shadow. */
 :root {
-  --tb-brand-50: #f6ecf2;
-  --tb-brand-100: #ecd8e4;
-  --tb-brand-200: #d9b1c8;
-  --tb-brand-300: #c287a9;
-  --tb-brand-400: #97567b;
-  --tb-brand-500: #6d3557;
-  --tb-brand-600: #582a46;
-  --tb-brand-700: #452137;
-  --tb-brand-800: #331828;
-  --tb-brand-900: #22101b;
+  /* Accent: bottle green. 500 is the working shade; 50 and 100 tint selected and hovered rows. */
+  --tb-brand-50: #eef4f1;
+  --tb-brand-100: #d9e7e0;
+  --tb-brand-200: #b3cfc1;
+  --tb-brand-300: #7fae98;
+  --tb-brand-400: #3f826a;
+  --tb-brand-500: #1d5e4a;
+  --tb-brand-600: #174d3d;
+  --tb-brand-700: #133f32;
+  --tb-brand-800: #0f3127;
+  --tb-brand-900: #0a221b;
 
-  --tb-neutral-0: #f7f5f1;
-  --tb-neutral-50: #e9e6e0;
-  --tb-neutral-100: #ded9d0;
-  --tb-neutral-200: #cfc8bc;
-  --tb-neutral-300: #b3aa9b;
-  --tb-neutral-400: #948b7c;
-  --tb-neutral-500: #7d766c;
-  --tb-neutral-600: #5b554c;
-  --tb-neutral-700: #403b34;
-  --tb-neutral-800: #2c2822;
-  --tb-neutral-900: #23201c;
+  /* Neutrals: a cool paper grey with the faintest warmth, so white panels read as paper. */
+  --tb-neutral-0: #ffffff;
+  --tb-neutral-50: #f7f7f5;
+  --tb-neutral-100: #efefec;
+  --tb-neutral-200: #e3e3df;
+  --tb-neutral-300: #cdcdc7;
+  --tb-neutral-400: #a3a39c;
+  --tb-neutral-500: #6b6b65;
+  --tb-neutral-600: #4f4f4a;
+  --tb-neutral-700: #383834;
+  --tb-neutral-800: #24241f;
+  --tb-neutral-900: #151513;
 
-  --tb-success: #3f7d58;
-  --tb-warning: #b07a24;
-  --tb-danger: #b3473e;
-  --tb-info: #4a5d7e;
-  --tb-marker: #e8c66b;
+  /* State only. Never decoration. */
+  --tb-success: #1f7a4d;
+  --tb-warning: #a35b06;
+  --tb-danger: #b42318;
+  --tb-info: #2f5d8a;
+  --tb-marker: #f2d675;
 
   --tb-bg: var(--tb-neutral-50);
   --tb-surface: var(--tb-neutral-0);
-  --tb-surface-muted: #eee8de;
-  --tb-border: #d8d2c8;
-  --tb-border-soft: #e3ded4;
+  --tb-surface-muted: var(--tb-neutral-100);
+  --tb-border: #dcdcd7;
+  --tb-border-soft: #e9e9e5;
   --tb-text: var(--tb-neutral-900);
   --tb-text-muted: var(--tb-neutral-500);
-  --tb-text-inverse: #f7f5f1;
+  --tb-text-inverse: #ffffff;
   --tb-ring: var(--tb-brand-500);
+  /* Primary buttons are ink, not accent: the accent stays rare enough to mean something. */
+  --tb-action: var(--tb-neutral-900);
+  --tb-action-hover: #000000;
 
-  --tb-font-display: 'Cabinet Grotesk', 'Archivo', 'Segoe UI', system-ui, sans-serif;
-  --tb-font-body: 'General Sans', 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --tb-font-mono: 'Spline Sans Mono', ui-monospace, monospace;
+  --tb-font-display: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --tb-font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --tb-font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
 
-  --tb-radius-sm: 10px;
-  --tb-radius-md: 14px;
-  --tb-radius-lg: 22px;
-  --tb-radius-arch: 999px 999px 20px 20px;
+  --tb-radius-sm: 6px;
+  --tb-radius-md: 8px;
+  --tb-radius-lg: 10px;
+  --tb-radius-arch: 999px 999px 10px 10px;
   --tb-radius-full: 999px;
 
-  --tb-shadow-sm: 0 1px 2px rgba(35, 32, 28, 0.06), 0 4px 14px rgba(35, 32, 28, 0.05);
-  --tb-shadow-md: 0 2px 6px rgba(35, 32, 28, 0.06), 0 14px 34px rgba(35, 32, 28, 0.09);
-  --tb-shadow-lg: 0 24px 60px rgba(35, 32, 28, 0.16);
-  --tb-edge: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  /* Kept as tokens for overlays only; panels on the page carry none. */
+  --tb-shadow-sm: 0 0 0 0 transparent;
+  --tb-shadow-md: 0 1px 2px rgba(21, 21, 19, 0.06), 0 8px 24px rgba(21, 21, 19, 0.08);
+  --tb-shadow-lg: 0 2px 4px rgba(21, 21, 19, 0.06), 0 20px 48px rgba(21, 21, 19, 0.14);
+  --tb-edge: 0 0 0 0 transparent;
 
   --tb-duration-fast: 120ms;
-  --tb-duration-base: 220ms;
+  --tb-duration-base: 200ms;
   --tb-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Dusk: warm charcoal, never pure black. The plum lightens to orchid so contrast holds. */
+/* Night: near-black ink with lifted panels. The green lightens so links and focus still read. */
 [data-theme='dark'] {
-  --tb-bg: #191613;
-  --tb-surface: #221e1a;
-  --tb-surface-muted: #2c2722;
-  --tb-border: #3a342d;
-  --tb-border-soft: #2f2a24;
-  --tb-text: #f0ece5;
-  --tb-text-muted: #a49b8e;
-  --tb-text-inverse: #191613;
-  --tb-brand-500: #c887ab;
-  --tb-brand-600: #d69fbd;
-  --tb-brand-50: #33222c;
-  --tb-brand-100: #402a37;
-  --tb-success: #6fae8a;
-  --tb-warning: #d19a4a;
-  --tb-danger: #d0766d;
-  --tb-ring: #c887ab;
-  --tb-edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --tb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --tb-shadow-md: 0 14px 34px rgba(0, 0, 0, 0.5);
-  --tb-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.65);
+  --tb-bg: #121211;
+  --tb-surface: #1b1b19;
+  --tb-surface-muted: #242421;
+  --tb-border: #34342f;
+  --tb-border-soft: #2a2a26;
+  --tb-text: #f1f1ee;
+  --tb-text-muted: #a3a39c;
+  --tb-text-inverse: #121211;
+  --tb-brand-500: #6fc2a1;
+  --tb-brand-600: #8fd2b7;
+  --tb-brand-50: #18261f;
+  --tb-brand-100: #1f3329;
+  --tb-success: #5fbf8b;
+  --tb-warning: #e0a050;
+  --tb-danger: #f07a6e;
+  --tb-info: #7fa9d6;
+  --tb-ring: #6fc2a1;
+  --tb-action: #f1f1ee;
+  --tb-action-hover: #ffffff;
+  --tb-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --tb-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.65);
 }
 
 @media (prefers-reduced-motion: reduce) {

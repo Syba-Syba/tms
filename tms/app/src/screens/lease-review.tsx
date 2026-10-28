@@ -15,6 +15,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
+import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
 
@@ -117,11 +118,11 @@ export function LeaseReview() {
           </div>
           <dl className="grid grid-cols-2 gap-y-2 text-sm">
             <dt className="text-ink-muted">Monthly rent</dt>
-            <dd className="text-right font-mono"><Ledger cents={data.monthlyRentCents} /></dd>
+            <dd className="text-right tabular-nums"><Ledger cents={data.monthlyRentCents} /></dd>
             <dt className="text-ink-muted">Deposit</dt>
-            <dd className="text-right font-mono"><Ledger cents={data.depositCents} /></dd>
+            <dd className="text-right tabular-nums"><Ledger cents={data.depositCents} /></dd>
             <dt className="text-ink-muted">Term</dt>
-            <dd className="text-right">{data.startDate} to {data.endDate}</dd>
+            <dd className="text-right">{formatDate(data.startDate)} to {formatDate(data.endDate)}</dd>
             <dt className="text-ink-muted">Escalation</dt>
             <dd className="text-right">{data.escalationPct}% a year</dd>
           </dl>
@@ -157,7 +158,7 @@ export function LeaseReview() {
                 detail: signedParties.includes('tenant') ? 'On file' : undefined,
               },
               isRenewal
-                ? { title: `Starts ${data.startDate}`, detail: 'Takes over from the current lease' }
+                ? { title: `Starts ${formatDate(data.startDate)}`, detail: 'Takes over from the current lease' }
                 : { title: 'Lease active', detail: 'Deposit due within 7 days' },
             ]}
           />
@@ -172,7 +173,7 @@ export function LeaseReview() {
       ) : null}
 
       {isRenewal && signedParties.length === 2 ? (
-        <Alert tone="success" title={`Signed · starts ${data.startDate}`}>
+        <Alert tone="success" title={`Signed · starts ${formatDate(data.startDate)}`}>
           Both signatures are on file. The new lease takes over from the current one on its start date.
         </Alert>
       ) : null}

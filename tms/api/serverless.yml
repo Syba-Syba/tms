@@ -91,7 +91,8 @@ provider:
     role:
       statements:
         - Effect: Allow
-          Action: [s3:PutObject, s3:GetObject]
+          # DeleteObject is for POPIA erasure and the retention sweep.
+          Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
           Resource: arn:aws:s3:::${self:provider.environment.DOCS_BUCKET}/*
         # SSE-KMS on a PutObject is a GenerateDataKey call, not an Encrypt, so uploads were
         # denied by a policy that looked like it covered them.
@@ -154,8 +155,18 @@ functions:
     events:
       - schedule: cron(0 5 * * ? *)
 
+  arrearsRun:
+    handler: src/handlers/arrears-run.handler
+    events:
+      # 05:15 in Johannesburg: reminders land before the working day starts.
+      - schedule: cron(15 3 * * ? *)
+
   leasesActivate:
     handler: src/handlers/leases-activate.handler
     events:
       - schedule: cron(10 3 * * ? *)
 
+  privacySweep:
+    handler: src/handlers/privacy-sweep.handler
+    events:
+      - schedule: cron(30 2 * * ? *)

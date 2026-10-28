@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { Ledger } from '../components/money';
 import { QueryError } from '../components/query-state';
 import { isLandlord } from '../lib/session';
+import { capitalise, formatDateTime, status as statusOf } from '../lib/format';
 
 interface Ticket {
   id: string;
@@ -76,21 +77,21 @@ export function TicketsList() {
                 <div>
                   <p className="text-[15px] font-semibold">{ticket.title}</p>
                   <p className="text-xs text-ink-muted">
-                    {ticket.unit} · {ticket.category}
+                    {ticket.unit} · {capitalise(ticket.category)}
                     {ticket.contractor ? ` · ${ticket.contractor}` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge tone={severityTone[ticket.severity]}>{ticket.severity}</Badge>
-                  <Badge tone={ticket.overdue ? 'danger' : 'neutral'}>
-                    {ticket.status.replace(/_/g, ' ')}
+                  <Badge tone={severityTone[ticket.severity]}>{capitalise(ticket.severity)}</Badge>
+                  <Badge tone={ticket.overdue ? 'danger' : statusOf(ticket.status).tone}>
+                    {ticket.overdue ? 'Overdue' : statusOf(ticket.status).label}
                   </Badge>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
                 <span className={ticket.overdue ? 'font-bold text-danger' : ''}>
-                  {ticket.overdue ? 'Overdue since' : 'Due by'} {ticket.targetBy.slice(0, 16).replace('T', ' ')}
+                  {ticket.overdue ? 'Overdue since' : 'Due by'} {formatDateTime(ticket.targetBy)}
                 </span>
                 {ticket.quoteCents ? (
                   <span>

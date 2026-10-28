@@ -36,7 +36,7 @@ The difference that matters is identity. `npm run dev` runs `src/local.ts`, whic
 whatever `x-dev-sub` claims when there is no token, so anyone who can reach the port is the
 landlord. That is why it refuses to start outside development. Self-hosted mode runs
 `src/server.ts` instead, which has no fallback at all: no token is 401, on every route except
-the two that issue tokens.
+the ones that issue tokens or reset a password.
 
     cd api
     cp .env.selfhosted.example .env.selfhosted
@@ -131,8 +131,12 @@ What self-hosted mode does **not** change:
   at startup. Back up `PGLITE_DIR` and `STORAGE_DIR` together, with the server stopped.
 - `STORAGE_SECRET` derives the ID number encryption key. Changing it makes every stored ID
   number permanently unreadable. Back both secrets up somewhere other than the machine.
-- Passwords are scrypt-hashed and tokens expire after seven days. There is no emailed
-  password reset and no refresh; Cognito would have brought those.
+- Passwords are scrypt-hashed and tokens expire after seven days. There is no refresh token.
+- Forgot password emails a link that works once, for 30 minutes. Only a SHA-256 of the token
+  is stored, and the link is wiped from the outbox once used. Set `PUBLIC_APP_URL` to the
+  address people open the app on, or the screen answers that reset is not set up. The email
+  goes through the notification outbox, so it only leaves the machine with `NOTIFY_MODE=send`
+  and a sender configured.
 - Sign-in locks an account for 15 minutes after 10 wrong passwords, and one address for 15
   minutes after 30. Sign-ups are capped at 10 an hour per address. These counts live in
   memory, so restarting the server clears them.
@@ -222,6 +226,22 @@ Apple developer fee, and the service worker gives them offline reads.
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
 | POST | /auth/login, /auth/register | anyone | local sign-in and tenant sign-up; Cognito's job in production |
+| POST | /auth/reset/request, /auth/reset/confirm | anyone | emailed password reset for the local driver |
+| POST | /leases/{id}/payment-proofs, /payment-proofs/{id}/submit | tenant | send a proof of payment slip |
+| GET | /payment-proofs | landlord | slips waiting to be checked |
+| POST | /payment-proofs/{id}/decision | landlord | accept (records the payment) or reject with a reason |
+| POST | /bank-imports | landlord | read a CSV or OFX bank statement into credit lines |
+| GET | /bank-imports, /bank-imports/{id} | landlord | past imports; one import with a suggested lease per line |
+| POST | /bank-imports/{id}/resolve | landlord | confirm lines as payments, or set them aside |
+| POST, GET | /expenses | landlord | record an expense with an optional slip; list by period |
+| PUT, DELETE | /expenses/{id} | landlord | correct or remove an expense |
+| GET | /reports/income-expense | landlord | rent invoiced, collected, expenses and net per property, tax year by default |
+| GET | /reports/arrears | landlord | what each lease owes, aged 0, 30, 60, 90 and 90+ days |
+| GET, POST | /me/privacy, /me/consents | signed in | notice version accepted; accept the current one |
+| GET | /me/data-export | signed in | everything held about the caller, as JSON |
+| POST | /me/erasure-request | tenant | ask for erasure; immediate when there is nothing to keep |
+| GET | /privacy-requests | landlord | erasure requests from their applicants and tenants |
+| POST | /privacy-requests/{id}/decision | landlord | erase, or refuse with a reason |
 | GET | /audit | landlord | the audit log for their own properties and account, newest first (`?entity=&entityId=&before=&limit=`) |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
@@ -240,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Forty-eight routes in all; the table lists the shape of each family rather than every verb.
+Eighty-five routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -283,10 +303,13 @@ fixes each one.
 `DB_DRIVER=pglite` by default, which is Postgres compiled to WebAssembly running inside the API
 process against `tms/api/.pglite`. It is a real Postgres, not a mock, and the same migrations
 apply to it. The folder is not in git: `npm run dev` creates and seeds it when it is missing.
-Delete it or run `npm run reset` to start over.
+Delete it or run `npm run reset` to start over. `npm run dev` also applies any migrations a
+pulled branch adds to an existing database, without re-seeding it.
 
-The click tests refuse to run if the self-hosted server is the thing on port 3001, because
-they create records. Stop it first.
+For demos and screenshots, `npm run demo` (with `npm run dev` stopped) adds a second building,
+two more tenants, three months of rent with one tenant in arrears, a year's expenses and an
+overdue repair. Dates are relative to today, so the dashboard reads the same whenever you run
+it. `npm run reset && npm run demo` gives a clean demo copy.
 
 To use a real Postgres instead, set `DB_DRIVER=postgres` in `tms/api/.env` and fill in the
 `DB_HOST` block below it, then `npm run setup -w tms-api`.
@@ -318,19 +341,16 @@ someone else, the same as it would be in production.
 
     npm test
 
-They boot their own Postgres, so nothing needs to be running. The web app's unit tests can run
+Over 350 tests. They boot their own Postgres, so nothing needs to be running. The web app's unit tests can run
 on their own, without the API and while the self-hosted server is up:
 
     npm run test:unit -w tms-app
 
-There is a second kind of test: sixteen click-through tests that render every screen in a
-DOM, press the actual buttons, and let each press hit the running dev API — documents opened
-by a button are downloaded and checked to be real PDFs. They need the API up:
-
-    npm run dev                       # in one terminal
-    npm run test:clicks -w tms-app    # in another
-
-The suites build their own fixtures through the API, so they pass in any order and on reruns.
+The app's click-through tests render screens in a DOM, press the actual buttons, and let each
+press hit a real API. Documents opened by a button are downloaded and checked to be real PDFs.
+`npm test` starts that API itself on port 3101, against a throwaway database and storage folder
+that are deleted afterwards, so the tests never touch your development data. They used to run
+against the dev API on 3001 and left a test property behind on every run.
 
 With the self-hosted server on 3001, run them against a development API on another port
 instead; the suite starts one there and stops it afterwards:
@@ -438,8 +458,7 @@ that did not happen, and a failed send never loses the message.
 Event driven, raised inline: invoice issued, payment received, ticket raised, contractor
 assigned, work completed, inspection booked, lease signed, notice served, deposit settled.
 
-Time driven, raised by `notifications-sweep` every morning: rent overdue (day 3, then weekly,
-not every morning), maintenance about to breach its target, maintenance already overdue,
+Time driven, raised by `notifications-sweep` every morning: maintenance about to breach its target, maintenance already overdue,
 inspection tomorrow, statutory refund deadline within three days, lease ending in 60, 30 or 7
 days. Every one carries a dedupe key, which is what makes the sweep safe to run as often as
 you like.
@@ -582,17 +601,151 @@ instants, and a deadline that reads a day early is the kind of thing a tribunal 
 `src/lib/db.ts` overrides the parser for OIDs 1082 and 1182.
 
 
+## Money coming in
+
+Rent arrives by EFT, so the landlord used to type every payment. Two ways in now, both
+ending in ordinary payment rows:
+
+- Proof of payment. The tenant uploads the bank's slip from the rent screen. The landlord
+  checks it against their account and accepts it, optionally with a corrected amount, or
+  rejects it with a reason the tenant sees. While a slip waits, the invoice shows "proof sent"
+  and the overdue reminder holds off.
+- Bank statement import. The landlord uploads the CSV or OFX their bank exports. Only credits
+  are read. Each line gets a suggested lease: high confidence when the `LSE-00101` reference is
+  in the description and the amount fits, or a pending slip matches; medium for a surname and
+  exact amount; low for an amount only one lease owes. Nothing is recorded until the landlord
+  confirms. Re-importing an overlapping statement skips lines already seen. Confirming a line
+  also accepts a pending slip for the same amount, so nobody ticks one payment off twice.
+
+Either way one amount is spread over the lease's open invoices, oldest first, so a tenant
+paying two months at once settles both. More than the lease owes is refused, because there is
+no credit balance to hold it in yet.
+
+CSV layouts differ by bank: FNB puts account details above the header, Capitec splits money
+in and out, some exports use semicolons and decimal commas. The reader finds columns by
+header and falls back to the values when there is none. Dates are read day first. OFX is the
+reliable choice when the bank offers it.
+
+## POPIA
+
+The landlord is the responsible party; the app is what they process personal information with.
+
+- Privacy notice at `/privacy`, public, in plain language. Its version is
+  `PRIVACY_VERSION` in `api/src/domain/privacy.ts` and `app/src/lib/privacy.ts`; a test keeps
+  them equal. Bump both when the notice's substance changes, and everyone is asked again.
+- Consent is recorded in `consent` with the version, time, IP address and device: at sign-up,
+  per application (for using the ID number, income and documents to decide it), and on first
+  sign-in for anyone without the current version, landlords included.
+- Settings, Your data: download everything held about you as one JSON file (the ID number shows
+  its last four digits; it is never decrypted), and ask for erasure.
+- Erasure: an account that never applied goes at once. Otherwise the request waits for the
+  landlord, under Settings, Privacy requests, and on the overview. The system refuses to erase
+  while records must be kept: five years after a lease ends (Tax Administration Act, and the
+  Rental Housing Tribunal). A refusal needs a reason, which the person is emailed with the
+  Information Regulator's address. Erasure replaces the person's details with placeholders,
+  deletes their documents, slips, lease PDFs and signature images, their sign-in and their
+  messages, and leaves amounts and dates so the books still add up.
+- Retention: `privacy-sweep` runs daily and deletes the documents of applications declined or
+  withdrawn more than twelve months ago.
+
+What is not here yet: a named Information Officer per landlord shown in the notice, and
+correction of details by the person themselves (they ask the landlord today).
+
+## Arrears
+
+`arrears-run` runs at 05:15 SAST. A lease with rent past its due date opens an arrears case,
+and the tenant gets a reminder on day 1, day 3 and day 7. Only the highest reminder due is
+sent, so a job that was down for a week sends one message, not three. Reminders hold while a
+slip waits for the landlord, and while the landlord has paused them (60 days at most, with a
+reason). Paying up closes the case.
+
+From day 7 the landlord is told the letter of demand is ready. The system never sends it on its
+own. The landlord presses Send on the lease, the letter is rendered as a PDF, filed on the lease
+and emailed to the tenant. It gives 20 business days to pay, the notice the Consumer Protection
+Act s14 needs before a fixed-term lease can be cancelled for breach. Every step is a row on the
+case, so the lease shows who was told what, when, and for how much.
+
+Routes: `GET /leases/{id}/arrears`, `POST /leases/{id}/arrears/letter`,
+`POST /leases/{id}/arrears/pause` with `{ until, reason }`, or `{ until: null }` to resume.
+
+## Landlord accounts
+
+One installation serves many landlords, and each landlord account has a team: one owner and
+any number of agents. Every access check asks whether the caller is a member of the landlord
+that owns the record. `landlord.cognito_sub` still names the owner and a trigger keeps it in
+step with `landlord_member`, so seeds and landlord notifications work as before.
+
+- **Sign-up.** `/register?as=landlord` takes a business name and phone and opens the account
+  with the person as owner. The dashboard shows a setup checklist until there is a bank account,
+  a property, a unit and a tenant on a lease.
+- **Agents.** The owner invites by email from Settings, Team. The link works once, for 7 days,
+  and only a hash of it is stored. Agents do everything on leases, rent, maintenance,
+  inspections and applications, under their own name in Activity. Only the owner changes the
+  business details, the bank account or the team, deletes a property or unit, or answers a
+  POPIA request. Removing an agent moves their session epoch, so they are signed out at once.
+- **Bank details** print on invoices and the letter of demand and show on the tenant's rent
+  screen. A change is in Activity with the old and new last four digits.
+- **Listings link.** Each landlord has `/apply?landlord=their-name`. With more than one landlord
+  on the installation, the vacant-unit list needs it, so no landlord shows another's units.
+
+Limits for now: landlord sign-up and invitations use the local auth driver; under Cognito they
+need a sign-up flow that puts the person in the `landlord` group, which is not built. Landlord
+notifications go to the owner and the business email, not to each agent.
+
+Routes: `GET /landlord`, `PUT /landlord`, `GET /landlord/team`, `POST /landlord/invites`,
+`POST /landlord/invites/{id}/revoke`, `POST /landlord/members/{sub}/remove`, and the public
+`POST /invites/lookup` and `POST /invites/accept`, which take the token in the body.
+
+## Expenses and reports
+
+Expenses are recorded per landlord, optionally against a property and a unit, in categories
+that follow what SARS lets a landlord deduct. Bond interest has its own category because the
+capital part of a bond payment is not deductible. A slip photo or PDF can go with each one;
+only its landlord can open it.
+
+The income report defaults to the current tax year (1 March to the end of February) and shows
+two income figures per property: rent invoiced in the period, and rent collected in it. Net is
+collected less expenses. Deposits are left out, because they are the tenant's money. The arrears
+report ages each lease's unpaid invoices into the same buckets the tenant's statement uses, and
+flags leases with a slip waiting. Both download as CSV for an accountant.
+
+CI runs on every push and pull request (`.github/workflows/ci.yml`): a clean `npm ci`,
+typecheck, toolbox lint, every test suite and the self-hosted build.
+
+## Design
+
+The look borrows from three products with in-house design teams: Mercury for its calm
+(paper-white pages, black primary buttons, room to breathe), Stripe for data (rows split by thin
+rules, figures that line up, colour only for state) and Monzo for the tenant's side (one warm,
+tinted panel for their own money, plain friendly copy).
+
+- Page titles and money are set in Source Serif 4, like a bank statement. Everything else is IBM
+  Plex Sans, with IBM Plex Mono for references such as LSE-00101. The fonts are bundled, Latin
+  subset only, because the self-hosted CSP allows nothing from another origin and the Android app
+  must work offline.
+- Panels are flat white with a 1px rule. There are no drop shadows on the page, no pill shapes and
+  no gradients.
+- One accent, bottle green, for links, focus and selection. Primary buttons are ink black, so each
+  screen has one obvious next step.
+- Labels are small and in sentence case. Use the `label` class rather than spaced-out capitals.
+
+The values live in `toolbox/src/tokens/tokens.css`; components read them, screens never hardcode a
+colour.
+
 ## Screens
 
-Tenant and landlord share the same app; navigation, permissions and data follow the role.
+Tenant and landlord share the same app; navigation, permissions and data follow the role. On a
+phone the main sections sit in a bottom tab bar, with the rest behind More; on a laptop they sit
+in the top bar. Dates read "7 Oct 2026" and statuses read as words ("Unpaid", "Part paid"),
+through `app/src/lib/format.ts`.
 
 | Screen | Route | Who |
 | --- | --- | --- |
-| Landlord home: every lease with rent, arrears, deposit and open tickets | `/` | landlord |
+| Landlord overview: month's collections, arrears, slips and repairs, a "Needs you" list, every lease | `/` | landlord |
 | Tenant home: balance, rent, deposit with interest, what needs attention | `/` | tenant |
 | Documents: lease, every inspection, every invoice | `/documents` | tenant |
 | Lease detail: invoices, inspections, renewal, notice, record payment | `/leases/:id` | both, actions landlord only |
-| Rent and deposit statement | `/leases/:id/rent` | both |
+| Rent and deposit statement, EFT reference, send proof of payment | `/leases/:id/rent` | both |
 | Properties: portfolio, add, re-price and remove units, copy application links | `/properties` | landlord |
 | Applications queue: affordability banding, paperwork, generate the lease | `/applications` | landlord |
 | Lease signing: review the PDF, then each party signs against its fingerprint | `/lease/:id` | both |
@@ -604,7 +757,11 @@ Tenant and landlord share the same app; navigation, permissions and data follow 
 | Termination: then-and-now comparison, deductions, settlement | `/terminations/:id` | landlord |
 | Notification preferences | `/settings/notifications` | both |
 | Apply and upload documents | `/apply` | prospective tenant |
+| Payments: slips to check, bank statement import and matching | `/payments` | landlord |
+| Reports: income and expenses per property, arrears age analysis, expense capture, CSV export | `/reports` | landlord |
 | Sign in, create an account | `/login`, `/register` | anyone |
+| Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
+| Privacy notice | `/privacy` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

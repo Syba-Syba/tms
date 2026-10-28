@@ -1,3 +1,4 @@
+import { PRIVACY_VERSION } from '../domain/privacy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { mkdtempSync } from 'node:fs';
@@ -37,11 +38,12 @@ beforeAll(async () => {
 
   storageLib = await import('../lib/storage');
   const { handler } = await import('../api');
-  call = async (method, path, opts = {}) => {
+  call = async (method, fullPath, opts = {}) => {
+    const [path = fullPath, search] = fullPath.split('?');
     const event = {
       rawPath: path,
       headers: { 'content-type': 'application/json' },
-      queryStringParameters: {},
+      queryStringParameters: Object.fromEntries(new URLSearchParams(search ?? '')),
       pathParameters: {},
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       requestContext: {
@@ -146,12 +148,17 @@ describe('portfolio', () => {
     expect(response.status).toBe(404);
   });
 
-  it('offers applicants only vacant units', async () => {
-    const response = await call('GET', '/units/available', {
+  it('offers applicants only vacant units, and only the landlord\'s whose link they followed', async () => {
+    // Two landlords now exist, so a bare request lists nothing rather than mixing their stock.
+    const bare = await call('GET', '/units/available', { sub: 'sub-someone-new', groups: 'tenant' });
+    expect(bare.body).toMatchObject({ needsLink: true, items: [] });
+    const response = await call('GET', '/units/available?landlord=mokoena-properties', {
       sub: 'sub-someone-new',
       groups: 'tenant',
     });
     expect(response.status).toBe(200);
+    expect(response.body.landlord).toEqual({ name: 'Mokoena Properties' });
+    expect(response.body.items.some((u: any) => u.label.startsWith('Not Yours'))).toBe(false);
     const codes = response.body.items.map((u: any) => u.label);
     expect(codes).toContain('Kruis Court A2');
     expect(codes).toContain('Hill Street G1');
@@ -247,7 +254,7 @@ describe('documents come back out', () => {
       sub: 'sub-fresh-applicant',
       groups: 'tenant',
       body: {
-        unitId: (await call('GET', '/units/available', { groups: 'tenant', sub: 'sub-fresh-applicant' }))
+        unitId: (await call('GET', '/units/available?landlord=mokoena-properties', { groups: 'tenant', sub: 'sub-fresh-applicant' }))
           .body.items.find((u: any) => u.label === 'Hill Street G1').id,
         firstName: 'Lerato',
         lastName: 'Dube',
@@ -258,6 +265,7 @@ describe('documents come back out', () => {
         monthlyIncomeCents: 4000000,
         occupants: 1,
         preferredMoveIn: '2099-01-01',
+        consentVersion: PRIVACY_VERSION,
       },
     });
     expect(application.status).toBe(201);

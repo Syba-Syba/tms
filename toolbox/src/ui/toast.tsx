@@ -76,7 +76,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={toast.id}
             className={cn(
-              'pointer-events-auto rounded-md border border-line border-l-4 bg-surface p-3 shadow-md',
+              'pointer-events-auto rounded-md border border-line bg-surface p-3 shadow-md',
               toneStyles[toast.tone],
             )}
           >

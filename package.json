@@ -17,7 +17,8 @@
     "test": "npm run test --workspaces --if-present",
     "reset": "npm run reset -w tms-api",
     "selfhost:build": "npm run build -w @hlonie/toolbox && VITE_API_URL=/ npm run build -w tms-app",
-    "selfhost:start": "npm run start -w tms-api"
+    "selfhost:start": "npm run start -w tms-api",
+    "demo": "npm run demo -w tms-api"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",

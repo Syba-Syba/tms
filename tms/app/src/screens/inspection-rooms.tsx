@@ -14,6 +14,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
+import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
 
 export interface InspectionState {
@@ -128,7 +129,7 @@ export function InspectionRooms() {
     <main className="mx-auto max-w-lg px-4 py-6">
       <PageHeader
         title={data.kind === 'incoming' ? 'Move-in inspection' : 'Move-out inspection'}
-        description={`${data.unit} · ${data.scheduledFor}. Walk every room together, then both of you sign.`}
+        description={`${data.unit} · ${formatDate(data.scheduledFor)}. Walk every room together, then both of you sign.`}
       />
 
       <div className="space-y-3">
@@ -171,7 +172,7 @@ export function InspectionRooms() {
         {data.status !== 'completed' ? (
           <Card>
             <CardBody className="space-y-3">
-              <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">
+              <p className="label">
                 Review and sign
               </p>
               {walkthroughOpen && !reviewable ? (

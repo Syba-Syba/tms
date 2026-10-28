@@ -8,6 +8,7 @@ import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { SignedImage } from '../components/signed-image';
+import { capitalise, formatDateTime, status } from '../lib/format';
 
 interface DirectoryEntry {
   id: string;
@@ -123,14 +124,14 @@ export function TicketDetail() {
     <main className="mx-auto max-w-2xl px-5 py-6">
       <PageHeader
         title={data.title}
-        description={`${data.unit} · ${data.category} · reported by ${data.tenant}`}
+        description={`${data.unit} · ${capitalise(data.category)} · reported by ${data.tenant}`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Badge tone={SEVERITY[data.severity as keyof typeof SEVERITY]}>{data.severity}</Badge>
-        <Badge tone={data.overdue ? 'danger' : 'neutral'}>{data.status.replace(/_/g, ' ')}</Badge>
+        <Badge tone={SEVERITY[data.severity as keyof typeof SEVERITY]}>{capitalise(data.severity)}</Badge>
+        <Badge tone={data.overdue ? 'danger' : status(data.status).tone}>{status(data.status).label}</Badge>
         <span className={`text-xs ${data.overdue ? 'font-bold text-danger' : 'text-ink-muted'}`}>
-          {data.overdue ? 'Overdue since' : 'Response target'} {data.targetBy.slice(0, 16).replace('T', ' ')}
+          {data.overdue ? 'Overdue since' : 'Response target'} {formatDateTime(data.targetBy)}
         </span>
       </div>
 
@@ -148,7 +149,7 @@ export function TicketDetail() {
         </Alert>
       ) : null}
 
-      <p className="mb-2 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">History</p>
+      <p className="label mb-2">History</p>
       <Card className="mb-4">
         <CardBody className="space-y-3">
           {data.events.map((entry, index) => (
@@ -174,7 +175,7 @@ export function TicketDetail() {
       {data.quoteCents && !data.quoteApproved && landlord ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-brand-500">Quote</p>
+            <p className="label text-brand-600">Quote</p>
             <Ledger cents={data.quoteCents} className="text-[26px]" />
             <Button loading={busy} onClick={() => act({ action: 'approve_quote' }, 'Quote approved')}>
               Approve and let them start
@@ -300,7 +301,7 @@ export function TicketDetail() {
       {data.rating ? (
         <Card className="mb-4">
           <CardBody className="space-y-2">
-            <p className="text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">Rated</p>
+            <p className="label">Rated</p>
             <ArchRating value={data.rating} />
             {data.ratingNote ? <p className="text-[13.5px]">{data.ratingNote}</p> : null}
           </CardBody>
@@ -345,7 +346,7 @@ function PhotoRow({ photos, phase, label }: {
   if (set.length === 0) return null;
   return (
     <div>
-      <p className="mb-1 text-[10.5px] font-bold uppercase tracking-widest text-ink-muted">{label}</p>
+      <p className="label mb-1">{label}</p>
       <div className="flex flex-wrap gap-2">
         {set.map((photo) => (
           <SignedImage

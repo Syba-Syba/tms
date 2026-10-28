@@ -66,6 +66,12 @@ export const handler = route(async (event) => {
   }
   failedLoginsByAccount.clear(email);
 
+  // An agent the owner has removed keeps a password but no longer has an account to work on.
+  if (credential.role === 'landlord') {
+    const [member] = await query('select 1 from landlord_member where sub = $1', [credential.sub]);
+    if (!member) throw new ApiError(403, 'forbidden', 'Your access to this landlord account has ended.');
+  }
+
   const user = {
     sub: credential.sub,
     role: credential.role,

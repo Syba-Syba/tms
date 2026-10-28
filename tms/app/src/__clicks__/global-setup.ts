@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,11 +10,15 @@ import { fileURLToPath } from 'node:url';
  * works if the API is up, and for four phases it was left to the developer to remember.
  * The suite was never wired into `npm test` at all, so CI ran none of it.
  *
- * This starts the API when nothing is listening and stops it afterwards. An API you started
- * yourself is reused and left running, so the usual `npm run dev` loop is unaffected.
+ * This starts the API and stops it afterwards. It runs on its own port against a throwaway
+ * database and storage folder. It used to reuse the development API on 3001, or start one on
+ * the development database, so every run left another test property in the demo data a
+ * landlord is shown.
  */
 
-const API_URL = process.env.VITE_API_URL ?? 'http://localhost:3001';
+export const CLICKS_PORT = 3101;
+const API_URL = `http://localhost:${CLICKS_PORT}`;
+let scratch: string | undefined;
 const API_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../api');
 const READY_TIMEOUT_MS = 60_000;
 
@@ -48,14 +53,14 @@ const waitUntilUp = async (deadline: number) => {
 export async function setup() {
   const found = await probe();
   if (found === 'dev') {
-    console.log(`[clicks] reusing the API already on ${API_URL}`);
+    console.log(`[clicks] reusing the test API already on ${API_URL}`);
     return;
   }
   if (found === 'other') {
     throw new Error(
       `Something other than the development API is listening on ${API_URL} (the self-hosted ` +
         'server, probably). The click tests create and change records, so they will not run ' +
-        'against it. Stop it, or point VITE_API_URL at a development API.',
+        'against it. Stop whatever is on that port.',
     );
   }
 
@@ -63,7 +68,8 @@ export async function setup() {
     throw new Error('tms/api/.env is missing. Run `npm run env` from the workspace root first.');
   }
 
-  console.log(`[clicks] starting the API on ${API_URL}`);
+  scratch = mkdtempSync(join(tmpdir(), 'tms-clicks-'));
+  console.log(`[clicks] starting a test API on ${API_URL} with its own database`);
   started = spawn('npm', ['run', 'dev'], {
     cwd: API_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -72,7 +78,15 @@ export async function setup() {
     // vitest sets NODE_ENV=test, and Node's --env-file will not override a variable that is
     // already set, so the API would inherit `test` and refuse to start. The local drivers it
     // uses (pglite, local storage, local KMS) all require development on purpose.
-    env: { ...process.env, NODE_ENV: 'development', PORT: new URL(API_URL).port || '3001' },
+    // --env-file never overrides a variable already set, so these win over tms/api/.env.
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      PORT: String(CLICKS_PORT),
+      PUBLIC_API_URL: API_URL,
+      PGLITE_DIR: join(scratch, 'db'),
+      STORAGE_DIR: join(scratch, 'storage'),
+    },
   });
 
   // Kept so a startup failure reports why instead of only timing out.
@@ -87,12 +101,20 @@ export async function setup() {
 }
 
 export async function teardown() {
-  if (!started?.pid) return;
+  const folder = scratch;
+  scratch = undefined;
+  if (started?.pid) {
   // Negative pid signals the process group, so tsx and its child both go.
-  try {
-    process.kill(-started.pid, 'SIGTERM');
-  } catch {
-    // Already gone.
+    try {
+      process.kill(-started.pid, 'SIGTERM');
+    } catch {
+      // Already gone.
+    }
+    started = undefined;
   }
-  started = undefined;
+  if (folder) {
+    // PGlite may still be closing its files for a moment after the signal.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    rmSync(folder, { recursive: true, force: true });
+  }
 }

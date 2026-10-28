@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { cn } from '../lib/cn';
 
-/* A quiet field on limestone. Focus draws a 2px accent baseline instead of a glowing ring. */
+/* A white field with a 1px rule, as on a paper form. Focus darkens the rule to the accent. */
 export interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   invalid?: boolean;
@@ -16,9 +16,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div
       className={cn(
-        'flex h-11 items-center gap-2 rounded-sm bg-surface-muted px-3.5 shadow-[var(--tb-edge)] transition-shadow',
-        'focus-within:shadow-[var(--tb-edge),inset_0_-2px_0_var(--tb-brand-500)]',
-        invalid && 'shadow-[var(--tb-edge),inset_0_-2px_0_var(--tb-danger)]',
+        'flex h-10 items-center gap-2 rounded-sm border border-line bg-surface px-3 transition-colors',
+        'focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500',
+        invalid && 'border-danger focus-within:border-danger focus-within:ring-danger',
         props.disabled && 'opacity-50',
         className,
       )}
@@ -27,7 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
-        className="w-full bg-transparent text-[15px] text-ink caret-brand-500 outline-none placeholder:text-ink-muted"
+        className="w-full bg-transparent text-[14px] text-ink caret-brand-500 outline-none placeholder:text-ink-muted"
         {...props}
       />
       {trailing ? <span className="text-ink-muted">{trailing}</span> : null}
