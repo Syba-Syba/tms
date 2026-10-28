@@ -4,7 +4,8 @@ import { zar } from '../domain/money';
 
 const INK = rgb(0.137, 0.125, 0.11);
 const MUTED = rgb(0.49, 0.463, 0.424);
-const PLUM = rgb(0.427, 0.208, 0.341);
+// The app's single accent, bottle green, so documents and screens match.
+const ACCENT = rgb(0.114, 0.369, 0.29);
 const HAIR = rgb(0.847, 0.824, 0.784);
 
 const A4 = { w: 595.28, h: 841.89 };
@@ -217,7 +218,7 @@ export async function renderLeasePdf(input: LeaseData) {
   const lease = sanitize(input);
   const ctx = await open(`Lease ${lease.ref}`);
   draw(ctx, 'RESIDENTIAL LEASE', { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
-  rightAligned(ctx, lease.ref, ctx.y - 16, 10, ctx.body, PLUM);
+  rightAligned(ctx, lease.ref, ctx.y - 16, 10, ctx.body, ACCENT);
   ctx.y -= 34;
   rule(ctx);
   pair(ctx, 'Landlord', lease.landlordName);
@@ -283,7 +284,7 @@ export async function renderInspectionPdf(input: InspectionData) {
   const ctx = await open(`Inspection ${data.ref}${data.draft ? ' (draft)' : ''}`);
   const title = data.kind === 'incoming' ? 'INCOMING INSPECTION' : 'OUTGOING INSPECTION';
   draw(ctx, title, { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
-  if (data.draft) rightAligned(ctx, 'DRAFT FOR REVIEW', ctx.y - 16, 10, ctx.bold, PLUM);
+  if (data.draft) rightAligned(ctx, 'DRAFT FOR REVIEW', ctx.y - 16, 10, ctx.bold, ACCENT);
   ctx.y -= 30;
   text(ctx, `${data.unitLabel} · ${data.date} · ${data.ref}`, { color: MUTED, size: 9.5, gap: 10 });
   if (data.draft) {
@@ -388,7 +389,7 @@ export async function renderInvoicePdf(input: InvoiceData) {
   const data = sanitize(input);
   const ctx = await open(`Invoice ${data.ref}`);
   draw(ctx, 'RENT INVOICE', { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
-  rightAligned(ctx, data.ref, ctx.y - 16, 10, ctx.body, PLUM);
+  rightAligned(ctx, data.ref, ctx.y - 16, 10, ctx.body, ACCENT);
   ctx.y -= 34;
   rule(ctx);
   pair(ctx, 'From', data.landlordName);
@@ -513,7 +514,7 @@ export async function renderExitStatementPdf(input: ExitStatementData) {
   const data = sanitize(input);
   const ctx = await open(`Exit statement ${data.ref}`);
   draw(ctx, 'DEPOSIT STATEMENT', { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
-  rightAligned(ctx, data.ref, ctx.y - 16, 10, ctx.body, PLUM);
+  rightAligned(ctx, data.ref, ctx.y - 16, 10, ctx.body, ACCENT);
   ctx.y -= 34;
   rule(ctx);
   pair(ctx, 'Landlord', data.landlordName);
@@ -570,5 +571,63 @@ export async function renderExitStatementPdf(input: ExitStatementData) {
     for (const row of data.comparisons) await drawComparison(ctx, row);
   }
 
+  return seal(ctx);
+}
+
+/* ------------------------------------------------------------------ *
+ * Letter of demand. Formal, plain, and complete on its own: a tenant,
+ * an attorney or a tribunal reads it without the app.
+ * ------------------------------------------------------------------ */
+
+export interface LetterOfDemandData {
+  ref: string;
+  dated: string;
+  landlordName: string;
+  landlordEmail: string;
+  landlordPhone: string;
+  tenantName: string;
+  premises: string;
+  leaseStart: string;
+  invoices: { period: string; dueOn: string; outstandingCents: number }[];
+  totalCents: number;
+  remedyBy: string;
+  remedyBusinessDays: number;
+  paymentReference: string;
+}
+
+export async function renderLetterOfDemandPdf(input: LetterOfDemandData) {
+  const data = sanitize(input);
+  const ctx = await open(`Letter of demand ${data.ref}`);
+  draw(ctx, 'LETTER OF DEMAND', { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
+  rightAligned(ctx, data.ref, ctx.y - 16, 10, ctx.body, ACCENT);
+  ctx.y -= 34;
+  rule(ctx);
+  pair(ctx, 'Date', data.dated);
+  pair(ctx, 'From', data.landlordName);
+  pair(ctx, 'To', data.tenantName);
+  pair(ctx, 'Premises', data.premises);
+  pair(ctx, 'Lease', `${data.ref}, from ${data.leaseStart}`);
+  rule(ctx);
+
+  text(ctx, `Dear ${data.tenantName},`, { gap: 10 });
+  text(ctx, `In terms of your lease of the premises above, rent is payable in advance by the due date of each month. The following amounts are due and remain unpaid:`, { gap: 10 });
+  for (const invoice of data.invoices) {
+    pair(ctx, invoice.period, `due ${invoice.dueOn}  ·  ${zar(invoice.outstandingCents)}`);
+  }
+  ensureRoom(ctx, 26);
+  draw(ctx, 'TOTAL IN ARREARS', { x: MARGIN, y: ctx.y - 12, size: 9, font: ctx.bold, color: MUTED });
+  rightAligned(ctx, zar(data.totalCents), ctx.y - 14, 15, ctx.bold, INK);
+  ctx.y -= 30;
+  rule(ctx);
+
+  text(ctx, 'Demand', { bold: true, size: 11, gap: 7 });
+  text(ctx, `You are in breach of the lease. Demand is hereby made that you pay the full amount of ${zar(data.totalCents)} on or before ${data.remedyBy}, being ${data.remedyBusinessDays} business days from the date of this letter, as section 14 of the Consumer Protection Act 68 of 2008 requires before a lease may be cancelled.`, { gap: 10 });
+  text(ctx, `Pay by EFT to the account on your lease, using the reference ${data.paymentReference} exactly, so the payment is matched to your unit.`, { gap: 10 });
+  text(ctx, 'If the full amount is not paid by that date, the landlord may cancel the lease, require you to vacate the premises, and recover the arrears, together with any further rent, damages and legal costs allowed by law. This letter does not waive any of the landlord\'s rights under the lease or the law.', { gap: 10 });
+  text(ctx, 'If you have already paid, send your proof of payment in the app or to the contact details below. If you cannot pay in full, contact the landlord before the date above to discuss a written payment arrangement.', { gap: 10 });
+  rule(ctx);
+  text(ctx, 'Yours faithfully', { gap: 6 });
+  text(ctx, data.landlordName, { bold: true, gap: 4 });
+  text(ctx, `${data.landlordEmail}  ·  ${data.landlordPhone}`, { color: MUTED, size: 9 });
   return seal(ctx);
 }

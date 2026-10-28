@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Seventy-four routes in all; the table lists the shape of each family rather than every verb.
+Seventy-seven routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -458,8 +458,7 @@ that did not happen, and a failed send never loses the message.
 Event driven, raised inline: invoice issued, payment received, ticket raised, contractor
 assigned, work completed, inspection booked, lease signed, notice served, deposit settled.
 
-Time driven, raised by `notifications-sweep` every morning: rent overdue (day 3, then weekly,
-not every morning), maintenance about to breach its target, maintenance already overdue,
+Time driven, raised by `notifications-sweep` every morning: maintenance about to breach its target, maintenance already overdue,
 inspection tomorrow, statutory refund deadline within three days, lease ending in 60, 30 or 7
 days. Every one carries a dedupe key, which is what makes the sweep safe to run as often as
 you like.
@@ -651,6 +650,23 @@ The landlord is the responsible party; the app is what they process personal inf
 
 What is not here yet: a named Information Officer per landlord shown in the notice, and
 correction of details by the person themselves (they ask the landlord today).
+
+## Arrears
+
+`arrears-run` runs at 05:15 SAST. A lease with rent past its due date opens an arrears case,
+and the tenant gets a reminder on day 1, day 3 and day 7. Only the highest reminder due is
+sent, so a job that was down for a week sends one message, not three. Reminders hold while a
+slip waits for the landlord, and while the landlord has paused them (60 days at most, with a
+reason). Paying up closes the case.
+
+From day 7 the landlord is told the letter of demand is ready. The system never sends it on its
+own. The landlord presses Send on the lease, the letter is rendered as a PDF, filed on the lease
+and emailed to the tenant. It gives 20 business days to pay, the notice the Consumer Protection
+Act s14 needs before a fixed-term lease can be cancelled for breach. Every step is a row on the
+case, so the lease shows who was told what, when, and for how much.
+
+Routes: `GET /leases/{id}/arrears`, `POST /leases/{id}/arrears/letter`,
+`POST /leases/{id}/arrears/pause` with `{ until, reason }`, or `{ until: null }` to resume.
 
 ## Expenses and reports
 

@@ -4,6 +4,7 @@ import { handler as leasesActivate } from '../handlers/leases-activate';
 import { handler as notificationsDispatch } from '../handlers/notifications-dispatch';
 import { handler as notificationsSweep } from '../handlers/notifications-sweep';
 import { handler as privacySweep } from '../handlers/privacy-sweep';
+import { handler as arrearsRun } from '../handlers/arrears-run';
 import { sastToday } from '../domain/dates';
 import { audit } from './audit';
 import { logger } from './logger';
@@ -39,6 +40,7 @@ export const JOBS: Job[] = [
   { name: 'leases-activate', run: leasesActivate, dailyAt: '03:10' },
   { name: 'privacy-sweep', run: privacySweep, dailyAt: '04:30' },
   { name: 'notifications-sweep', run: notificationsSweep, dailyAt: '05:00' },
+  { name: 'arrears-run', run: () => arrearsRun(), dailyAt: '05:15' },
   { name: 'interest-run', run: interestRun, dailyAt: '05:30', onDay: 1 },
   { name: 'invoices-run', run: () => invoicesRun(), dailyAt: '06:00' },
 ];

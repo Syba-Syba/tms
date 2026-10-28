@@ -35,6 +35,13 @@ interface Task {
 }
 
 const zar = (cents: number) => formatZar(cents / 100);
+
+const STAGE: Record<string, string> = {
+  reminder_1: 'first reminder sent',
+  reminder_3: 'second reminder sent',
+  reminder_7: 'final reminder sent',
+  letter_of_demand: 'letter of demand sent',
+};
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function Home() {
@@ -77,6 +84,13 @@ function LandlordHome() {
     queryFn: () => api.get<{ items: { id: string; title: string; unit: string; status: string; overdue: boolean }[] }>('/tickets'),
   });
 
+  // Where each debt stands on the arrears ladder, so the dashboard says when a letter is due.
+  const ladder = useQuery({
+    queryKey: ['report-arrears'],
+    queryFn: () =>
+      api.get<{ items: { leaseId: string; stage: string | null; pausedUntil: string | null }[] }>('/reports/arrears'),
+  });
+
   const privacy = useQuery({
     queryKey: ['privacy-requests'],
     queryFn: () => api.get<{ items: { status: string }[] }>('/privacy-requests'),
@@ -103,7 +117,20 @@ function LandlordHome() {
   const openTickets = tickets.data?.items.filter((ticket) => !['done', 'closed', 'cancelled'].includes(ticket.status)) ?? [];
   const lateTickets = openTickets.filter((ticket) => ticket.overdue);
 
+  const stageOf = new Map((ladder.data?.items ?? []).map((item) => [item.leaseId, item]));
+  const letterReady = rows.filter((lease) => {
+    const stage = stageOf.get(lease.id);
+    return lease.outstandingCents > 0 && stage?.stage === 'reminder_7' && !stage.pausedUntil;
+  });
+
   const tasks: Task[] = [];
+  for (const lease of letterReady.slice(0, 3)) {
+    tasks.push({
+      key: `letter-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
+      title: `Letter of demand ready: ${lease.tenant}`,
+      detail: `${lease.unit}, ${zar(lease.outstandingCents)}, final reminder sent.`,
+    });
+  }
   if (slipCount > 0) {
     tasks.push({
       key: 'slips', to: '/payments', tone: 'warning',
@@ -124,10 +151,15 @@ function LandlordHome() {
       title: `Overdue: ${ticket.title}`, detail: `${ticket.unit}, past its response target.`,
     });
   }
-  for (const lease of [...rows].filter((l) => l.outstandingCents > 0).sort((a, b) => b.outstandingCents - a.outstandingCents).slice(0, 3)) {
+  const ready = new Set(letterReady.map((lease) => lease.id));
+  for (const lease of [...rows].filter((l) => l.outstandingCents > 0 && !ready.has(l.id)).sort((a, b) => b.outstandingCents - a.outstandingCents).slice(0, 3)) {
+    const stage = stageOf.get(lease.id);
     tasks.push({
       key: `arrears-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
-      title: `${lease.tenant} owes ${zar(lease.outstandingCents)}`, detail: lease.unit,
+      title: `${lease.tenant} owes ${zar(lease.outstandingCents)}`,
+      detail: [lease.unit, stage?.pausedUntil ? `reminders paused to ${formatDate(stage.pausedUntil)}` : stage?.stage ? STAGE[stage.stage] : null]
+        .filter(Boolean)
+        .join(', '),
     });
   }
   const privacyWaiting = privacy.data?.items.filter((item) => item.status === 'pending').length ?? 0;

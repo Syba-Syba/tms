@@ -35,6 +35,9 @@ import { handler as leases_list } from './handlers/leases-list';
 import { handler as leases_render } from './handlers/leases-render';
 import { handler as leases_sign } from './handlers/leases-sign';
 import { handler as leases_statement } from './handlers/leases-statement';
+import { handler as arrears_get } from './handlers/arrears-get';
+import { handler as arrears_letter } from './handlers/arrears-letter';
+import { handler as arrears_pause } from './handlers/arrears-pause';
 import { handler as notifications_preferences } from './handlers/notifications-preferences';
 import { handler as payments_record } from './handlers/payments-record';
 import { handler as payment_proofs_create } from './handlers/payment-proofs-create';
@@ -109,6 +112,9 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/leases', leases_list],
   ['GET', '/leases/{id}', leases_get],
   ['GET', '/leases/{id}/statement', leases_statement],
+  ['GET', '/leases/{id}/arrears', arrears_get],
+  ['POST', '/leases/{id}/arrears/letter', arrears_letter],
+  ['POST', '/leases/{id}/arrears/pause', arrears_pause],
   ['POST', '/invoices/{id}/render', invoices_render],
   ['POST', '/leases/{id}/tickets', tickets_create],
   ['GET', '/tickets', tickets_list],

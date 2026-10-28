@@ -89,7 +89,7 @@ describe('startup catch-up and deposit interest', () => {
     const audited = await db.query<{ job: string }>(
       `select detail->>'job' as job from audit_log where action = 'job.finished' order by id`,
     );
-    expect(audited.map((row) => row.job)).toEqual(['leases-activate', 'privacy-sweep', 'notifications-sweep', 'invoices-run']);
+    expect(audited.map((row) => row.job)).toEqual(['leases-activate', 'privacy-sweep', 'notifications-sweep', 'arrears-run', 'invoices-run']);
   });
 
   it('catches up a job with onDay only on that day', async () => {

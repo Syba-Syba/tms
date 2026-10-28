@@ -8,6 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
+import { ArrearsPanel } from '../components/arrears-panel';
 
 interface Proof {
   id: string;
@@ -163,6 +164,8 @@ export function TenantRent() {
           {data.proofs.find((proof) => proof.status === 'rejected')?.rejectReason}
         </Alert>
       ) : null}
+
+      {leaseId ? <ArrearsPanel leaseId={leaseId} landlord={false} /> : null}
 
       <div className="space-y-3">
         {data?.invoices.map((invoice) => {

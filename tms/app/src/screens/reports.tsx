@@ -49,6 +49,9 @@ interface ArrearsReport {
     unit: string;
     oldestDueOn: string;
     proofPending: boolean;
+    stage: 'reminder_1' | 'reminder_3' | 'reminder_7' | 'letter_of_demand' | null;
+    stageOn: string | null;
+    pausedUntil: string | null;
     ageing: Record<Bucket, number>;
     totalCents: number;
   }[];
@@ -249,6 +252,20 @@ function Line({ label, cents, hint }: { label: string; cents: number; hint?: str
   );
 }
 
+const STAGE_LABEL = {
+  reminder_1: 'First reminder',
+  reminder_3: 'Second reminder',
+  reminder_7: 'Final reminder',
+  letter_of_demand: 'Letter of demand',
+} as const;
+
+/** Where a debt stands on the ladder, in words a landlord can act on. */
+function stageText(item: ArrearsReport['items'][number]): string {
+  if (item.pausedUntil) return `Reminders paused until ${formatDate(item.pausedUntil)}`;
+  if (!item.stage || !item.stageOn) return '';
+  return `${STAGE_LABEL[item.stage]} ${formatDate(item.stageOn)}${item.stage === 'reminder_7' ? ', letter ready' : ''}`;
+}
+
 function Arrears() {
   const { data, isLoading } = useQuery({
     queryKey: ['report-arrears'],
@@ -259,11 +276,12 @@ function Arrears() {
   const exportCsv = () =>
     downloadCsv(`arrears-${data.asOf}.csv`, [
       [`Arrears as of ${data.asOf}`],
-      ['Unit', 'Tenant', 'Reference', ...BUCKETS.map((b) => b.label), 'Total'],
+      ['Unit', 'Tenant', 'Reference', 'Stage', ...BUCKETS.map((b) => b.label), 'Total'],
       ...data.items.map((item) => [
-        item.unit, item.tenant, item.leaseRef, ...BUCKETS.map((b) => rands(item.ageing[b.key])), rands(item.totalCents),
+        item.unit, item.tenant, item.leaseRef, stageText(item),
+        ...BUCKETS.map((b) => rands(item.ageing[b.key])), rands(item.totalCents),
       ]),
-      ['Total', '', '', ...BUCKETS.map((b) => rands(data.totals.ageing[b.key])), rands(data.totals.totalCents)],
+      ['Total', '', '', '', ...BUCKETS.map((b) => rands(data.totals.ageing[b.key])), rands(data.totals.totalCents)],
     ]);
 
   return (
@@ -293,6 +311,11 @@ function Arrears() {
                   <p className="text-xs text-ink-muted">
                     {item.tenant}, {item.leaseRef}, oldest due {formatDate(item.oldestDueOn)}
                   </p>
+                  {stageText(item) ? (
+                    <p className={`text-xs ${item.stage === 'letter_of_demand' ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
+                      {stageText(item)}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="text-right">
                   <p className="tabular-nums text-[15px] font-semibold">{zar(item.totalCents)}</p>

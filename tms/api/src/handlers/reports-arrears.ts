@@ -3,6 +3,7 @@ import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, route } from '../lib/http';
 import { ageBucket, type AgeBucket } from '../domain/money';
+import { sastToday } from '../domain/dates';
 
 const BUCKETS: AgeBucket[] = ['current', 'd30', 'd60', 'd90', 'd90plus'];
 const empty = () => Object.fromEntries(BUCKETS.map((bucket) => [bucket, 0])) as Record<AgeBucket, number>;
@@ -52,7 +53,24 @@ export const handler = route(async (event) => {
     totals[bucket] += amount;
     byLease.set(row.lease_id, lease);
   }
-  const items = [...byLease.values()].sort((a, b) => b.totalCents - a.totalCents);
+  // Where each lease stands on the arrears ladder: the last step taken on its open case.
+  const stages = await query<{ lease_id: string; step: string | null; taken_on: string | null; paused_until: string | null }>(
+    `select c.lease_id, s.step, s.taken_on::text,
+            case when c.paused_until >= $2::date then c.paused_until::text end as paused_until
+       from arrears_case c
+       left join lateral (
+         select step, taken_on from arrears_step where case_id = c.id order by taken_on desc, created_at desc limit 1
+       ) s on true
+      where c.closed_on is null and c.lease_id = any($1::uuid[])`,
+    [[...byLease.keys()], sastToday()],
+  );
+  const stageOf = new Map(stages.map((row) => [row.lease_id, row]));
+  const items = [...byLease.values()]
+    .map((lease) => {
+      const stage = stageOf.get(lease.leaseId);
+      return { ...lease, stage: stage?.step ?? null, stageOn: stage?.taken_on ?? null, pausedUntil: stage?.paused_until ?? null };
+    })
+    .sort((a, b) => b.totalCents - a.totalCents);
   return json(200, {
     asOf: today.toISOString().slice(0, 10),
     items,

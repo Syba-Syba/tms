@@ -29,6 +29,10 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
     ['select lease_id from termination where statement_s3_key = $1', 'terminations/'],
     ['select lease_id from payment_proof where s3_key = $1', 'payment-proofs/'],
     [
+      'select c.lease_id from arrears_step s join arrears_case c on c.id = s.case_id where s.document_s3_key = $1',
+      'arrears/',
+    ],
+    [
       `select t.lease_id from deposit_deduction d
          join termination t on t.id = d.termination_id
         where d.evidence_s3_key = $1`,

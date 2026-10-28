@@ -6,6 +6,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
+import { ArrearsPanel } from '../components/arrears-panel';
 import { Ledger } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
@@ -83,6 +84,8 @@ export function LeaseDetail() {
       await fn();
       toast.show({ title: message, tone: 'success' });
       queryClient.invalidateQueries({ queryKey: ['leases'] });
+      // A payment can clear the arrears, or bring the next reminder forward.
+      queryClient.invalidateQueries({ queryKey: ['arrears', leaseId] });
       refetch();
     } catch (error) {
       toast.show({ title: 'That did not work', description: humanError(error), tone: 'danger' });
@@ -294,6 +297,8 @@ export function LeaseDetail() {
           {data.termination.refundDueBy ? ` Refund due by ${formatDate(data.termination.refundDueBy)}.` : ''}
         </Alert>
       ) : null}
+
+      <ArrearsPanel leaseId={data.id} landlord={landlord} />
 
       <p className="label mb-2">Invoices</p>
       <Card className="mb-4">
