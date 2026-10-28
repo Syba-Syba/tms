@@ -53,6 +53,8 @@ import { handler as billing_notify } from './handlers/billing-notify';
 import { handler as billing_simulate } from './handlers/billing-simulate';
 import { handler as leases_charges } from './handlers/leases-charges';
 import { handler as health } from './handlers/health';
+import { handler as company } from './handlers/company';
+import { handler as billing_invoices } from './handlers/billing-invoices';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -108,6 +110,7 @@ type Handler = (
  */
 const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/health', health],
+  ['GET', '/company', company],
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
   ['POST', '/auth/password', auth_password],
@@ -193,6 +196,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
   ['GET', '/billing', billing_get],
   ['POST', '/billing/checkout', billing_checkout],
+  ['GET', '/billing/invoices', billing_invoices],
+  ['POST', '/billing/invoices/{id}/render', billing_invoices],
   ['POST', '/billing/plan', billing_plan],
   ['POST', '/billing/notify', billing_notify],
   ['POST', '/billing/simulate', billing_simulate],

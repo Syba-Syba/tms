@@ -11,7 +11,7 @@ type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
 export async function recordConsent(
   run: Run,
   event: APIGatewayProxyEventV2WithJWTAuthorizer,
-  input: { sub: string; kind: 'privacy_notice' | 'application_screening'; version: string; subjectId?: string },
+  input: { sub: string; kind: 'privacy_notice' | 'application_screening' | 'terms_of_service'; version: string; subjectId?: string },
 ): Promise<void> {
   await run(
     `insert into consent (person_sub, kind, version, ip_address, user_agent, subject_id)

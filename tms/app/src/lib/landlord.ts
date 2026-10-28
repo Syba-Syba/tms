@@ -16,6 +16,7 @@ export interface LandlordAccount {
     email: string;
     phone: string;
     registrationNo: string | null;
+    vatNo: string | null;
     slug: string | null;
     bank: Bank | null;
   };

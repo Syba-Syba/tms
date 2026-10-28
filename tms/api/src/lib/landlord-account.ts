@@ -9,6 +9,7 @@ export interface AccountRow {
   email: string;
   phone: string;
   registration_no: string | null;
+  vat_no: string | null;
   slug: string | null;
   bank_name: string | null;
   bank_account_holder: string | null;
@@ -16,7 +17,7 @@ export interface AccountRow {
   bank_branch_code: string | null;
 }
 
-export const ACCOUNT_COLUMNS = `id, trading_name, email, phone, registration_no, slug, bank_name, bank_account_holder,
+export const ACCOUNT_COLUMNS = `id, trading_name, email, phone, registration_no, vat_no, slug, bank_name, bank_account_holder,
   bank_account_number, bank_branch_code`;
 
 export async function accountById(landlordId: string): Promise<AccountRow | null> {

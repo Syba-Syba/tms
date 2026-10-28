@@ -132,6 +132,8 @@ export function Login() {
           </p>
           <p className="text-center text-[12px]">
             <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>
+            {' · '}
+            <Link to="/terms" className="text-ink-muted underline">Terms of service</Link>
           </p>
         </CardBody>
       </Card>

@@ -7,6 +7,7 @@ import { withTransaction } from '../lib/db';
 import { recordConsent } from '../lib/privacy';
 import { PRIVACY_VERSION } from '../domain/privacy';
 import { landlordSignUpSchema } from '../domain/landlord';
+import { TERMS_VERSION } from '../domain/company';
 import { freeSlug } from '../lib/landlord-account';
 import { mode } from '../lib/mode';
 import { registrationsByAddress } from '../lib/ratelimit';
@@ -21,6 +22,8 @@ const schema = z.object({
   consentVersion: z.string().max(20).optional(),
   // Present when a landlord signs themselves up: their business, which becomes the account.
   landlord: landlordSignUpSchema.optional(),
+  // The terms of service version a landlord agreed to. Required with `landlord`.
+  termsVersion: z.string().max(20).optional(),
 });
 
 const requireLocalDriver = () => {
@@ -44,6 +47,9 @@ export const handler = route(async (event) => {
   if (input.consentVersion !== undefined && input.consentVersion !== PRIVACY_VERSION) {
     throw badRequest('The privacy notice has changed. Reload the page and read it again.');
   }
+  if (input.landlord && input.termsVersion !== TERMS_VERSION) {
+    throw badRequest('Agree to the current terms of service to open a landlord account.');
+  }
 
   const sub = `local-${randomUUID()}`;
   const passwordHash = hashPassword(input.password);
@@ -65,6 +71,7 @@ export const handler = route(async (event) => {
         [input.landlord.tradingName, email, input.landlord.phone, sub, await freeSlug(run, input.landlord.tradingName)],
       );
       created = account!.id;
+      await recordConsent(run, event, { sub, kind: 'terms_of_service', version: TERMS_VERSION });
     }
     if (input.consentVersion) {
       await recordConsent(run, event, { sub, kind: 'privacy_notice', version: input.consentVersion });

@@ -64,6 +64,8 @@ async function currentUser(token: string) {
 const PUBLIC_ROUTES = new Set([
   // For the uptime monitor and the container health check. Says nothing about anyone.
   'GET /health',
+  // The operator's name and registration details, for the public terms page.
+  'GET /company',
   'POST /auth/login',
   'POST /auth/register',
   'POST /auth/reset/request',

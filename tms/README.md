@@ -251,6 +251,9 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /me/erasure-request | tenant | ask for erasure; immediate when there is nothing to keep |
 | GET | /privacy-requests | landlord | erasure requests from their applicants and tenants |
 | POST | /privacy-requests/{id}/decision | landlord | erase, or refuse with a reason |
+| GET | /billing/invoices | landlord | their numbered invoices from Threshold |
+| POST | /billing/invoices/{id}/render | landlord | make the invoice PDF once and return its key |
+| GET | /company | public | the operator's name, registration and contact details |
 | GET | /audit | landlord | the audit log for their own properties and account, newest first (`?entity=&entityId=&before=&limit=`) |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
@@ -269,7 +272,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Ninety-seven routes in all; the table lists the shape of each family rather than every verb.
+One hundred routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -767,7 +770,7 @@ simulates PayFast through the same code path).
 
 With PayFast, the Plan screen posts a signed subscription form (monthly, until cancelled) to
 PayFast; card details never reach this server. PayFast then posts an ITN to
-`POST /billing/notify`, the one route without a sign-in. It is applied only if the signature
+`POST /billing/notify`, which takes no sign-in. It is applied only if the signature
 matches, the sender resolves to a PayFast host, PayFast confirms the data back, and the amount is
 what the plan costs; each payment applies once by PayFast's payment id, and anything rejected is
 kept in `billing_event` with the reason. Plan changes and cancelling go through PayFast's
@@ -776,6 +779,22 @@ subscriptions API.
 Before going live, run the whole flow in the PayFast sandbox (merchant 10000100): a first
 payment, a plan change, a cancellation. In particular check that `billing_date` set to the
 trial's end starts the monthly charges on that date as intended.
+
+## Terms of service and invoices
+
+- The terms of service live at `/terms`, public and in plain language. Landlords agree to them
+  when they sign up, and again whenever `TERMS_VERSION` changes (`api/src/domain/company.ts` and
+  `app/src/lib/terms.ts`; a test keeps the two equal). Each acceptance is a `consent` row of
+  kind `terms_of_service`, beside the privacy notice ones. Tenants do not sign them.
+- The terms are a draft written against the CPA, ECTA and POPIA. Have a South African attorney
+  read them before the first paying customer.
+- Every payment PayFast confirms creates a numbered invoice in the same transaction
+  (`billing_invoice`, numbered from 1001 by a sequence, so numbers never repeat or skip a sale).
+  It keeps a copy of both parties' details as they were that day, is emailed to the owner, and
+  is listed on the Plan screen with its PDF.
+- `COMPANY_*` in the environment sets who the supplier is. With `COMPANY_VAT_NO` set, the PDF is a
+  tax invoice: the words, both VAT numbers and 15% VAT taken out of the inclusive price. The
+  landlord's own VAT number goes under Settings, Account.
 
 ## WhatsApp
 
@@ -866,6 +885,7 @@ through `app/src/lib/format.ts`.
 | Sign in, create an account | `/login`, `/register` | anyone |
 | Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
 | Privacy notice | `/privacy` | anyone |
+| Terms of service | `/terms` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

@@ -652,3 +652,56 @@ export async function renderLetterOfDemandPdf(input: LetterOfDemandData) {
   text(ctx, `${data.landlordEmail}  ·  ${data.landlordPhone}`, { color: MUTED, size: 9 });
   return seal(ctx);
 }
+
+/* ------------------------------------------------------------------ *
+ * Threshold's own invoice to a landlord, for the subscription. A tax
+ * invoice under VAT Act s20 when the operator is VAT registered: the
+ * words "Tax invoice", both parties, a serial number, the date, what
+ * was supplied, and the VAT in the price.
+ * ------------------------------------------------------------------ */
+
+export interface BillingInvoiceData {
+  number: string;
+  issuedOn: string;
+  supplier: { legalName: string; registrationNo: string | null; vatNo: string | null; address: string | null; email: string | null; phone: string | null };
+  recipient: { name: string; email: string | null; registrationNo: string | null; vatNo: string | null };
+  description: string;
+  amountCents: number;
+  vatCents: number;
+}
+
+export async function renderBillingInvoicePdf(input: BillingInvoiceData) {
+  const data = sanitize(input);
+  const taxInvoice = Boolean(data.supplier.vatNo);
+  const ctx = await open(`${taxInvoice ? 'Tax invoice' : 'Invoice'} ${data.number}`);
+  draw(ctx, taxInvoice ? 'TAX INVOICE' : 'INVOICE', { x: MARGIN, y: ctx.y - 18, size: 19, font: ctx.bold, color: INK });
+  rightAligned(ctx, `No. ${data.number}`, ctx.y - 16, 10, ctx.body, ACCENT);
+  ctx.y -= 34;
+  rule(ctx);
+  pair(ctx, 'Date', data.issuedOn);
+  pair(ctx, 'From', data.supplier.legalName);
+  if (data.supplier.registrationNo) pair(ctx, 'Company registration', data.supplier.registrationNo);
+  if (data.supplier.vatNo) pair(ctx, 'VAT number', data.supplier.vatNo);
+  if (data.supplier.address) pair(ctx, 'Address', data.supplier.address);
+  const contact = [data.supplier.email, data.supplier.phone].filter(Boolean).join('  ·  ');
+  if (contact) pair(ctx, 'Contact', contact);
+  rule(ctx);
+  pair(ctx, 'To', data.recipient.name);
+  if (data.recipient.registrationNo) pair(ctx, 'Company registration', data.recipient.registrationNo);
+  if (data.recipient.vatNo) pair(ctx, 'VAT number', data.recipient.vatNo);
+  if (data.recipient.email) pair(ctx, 'Email', data.recipient.email);
+  rule(ctx);
+  pair(ctx, ' ', `${data.description}  ·  ${zar(data.amountCents)}`);
+  ctx.y -= 4;
+  ensureRoom(ctx, 26);
+  draw(ctx, 'TOTAL', { x: MARGIN, y: ctx.y - 12, size: 9, font: ctx.bold, color: MUTED });
+  rightAligned(ctx, zar(data.amountCents), ctx.y - 14, 15, ctx.bold, INK);
+  ctx.y -= 30;
+  if (taxInvoice) {
+    pair(ctx, 'Excluding VAT', zar(data.amountCents - data.vatCents));
+    pair(ctx, 'VAT at 15%', zar(data.vatCents));
+  }
+  rule(ctx);
+  text(ctx, taxInvoice ? 'The total includes VAT at 15%. Paid in full through PayFast; thank you.' : `${data.supplier.legalName} is not registered for VAT, so none is charged. Paid in full through PayFast; thank you.`, { color: MUTED, size: 9 });
+  return seal(ctx);
+}

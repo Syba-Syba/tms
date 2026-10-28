@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { Alert, Badge, Button, Card, CardBody, ConfirmDialog, PageHeader, useToast } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
@@ -7,6 +7,7 @@ import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
 import { SettingsNav } from '../components/settings-nav';
 import { formatDate } from '../lib/format';
+import { useOpenDocument } from '../lib/open-document';
 import { standingText, useBilling, type PlanId } from '../lib/billing';
 
 /** Posts the signed PayFast form from the browser: the card details never touch this server. */
@@ -23,6 +24,52 @@ function postToPayfast(action: string, fields: Record<string, string>) {
   }
   document.body.appendChild(form);
   form.submit();
+}
+
+interface BillingInvoice {
+  id: string;
+  number: string;
+  issuedOn: string;
+  periodFrom: string;
+  periodTo: string;
+  plan: string;
+  amountCents: number;
+  vatCents: number;
+}
+
+/** Every payment to Threshold has its own numbered invoice, a tax invoice once we charge VAT. */
+function Invoices() {
+  const open = useOpenDocument();
+  const { data } = useQuery({
+    queryKey: ['billing', 'invoices'],
+    queryFn: () => api.get<{ items: BillingInvoice[] }>('/billing/invoices'),
+  });
+  if (!data || data.items.length === 0) return null;
+  return (
+    <section aria-label="Invoices" className="mt-8">
+      <h2 className="label mb-2">Invoices</h2>
+      <Card>
+        <ul className="divide-y divide-line">
+          {data.items.map((invoice) => (
+            <li key={invoice.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-semibold">Invoice {invoice.number}</p>
+                <p className="text-xs text-ink-muted">
+                  {formatDate(invoice.periodFrom)} to {formatDate(invoice.periodTo)}
+                  {invoice.vatCents > 0 ? `, VAT ${formatZar(invoice.vatCents / 100)}` : ''}
+                </p>
+              </div>
+              <p className="font-mono text-[14px] tabular-nums">{formatZar(invoice.amountCents / 100)}</p>
+              <Button size="sm" variant="outline"
+                onClick={() => open(async () => (await api.post<{ key: string }>(`/billing/invoices/${invoice.id}/render`, {})).key)}>
+                PDF
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </section>
+  );
 }
 
 export function SettingsBilling() {
@@ -160,6 +207,8 @@ export function SettingsBilling() {
               Cancel the plan
             </button>
           ) : null}
+
+          <Invoices />
 
           {data.driver === 'local' && data.isOwner ? (
             <section aria-label="Simulated payments" className="mt-8 rounded-md border border-dashed border-line p-4">

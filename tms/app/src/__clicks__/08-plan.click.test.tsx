@@ -5,6 +5,7 @@ import { API, mount } from './harness';
 import { SettingsBilling } from '../screens/settings-billing';
 import { startSession } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
+import { TERMS_VERSION } from '../lib/terms';
 
 const stamp = Date.now();
 
@@ -16,7 +17,7 @@ describe('choosing a plan', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         name: 'Plan Picker', email: `plan-${stamp}@example.co.za`, password: 'a-long-password', consentVersion: PRIVACY_VERSION,
-        landlord: { tradingName: `Plan Rentals ${stamp}`, phone: '0825550404' },
+        termsVersion: TERMS_VERSION, landlord: { tradingName: `Plan Rentals ${stamp}`, phone: '0825550404' },
       }),
     });
     const signed = await response.json();
@@ -28,5 +29,9 @@ describe('choosing a plan', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Pay the first month' }));
     await screen.findByText(/^Starter plan, paid until/);
     expect(screen.getByRole('button', { name: 'Your plan' })).toBeDisabled();
+    // The payment comes with its own numbered invoice, listed with its PDF.
+    const invoices = await screen.findByRole('region', { name: 'Invoices' });
+    expect(invoices.textContent).toMatch(/Invoice \d{4,}/);
+    expect(invoices.textContent).toContain('PDF');
   });
 });
