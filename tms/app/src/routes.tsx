@@ -79,6 +79,7 @@ export const router = createBrowserRouter([
               { path: '/settings', element: <SettingsIndex /> },
               { path: '/settings/account', lazy: screen('settings-account', 'SettingsAccount') },
               { path: '/settings/team', lazy: screen('settings-team', 'SettingsTeam') },
+              { path: '/settings/billing', lazy: screen('settings-billing', 'SettingsBilling') },
               {
                 path: '/settings/notifications',
                 lazy: screen('notification-preferences', 'NotificationPreferences'),

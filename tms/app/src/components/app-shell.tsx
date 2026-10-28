@@ -2,6 +2,7 @@ import { useState, type ComponentType, type SVGProps } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { Drawer } from '@hlonie/toolbox/ui';
 import { currentUser, endSession, isLandlord } from '../lib/session';
+import { PlanBanner } from './plan-banner';
 import {
   ActivityIcon, BuildingIcon, ChartIcon, FileIcon, HomeIcon, InboxIcon, LogOutIcon, MoreIcon, SettingsIcon, WalletIcon,
   WrenchIcon,
@@ -91,6 +92,7 @@ export function AppShell() {
           </button>
         </div>
       </header>
+      <PlanBanner />
 
       {/* Room for the bottom bar on phones, so the last card is never hidden behind it. */}
       <div className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">

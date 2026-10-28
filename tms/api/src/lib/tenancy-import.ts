@@ -3,6 +3,7 @@ import { encryptIdNumber } from './idcrypt';
 import { audit } from './audit';
 import { billableUntil } from './billing';
 import { sendTenantInvite } from './tenant-invite';
+import { assertUnitRoom } from './subscription';
 import { importRowSchema, lastAnniversary, rowProblems, type ImportRow } from '../domain/tenancy-import';
 import { billingWindow, describeWindow, rentForWindow } from '../domain/renewal';
 import { dateFromIso, sastToday } from '../domain/dates';
@@ -217,6 +218,8 @@ export async function importTenancies(
   if (failed > 0 || options.dryRun || ready.length === 0) {
     return { results, imported: 0, failed };
   }
+  // Units the import adds count against the plan like any other.
+  await assertUnitRoom(landlordId, ready.filter((item) => !item.unitId).length);
 
   const leaseIds = await withTransaction(async (run) => {
     const ids: string[] = [];

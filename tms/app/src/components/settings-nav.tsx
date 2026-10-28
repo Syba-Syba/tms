@@ -4,6 +4,7 @@ import { isLandlord } from '../lib/session';
 const LINKS = [
   { to: '/settings/account', label: 'Account' },
   { to: '/settings/team', label: 'Team' },
+  { to: '/settings/billing', label: 'Plan' },
   { to: '/settings/notifications', label: 'You' },
 ];
 

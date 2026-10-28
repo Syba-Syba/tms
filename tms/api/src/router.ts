@@ -46,6 +46,11 @@ import { handler as invites_accept } from './handlers/invites-accept';
 import { handler as leases_import } from './handlers/leases-import';
 import { handler as leases_tenant_invite } from './handlers/leases-tenant-invite';
 import { handler as two_step } from './handlers/two-step';
+import { handler as billing_get } from './handlers/billing-get';
+import { handler as billing_checkout } from './handlers/billing-checkout';
+import { handler as billing_plan } from './handlers/billing-plan';
+import { handler as billing_notify } from './handlers/billing-notify';
+import { handler as billing_simulate } from './handlers/billing-simulate';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -181,6 +186,11 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/me/erasure-request', me_erasure],
   ['GET', '/privacy-requests', privacy_requests_list],
   ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
+  ['GET', '/billing', billing_get],
+  ['POST', '/billing/checkout', billing_checkout],
+  ['POST', '/billing/plan', billing_plan],
+  ['POST', '/billing/notify', billing_notify],
+  ['POST', '/billing/simulate', billing_simulate],
   ['GET', '/landlord', landlord_get],
   ['PUT', '/landlord', landlord_update],
   ['GET', '/landlord/team', landlord_team],

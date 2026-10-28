@@ -3,6 +3,7 @@ import { audit } from '../lib/audit';
 import { query } from '../lib/db';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { unitSchema } from '../domain/portfolio';
+import { assertUnitRoom } from '../lib/subscription';
 
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
@@ -10,12 +11,13 @@ export const handler = route(async (event) => {
   if (!propertyId) throw badRequest('A property id is required.');
   const input = parseBody(event, unitSchema);
 
-  const [property] = await query<{ id: string }>(
-    `select p.id from property p
+  const [property] = await query<{ id: string; landlord_id: string }>(
+    `select p.id, p.landlord_id from property p
       where p.id = $1 and p.landlord_id = (select landlord_id from landlord_member where sub = $2)`,
     [propertyId, person.sub],
   );
   if (!property) throw notFound('Property');
+  await assertUnitRoom(property.landlord_id, 1);
 
   try {
     const [unit] = await query<{ id: string }>(

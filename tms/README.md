@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Eighty-nine routes in all; the table lists the shape of each family rather than every verb.
+Ninety-four routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -737,6 +737,36 @@ point every invoice at their own account. So:
 
 This applies to the local auth driver. Under Cognito, its own MFA protects the sign-in and the
 bank change goes through with the same notices.
+
+## Plans and billing
+
+Landlords pay monthly by how many units they run. Prices live in `api/src/domain/plans.ts`
+(Starter up to 5 units R199, Standard up to 20 R449, Pro up to 60 R999, VAT included) and every
+screen and limit reads them from there. They are placeholders: set your own before launch.
+
+- Every landlord account starts on a 30-day trial with room for 60 units. Paying during the
+  trial keeps the trial: the paid month starts when it ends.
+- A lapsed account turns read-only for the landlord and their agents: everything can be seen,
+  nothing changed, except sign-in, settings, billing and their own data. Tenants are never
+  stopped. A failed payment gets 7 days' grace; a cancelled plan runs to the end of the month
+  paid for. Scheduled jobs (invoices, reminders, interest) keep running either way.
+- Units past the plan are refused with a prompt to move up, from the form and from imports.
+
+`BILLING_DRIVER` picks how payment works: `payfast` (the default in aws mode), `off` (the
+default self-hosted: nobody is charged) or `local` (development only: the Plan screen
+simulates PayFast through the same code path).
+
+With PayFast, the Plan screen posts a signed subscription form (monthly, until cancelled) to
+PayFast; card details never reach this server. PayFast then posts an ITN to
+`POST /billing/notify`, the one route without a sign-in. It is applied only if the signature
+matches, the sender resolves to a PayFast host, PayFast confirms the data back, and the amount is
+what the plan costs; each payment applies once by PayFast's payment id, and anything rejected is
+kept in `billing_event` with the reason. Plan changes and cancelling go through PayFast's
+subscriptions API.
+
+Before going live, run the whole flow in the PayFast sandbox (merchant 10000100): a first
+payment, a plan change, a cancellation. In particular check that `billing_date` set to the
+trial's end starts the monthly charges on that date as intended.
 
 ## Expenses and reports
 
