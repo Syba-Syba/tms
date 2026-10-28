@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, CardBody, PageHeader, Spinner, Switch, useToast } from '@hlonie/toolbox/ui';
-import { api } from '../api/client';
+import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hlonie/toolbox/ui';
+import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
 import { PrivacyRequests } from '../components/privacy-requests';
 import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
+import { QueryState } from '../components/query-state';
 
 interface Preference {
   category: string;
@@ -22,16 +23,22 @@ const CATEGORY_COPY: Record<string, string> = {
   deadline: 'Statutory dates and response targets',
 };
 
+/** Email is the only channel with a sender behind it. WhatsApp and push are modelled in the
+    database but nothing delivers them, so a toggle for either promised something that never
+    arrived. */
+const DELIVERABLE = new Set(['email']);
+
 export function NotificationPreferences() {
   const toast = useToast();
   const [rows, setRows] = useState<Preference[]>([]);
-  const { data, isLoading } = useQuery({
+  const [saving, setSaving] = useState(false);
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: () => api.get<{ preferences: Preference[] }>('/notifications/preferences'),
   });
 
   useEffect(() => {
-    if (data) setRows(data.preferences);
+    if (data) setRows(data.preferences.filter((row) => DELIVERABLE.has(row.channel)));
   }, [data]);
 
   const categories = [...new Set(rows.map((row) => row.category))];
@@ -44,15 +51,24 @@ export function NotificationPreferences() {
     );
 
   const save = async () => {
-    await api.put('/notifications/preferences', {
-      preferences: rows
-        .filter((row) => !row.locked)
-        .map(({ category, channel, enabled }) => ({ category, channel, enabled })),
-    });
-    toast.show({ title: 'Saved', tone: 'success' });
+    setSaving(true);
+    try {
+      await api.put('/notifications/preferences', {
+        preferences: rows
+          .filter((row) => !row.locked)
+          .map(({ category, channel, enabled }) => ({ category, channel, enabled })),
+      });
+      toast.show({ title: 'Saved', tone: 'success' });
+    } catch (error) {
+      toast.show({ title: 'Not saved', description: humanError(error), tone: 'danger' });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (isLoading) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Settings" />;
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-5 py-6">
@@ -62,7 +78,8 @@ export function NotificationPreferences() {
         <ChangePassword />
       </div>
 
-      <h2 className="label mb-2">Notifications</h2>
+      <h2 className="label mb-1">Notifications</h2>
+      <p className="mb-3 text-xs text-ink-muted">Sent by email to the address on your account.</p>
 
       <div className="space-y-3">
         {categories.map((category) => {
@@ -105,7 +122,7 @@ export function NotificationPreferences() {
         </Alert>
       ) : null}
 
-      <Button className="mt-4" onClick={save}>
+      <Button className="mt-4" loading={saving} onClick={save}>
         Save preferences
       </Button>
 

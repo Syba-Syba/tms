@@ -58,7 +58,9 @@ const s3Driver = (): Storage => {
           Bucket,
           Key: key,
           ContentType: contentType,
-          ServerSideEncryption: 'aws:kms',
+          // No ServerSideEncryption here: it would be a signed header the browser never sends,
+          // and S3 refuses the upload with 403. Uploads take the bucket's default encryption,
+          // which must be set to SSE-KMS (see README, AWS deployment).
         }),
         { expiresIn },
       );

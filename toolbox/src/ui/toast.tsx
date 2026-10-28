@@ -23,6 +23,21 @@ const toneStyles: Record<Tone, string> = {
   danger: 'border-l-danger',
 };
 
+let sequence = 0;
+
+/**
+ * crypto.randomUUID only exists in a secure context. A phone opening the app over plain HTTP
+ * on a home network has none, so every toast there threw, and with it the navigation or
+ * refetch that followed the call. The id only has to be unique on this page.
+ */
+const nextId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  sequence += 1;
+  return `toast-${Date.now().toString(36)}-${sequence}`;
+};
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -36,7 +51,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const show = useCallback<ToastApi['show']>(
     ({ tone = 'info', duration = 5000, ...rest }) => {
-      const id = crypto.randomUUID();
+      const id = nextId();
       setToasts((current) => [...current, { id, tone, ...rest }]);
       timers.current.set(
         id,

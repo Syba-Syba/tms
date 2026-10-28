@@ -35,11 +35,15 @@ export const handler = route(async (event) => {
        from ticket t
        join lease l on l.id = t.lease_id
        join unit u on u.id = l.unit_id
+       join property p on p.id = u.property_id
+       join landlord ll on ll.id = p.landlord_id
        join applicant a on a.id = l.applicant_id
        -- Selected c.name without ever joining contractor, so every call was a 500.
        left join contractor c on c.id = t.contractor_id
       where t.status = any($3::text[])
-        and ($2 or a.cognito_sub = $1)
+        -- A landlord sees the tickets on their own properties, not every ticket in the
+        -- system; group membership alone used to be the whole filter.
+        and (($2 and ll.cognito_sub = $1) or a.cognito_sub = $1)
       order by t.target_by asc`,
     [person.sub, isLandlord, statuses],
   );

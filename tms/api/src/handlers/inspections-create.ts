@@ -6,6 +6,7 @@ import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/h
 import { ROOM_TEMPLATE, createInspectionSchema, outgoingWindow } from '../domain/inspection';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
+import { isoDate, sastToday } from '../domain/dates';
 
 export const handler = route(async (event) => {
   const leaseId = event.pathParameters?.id;
@@ -16,10 +17,18 @@ export const handler = route(async (event) => {
   const input = parseBody(event, createInspectionSchema);
 
   const created = await withTransaction(async (run) => {
-    const [lease] = await run<{ id: string; status: string; end_date: string; bedrooms: number; bathrooms: number }>(
-      `select l.id, l.status, l.end_date, u.bedrooms, u.bathrooms
-         from lease l join unit u on u.id = l.unit_id
-        where l.id = $1 for update`,
+    const [lease] = await run<{ id: string; status: string; last_day: string; bedrooms: number; bathrooms: number }>(
+      // The tenancy ends on the termination's effective date when notice has been served,
+      // which is earlier than end_date on every early cancellation. Anchoring the window to
+      // end_date meant no exit inspection could ever be valid for those leases, and without
+      // one the law deems the place undamaged: every deduction was forfeited.
+      `select l.id, l.status,
+              least(l.end_date, coalesce(t.effective_on, l.end_date))::text as last_day,
+              u.bedrooms, u.bathrooms
+         from lease l
+         join unit u on u.id = l.unit_id
+         left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
+        where l.id = $1 for update of l`,
       [leaseId],
     );
     if (!lease) throw notFound('Lease');
@@ -27,12 +36,18 @@ export const handler = route(async (event) => {
       throw conflict(`This lease is ${lease.status}. Inspections attach to a live lease.`);
     }
 
-    // The outgoing inspection is only valid in the statutory 3 day window before lease end.
+    // The outgoing inspection is only valid in the statutory 3 day window before the tenancy ends.
     if (input.kind === 'outgoing') {
-      const window = outgoingWindow(new Date(lease.end_date));
+      // Booked ahead, so the tenant can be there. One "scheduled" after the day had passed
+      // let a landlord sign it alone and keep deductions the law forfeits when nobody inspects.
+      const today = sastToday();
+      if (isoDate(input.scheduledFor) < today) {
+        throw badRequest(`An outgoing inspection cannot be booked in the past. Pick a day from ${today}.`);
+      }
+      const window = outgoingWindow(new Date(`${lease.last_day}T00:00:00Z`));
       if (input.scheduledFor < window.opens || input.scheduledFor > window.closes) {
         throw badRequest(
-          `The outgoing inspection must fall in the final 3 days of the lease, ${window.opens.toISOString().slice(0, 10)} to ${window.closes.toISOString().slice(0, 10)}.`,
+          `The outgoing inspection must fall in the final 3 days of the tenancy, ${window.opens.toISOString().slice(0, 10)} to ${window.closes.toISOString().slice(0, 10)}.`,
         );
       }
     }

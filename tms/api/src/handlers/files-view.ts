@@ -4,6 +4,7 @@ import { caller } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, notFound, parseBody, route } from '../lib/http';
 import { storage } from '../lib/storage';
+import { audit } from '../lib/audit';
 
 const schema = z.object({ key: z.string().min(1).max(500) });
 
@@ -44,15 +45,19 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
 
 export const handler = route(async (event) => {
   const { key } = parseBody(event, schema);
+  let entity: 'application' | 'lease' | 'expense';
+  let entityId: string;
 
   if (key.startsWith('expenses/')) {
     // An expense slip belongs to a landlord, not a lease, so no tenant can ever reach one.
     const person = caller(event);
-    const [slip] = await query<{ cognito_sub: string | null }>(
-      `select ll.cognito_sub from expense e join landlord ll on ll.id = e.landlord_id where e.slip_s3_key = $1`,
+    const [slip] = await query<{ id: string; cognito_sub: string | null }>(
+      `select e.id, ll.cognito_sub from expense e join landlord ll on ll.id = e.landlord_id where e.slip_s3_key = $1`,
       [key],
     );
     if (!slip || slip.cognito_sub !== person.sub || !person.groups.includes('landlord')) throw notFound('Document');
+    entity = 'expense';
+    entityId = slip.id;
   } else if (key.startsWith('applications/')) {
     // ID copies, payslips and bank statements. Membership of the landlord group used to be
     // enough to read any of them, for any applicant, under any landlord.
@@ -64,6 +69,8 @@ export const handler = route(async (event) => {
     await requireApplicationAccess(event, document.application_id).catch(() => {
       throw notFound('Document');
     });
+    entity = 'application';
+    entityId = document.application_id;
   } else {
     const leaseId = await leaseIdFor(key);
     if (!leaseId) throw notFound('Document');
@@ -71,7 +78,20 @@ export const handler = route(async (event) => {
     await requireLeaseAccess(event, leaseId).catch(() => {
       throw notFound('Document');
     });
+    entity = 'lease';
+    entityId = leaseId;
   }
+
+  // Who opened an ID copy or a payslip, and when, is a POPIA question the log has to answer.
+  const person = caller(event);
+  await audit({
+    actorSub: person.sub,
+    actorRole: person.groups[0] ?? 'unknown',
+    action: 'file.viewed',
+    entity,
+    entityId,
+    detail: { key },
+  });
 
   const viewUrl = await storage().presignGet(key, 300);
   return json(200, { viewUrl, expiresInSeconds: 300 });

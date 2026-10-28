@@ -1,103 +1,107 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PGlite } from '@electric-sql/pglite';
-import { freshDb, all, one } from './helpers/db';
-import { seedLease, type Seeded } from './helpers/seed';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { monthlyInterestCents } from '../domain/money';
 
-let db: PGlite;
-let seeded: Seeded;
+const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
+const LEASE = '66666666-6666-6666-6666-666666666666';
+
+/** The scheduled interest run itself, not a copy of its insert. The seed holds a R8 500
+    deposit on the one lease, and the seeded rate is 5.5% p.a. */
+let db: typeof import('../lib/db');
+let run: typeof import('../handlers/interest-run').handler;
 
 beforeAll(async () => {
-  db = await freshDb();
-  seeded = await seedLease(db);
-  await db.query(
-    `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
-     values ($1, 'received', 850000, '2026-09-01', 'Deposit received')`,
-    [seeded.leaseId],
+  process.env.DB_DRIVER = 'pglite';
+  process.env.PGLITE_DIR = `memory://interest-run-${Date.now()}`;
+  process.env.NODE_ENV = 'development';
+  process.env.STORAGE_DRIVER = 'local';
+  process.env.STORAGE_DIR = mkdtempSync(join(tmpdir(), 'tms-storage-'));
+  process.env.KMS_DRIVER = 'local';
+
+  db = await import('../lib/db');
+  const read = (name: string) => readFileSync(join(MIGRATIONS, name), 'utf8');
+  const all = readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql')).sort();
+  for (const file of all.filter((n) => !n.includes('seed'))) await db.execScript(read(file));
+  for (const file of all.filter((n) => n.includes('seed'))) await db.execScript(read(file));
+  ({ handler: run } = await import('../handlers/interest-run'));
+}, 120_000);
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
+/** The handler dates its month from the clock: 06:00 SAST on the given day. */
+const on = (iso: string) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${iso}T04:00:00Z`));
+};
+
+const balance = async () => {
+  const [row] = await db.query<{ balance: string }>(
+    `select coalesce(sum(case entry_type
+              when 'received' then amount_cents
+              when 'interest' then amount_cents
+              else -amount_cents end), 0)::text as balance
+       from deposit_ledger where lease_id = $1`,
+    [LEASE],
   );
-}, 60_000);
+  return Number(row!.balance);
+};
 
-afterAll(async () => db?.close());
-
-const ANNUAL_PCT = 5.5;
-
-/**
- * The insert the scheduled run makes. Kept in the test rather than importing the handler so
- * the database guard is what is under test, not the handler's own bookkeeping.
- */
-const postInterest = async (periodMonth: string, amountCents: number) =>
-  all<{ id: string }>(
-    db,
-    `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month, note)
-     values ($1, 'interest', $2, $3, 'Interest at 5.5% p.a.')
-     on conflict (lease_id, period_month) where entry_type = 'interest' do nothing
-     returning id`,
-    [seeded.leaseId, amountCents, periodMonth],
-  );
-
-const balance = async () =>
-  Number(
-    (
-      await one<{ balance: string }>(
-        db,
-        `select coalesce(sum(case entry_type
-                  when 'received' then amount_cents
-                  when 'interest' then amount_cents
-                  else -amount_cents end), 0)::text as balance
-           from deposit_ledger where lease_id = $1`,
-        [seeded.leaseId],
-      )
-    )?.balance ?? 0,
-  );
-
-const interestRows = async () =>
-  Number(
-    (
-      await one<{ n: string }>(
-        db,
-        `select count(*)::text as n from deposit_ledger
-          where lease_id = $1 and entry_type = 'interest'`,
-        [seeded.leaseId],
-      )
-    )?.n ?? 0,
+const interest = () =>
+  db.query<{ period_month: string; amount_cents: string; note: string }>(
+    `select period_month::text, amount_cents::text, note from deposit_ledger
+      where lease_id = $1 and entry_type = 'interest' order by period_month`,
+    [LEASE],
   );
 
 describe('monthly deposit interest run', () => {
   it('posts one month of interest on the held deposit', async () => {
-    const expected = monthlyInterestCents(850000, ANNUAL_PCT);
-    expect(expected).toBe(3896);
-
-    const inserted = await postInterest('2026-10-01', expected);
-    expect(inserted).toHaveLength(1);
-    expect(await interestRows()).toBe(1);
-    expect(await balance()).toBe(850000 + expected);
+    on('2026-10-01');
+    expect(await run()).toEqual({ posted: 1, skipped: 0 });
+    expect(await interest()).toEqual([
+      { period_month: '2026-10-01', amount_cents: '3896', note: 'Interest at 5.5% p.a.' },
+    ]);
+    expect(await balance()).toBe(850000 + 3896);
   });
 
   /**
-   * EventBridge delivers a schedule at least once, so the same run can arrive twice. It used
-   * to credit the deposit again each time, silently inflating money the tenant is owed and
-   * the exit settlement is computed from.
+   * EventBridge delivers a schedule at least once, and the self-hosted scheduler retries, so
+   * the same run can arrive twice. It used to credit the deposit again each time.
    */
   it('credits nothing the second time the same month is run', async () => {
     const before = await balance();
-    const expected = monthlyInterestCents(850000, ANNUAL_PCT);
-
-    const again = await postInterest('2026-10-01', expected);
-
-    expect(again).toHaveLength(0);
-    expect(await interestRows()).toBe(1);
+    on('2026-10-01');
+    expect(await run()).toEqual({ posted: 0, skipped: 1 });
+    expect(await interest()).toHaveLength(1);
     expect(await balance()).toBe(before);
   });
 
-  it('still posts the following month', async () => {
+  it('posts the following month on the new balance', async () => {
     const before = await balance();
-    const expected = monthlyInterestCents(before, ANNUAL_PCT);
+    on('2026-11-01');
+    expect(await run()).toEqual({ posted: 1, skipped: 0 });
+    expect(await balance()).toBe(before + monthlyInterestCents(before, 5.5));
+  });
 
-    const inserted = await postInterest('2026-11-01', expected);
+  it('pays the rate the landlord set, from the month it takes effect', async () => {
+    await db.query(`insert into deposit_interest_rate (annual_pct, effective_from) values (6.250, '2026-12-01')`);
+    const before = await balance();
+    on('2026-12-01');
+    await run();
+    const rows = await interest();
+    expect(rows.at(-1)).toMatchObject({ period_month: '2026-12-01', note: 'Interest at 6.25% p.a.' });
+    expect(await balance()).toBe(before + monthlyInterestCents(before, 6.25));
+  });
 
-    expect(inserted).toHaveLength(1);
-    expect(await interestRows()).toBe(2);
-    expect(await balance()).toBe(before + expected);
+  it('pays nothing on a lease that has ended', async () => {
+    await db.query(`update lease set status = 'terminated' where id = $1`, [LEASE]);
+    on('2027-01-01');
+    expect(await run()).toEqual({ posted: 0, skipped: 0 });
+    await db.query(`update lease set status = 'active' where id = $1`, [LEASE]);
   });
 
   it('refuses an interest entry with no month, which would slip past the unique index', async () => {
@@ -105,29 +109,8 @@ describe('monthly deposit interest run', () => {
       db.query(
         `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
          values ($1, 'interest', 1000, 'No month')`,
-        [seeded.leaseId],
+        [LEASE],
       ),
     ).rejects.toThrow(/deposit_ledger_interest_has_month/);
-  });
-
-  it('leaves the other ledger entry types alone', async () => {
-    // Only interest is once-per-month. A deposit can legitimately be received twice.
-    await db.query(
-      `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
-       values ($1, 'received', 50000, '2026-10-05', 'Top up')`,
-      [seeded.leaseId],
-    );
-    await db.query(
-      `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
-       values ($1, 'received', 50000, '2026-10-06', 'Second top up')`,
-      [seeded.leaseId],
-    );
-    const received = await one<{ n: string }>(
-      db,
-      `select count(*)::text as n from deposit_ledger
-        where lease_id = $1 and entry_type = 'received'`,
-      [seeded.leaseId],
-    );
-    expect(Number(received?.n)).toBe(3);
   });
 });

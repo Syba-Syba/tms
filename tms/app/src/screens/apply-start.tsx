@@ -7,6 +7,7 @@ import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
 import { PRIVACY_VERSION } from '../lib/privacy';
+import { incomeCents } from '../lib/income';
 
 interface AvailableUnit {
   id: string;
@@ -57,7 +58,8 @@ export function ApplyStart() {
       const created = await api.post<{ id: string }>('/applications', {
         unitId,
         ...values,
-        monthlyIncomeCents: Math.round(Number(values.monthlyIncome) * 100),
+        // The field refuses anything this cannot read, so it is a number by now.
+        monthlyIncomeCents: incomeCents(values.monthlyIncome),
         occupants: Number(values.occupants),
         pets: false,
         consentVersion: PRIVACY_VERSION,
@@ -138,6 +140,10 @@ export function ApplyStart() {
             hint="Before deductions. We check that rent stays under a third of it."
             inputMode="decimal"
             required
+            rules={{
+              required: 'Needed.',
+              validate: (value) => incomeCents(String(value ?? '')) !== null || 'Enter an amount, like 25 000.',
+            }}
           />
           <div className="grid grid-cols-2 gap-3">
             <TextField control={control} name="occupants" label="Occupants" inputMode="numeric" required />

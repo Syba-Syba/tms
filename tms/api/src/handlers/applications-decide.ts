@@ -4,6 +4,8 @@ import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { decisionSchema } from '../domain/application';
+import { logger } from '../lib/logger';
+import { notify } from '../lib/notify';
 
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
@@ -21,8 +23,23 @@ export const handler = route(async (event) => {
   }
 
   const updated = await withTransaction(async (run) => {
-    const [application] = await run<{ id: string; status: string; unit_id: string }>(
-      'select id, status, unit_id from application where id = $1 for update',
+    const [application] = await run<{
+      id: string;
+      status: string;
+      unit_id: string;
+      applicant_sub: string | null;
+      applicant_email: string | null;
+      applicant_phone: string | null;
+      unit_label: string;
+    }>(
+      `select a.id, a.status, a.unit_id, ap.cognito_sub as applicant_sub, ap.email as applicant_email,
+              ap.phone as applicant_phone, p.name || ' ' || u.code as unit_label
+         from application a
+         join applicant ap on ap.id = a.applicant_id
+         join unit u on u.id = a.unit_id
+         join property p on p.id = u.property_id
+        where a.id = $1
+        for update of a`,
       [id],
     );
     if (!application) throw notFound('Application');
@@ -44,7 +61,13 @@ export const handler = route(async (event) => {
       ]);
     }
 
-    return { id, status: input.outcome };
+    return {
+      result: { id, status: input.outcome },
+      to: application.applicant_sub
+        ? { sub: application.applicant_sub, email: application.applicant_email, phone: application.applicant_phone }
+        : null,
+      unit: application.unit_label,
+    };
   });
 
   await audit({
@@ -56,5 +79,19 @@ export const handler = route(async (event) => {
     detail: { reason: input.reason ?? null },
   });
 
-  return json(200, updated);
+  // The applicant used to hear nothing either way, and found out only by opening the app.
+  if (updated.to) {
+    try {
+      await notify({
+        to: updated.to,
+        kind: input.outcome === 'approved' ? 'application_approved' : 'application_declined',
+        dedupeKey: `application_decided:${id}`,
+        data: { unit: updated.unit, reason: input.reason ?? '' },
+      });
+    } catch (error) {
+      logger.error('Application decision notification failed.', { applicationId: id, error });
+    }
+  }
+
+  return json(200, updated.result);
 });

@@ -32,5 +32,17 @@ export function ageBucket(dueOn: Date, today: Date): AgeBucket {
 export const monthlyInterestCents = (balanceCents: number, annualPct: number) =>
   balanceCents <= 0 || annualPct <= 0 ? 0 : Math.round((balanceCents * annualPct) / 100 / 12);
 
-export const zar = (cents: number) =>
-  `R ${(cents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
+/**
+ * "R 8 500,00", the en-ZA form, built by hand. toLocaleString gave a different string on a
+ * runtime with small ICU (Lambda, some Node builds): "R 8,500.00" in one place and
+ * "R 8 500,00" in another, on the same invoice.
+ */
+export const zar = (cents: number) => {
+  const negative = cents < 0;
+  const whole = Math.round(Math.abs(cents));
+  const rands = Math.floor(whole / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  const minor = String(whole % 100).padStart(2, '0');
+  return `${negative ? '-' : ''}R\u00a0${rands},${minor}`;
+};

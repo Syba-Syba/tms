@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, PageHeader, Spinner, useToast,
+  Alert, Badge, Button, Card, CardBody, CurrencyInput, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
-import { api, openDocument, humanError } from '../api/client';
+import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
 import { formatDate } from '../lib/format';
+import { QueryState } from '../components/query-state';
+import { useOpenDocument } from '../lib/open-document';
 
 interface ComparisonItem {
   room: string;
@@ -52,51 +54,76 @@ const RULE_COPY: Record<string, string> = {
 export function Termination() {
   const { terminationId } = useParams();
   const toast = useToast();
+  const openDocument = useOpenDocument();
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState({ description: '', amountCents: 0, findingId: '' });
   const [settled, setSettled] = useState<Settlement | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['comparison', terminationId],
     queryFn: () => api.get<Comparison>(`/terminations/${terminationId}/comparison`),
   });
 
-  const addDeduction = async (item: ComparisonItem) => {
+  // Settling moves money, so nothing here runs twice at once.
+  const guarded = async (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
     try {
-      await api.post(`/terminations/${terminationId}/deductions`, {
-        findingId: item.findingId,
-        description: `${item.room} · ${item.item}`,
-        amountCents: draft.amountCents,
-      });
-      toast.show({ title: 'Deduction added', tone: 'success' });
-      setDraft({ description: '', amountCents: 0, findingId: '' });
-      refetch();
-    } catch (error) {
-      toast.show({ title: 'Refused', description: humanError(error), tone: 'danger' });
+      await fn();
+    } finally {
+      setBusy(false);
     }
   };
-
-  const settle = async () => {
-    try {
-      const result = await api.post<Settlement>(`/terminations/${terminationId}/settle`, {});
-      setSettled(result);
-      toast.show({ title: 'Deposit settled', tone: 'success' });
-      refetch();
-    } catch (error) {
-      toast.show({ title: 'Cannot settle yet', description: humanError(error), tone: 'danger' });
-    }
+  const changed = () => {
+    // The lease page shows the termination's status and deduction count.
+    queryClient.invalidateQueries({ queryKey: ['lease'] });
+    queryClient.invalidateQueries({ queryKey: ['leases'] });
+    refetch();
   };
 
-  const removeDeduction = async (deduction: Deduction) => {
-    try {
-      await api.delete(`/terminations/${terminationId}/deductions/${deduction.id}`);
-      toast.show({ title: 'Deduction removed', tone: 'info' });
-      refetch();
-    } catch (error) {
-      toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
-    }
-  };
+  const addDeduction = (item: ComparisonItem) =>
+    guarded(async () => {
+      try {
+        await api.post(`/terminations/${terminationId}/deductions`, {
+          findingId: item.findingId,
+          description: `${item.room} · ${item.item}`,
+          amountCents: draft.amountCents,
+        });
+        toast.show({ title: 'Deduction added', tone: 'success' });
+        setDraft({ description: '', amountCents: 0, findingId: '' });
+        changed();
+      } catch (error) {
+        toast.show({ title: 'Refused', description: humanError(error), tone: 'danger' });
+      }
+    });
 
-  if (isLoading || !data) return <main className="p-16 text-center"><Spinner /></main>;
+  const settle = () =>
+    guarded(async () => {
+      try {
+        const result = await api.post<Settlement>(`/terminations/${terminationId}/settle`, {});
+        setSettled(result);
+        toast.show({ title: 'Deposit settled', tone: 'success' });
+        changed();
+      } catch (error) {
+        toast.show({ title: 'Cannot settle yet', description: humanError(error), tone: 'danger' });
+      }
+    });
+
+  const removeDeduction = (deduction: Deduction) =>
+    guarded(async () => {
+      try {
+        await api.delete(`/terminations/${terminationId}/deductions/${deduction.id}`);
+        toast.show({ title: 'Deduction removed', tone: 'info' });
+        changed();
+      } catch (error) {
+        toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
+      }
+    });
+
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This settlement" />;
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-6">
@@ -123,6 +150,9 @@ export function Termination() {
               ) : null}
               {settled.arrearsCents > 0 ? (
                 <p className="text-danger">Less arrears <Ledger cents={settled.arrearsCents} /></p>
+              ) : null}
+              {settled.penaltyCents > 0 ? (
+                <p className="text-danger">Less cancellation penalty <Ledger cents={settled.penaltyCents} /></p>
               ) : null}
             </div>
             <Alert tone="info" title={`Payable by ${formatDate(settled.refundDueBy)}`}>
@@ -166,7 +196,8 @@ export function Termination() {
                   {data.status !== 'settled' ? (
                     <button
                       type="button"
-                      className="text-[13px] font-semibold text-danger"
+                      className="text-[13px] font-semibold text-danger disabled:opacity-40"
+                      disabled={busy}
                       onClick={() => removeDeduction(deduction)}
                     >
                       Remove
@@ -230,7 +261,8 @@ export function Termination() {
                   </div>
                   <Button
                     size="sm"
-                    disabled={draft.findingId !== item.findingId || draft.amountCents <= 0}
+                    loading={busy && draft.findingId === item.findingId}
+                    disabled={busy || draft.findingId !== item.findingId || draft.amountCents <= 0}
                     onClick={() => addDeduction(item)}
                   >
                     Deduct
@@ -243,7 +275,7 @@ export function Termination() {
       </div>
 
       {!settled && data.status !== 'settled' ? (
-        <Button className="mt-5" onClick={settle}>
+        <Button className="mt-5" loading={busy} onClick={settle}>
           Settle the deposit
         </Button>
       ) : null}

@@ -5,6 +5,8 @@ import { handler as auth_register } from './handlers/auth-register';
 import { handler as auth_password } from './handlers/auth-password';
 import { handler as auth_reset_request } from './handlers/auth-reset-request';
 import { handler as auth_reset_confirm } from './handlers/auth-reset-confirm';
+import { handler as auth_logout } from './handlers/auth-logout';
+import { handler as audit_list } from './handlers/audit-list';
 import { handler as applications_documents } from './handlers/applications-documents';
 import { handler as contractors_list } from './handlers/contractors-list';
 import { handler as files_view } from './handlers/files-view';
@@ -20,6 +22,7 @@ import { handler as units_delete } from './handlers/units-delete';
 import { handler as units_update } from './handlers/units-update';
 import { handler as applications_decide } from './handlers/applications-decide';
 import { handler as applications_list } from './handlers/applications-list';
+import { handler as documents_confirm } from './handlers/documents-confirm';
 import { handler as documents_presign } from './handlers/documents-presign';
 import { handler as inspections_create } from './handlers/inspections-create';
 import { handler as inspections_findings } from './handlers/inspections-findings';
@@ -88,10 +91,13 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/auth/password', auth_password],
   ['POST', '/auth/reset/request', auth_reset_request],
   ['POST', '/auth/reset/confirm', auth_reset_confirm],
+  ['POST', '/auth/logout', auth_logout],
+  ['GET', '/audit', audit_list],
   ['POST', '/applications', applications_create],
   ['GET', '/applications', applications_list],
   ['POST', '/applications/{id}/decision', applications_decide],
   ['POST', '/applications/{id}/documents/presign', documents_presign],
+  ['POST', '/applications/{id}/documents/confirm', documents_confirm],
   ['POST', '/applications/{id}/lease', leases_generate],
   ['POST', '/leases/{id}/signature', leases_sign],
   ['POST', '/leases/{id}/render', leases_render],

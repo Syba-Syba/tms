@@ -37,10 +37,14 @@ export function createHttpClient(options: HttpClientOptions) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     });
 
+    // Remembered per request so a 401 can be read for what it is: a dead session when a token
+    // was sent, an ordinary refusal (a wrong password on sign-in) when none was.
+    let sentToken = false;
     const send = async (): Promise<Response> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const token = await getToken?.();
+      sentToken = Boolean(token);
       const headers = typeof defaultHeaders === 'function' ? defaultHeaders() : defaultHeaders;
       try {
         return await fetch(url, {
@@ -66,7 +70,10 @@ export function createHttpClient(options: HttpClientOptions) {
       ? await retry(send, { attempts: retryAttempts, shouldRetry: (e) => !(e instanceof HttpError) })
       : await send();
 
-    if (response.status === 401 && onUnauthorised) {
+    // A 401 on a request that carried no token is not an expired session. Treating it as one
+    // reloaded the sign-in page on a wrong password, hid the error, and sent the attempt twice,
+    // which counted double against the lockout.
+    if (response.status === 401 && onUnauthorised && sentToken) {
       refreshing ??= Promise.resolve(onUnauthorised()).finally(() => {
         refreshing = null;
       });

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Card, CardBody, EmptyState, PageHeader, SegmentedControl, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
+import { QueryError } from '../components/query-state';
 import { isLandlord } from '../lib/session';
 import { capitalise, formatDateTime, status as statusOf } from '../lib/format';
 
@@ -24,7 +25,7 @@ const severityTone = { emergency: 'danger', urgent: 'warning', routine: 'neutral
 
 export function TicketsList() {
   const [status, setStatus] = useState<'active' | 'closed'>('active');
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['tickets', status],
     queryFn: () => api.get<{ items: Ticket[] }>('/tickets', { query: { status } }),
   });
@@ -55,7 +56,9 @@ export function TicketsList() {
 
       {isLoading ? <Spinner /> : null}
 
-      {!isLoading && items.length === 0 ? (
+      {isError ? <QueryError error={error} onRetry={refetch} what="The list" /> : null}
+
+      {!isLoading && !isError && items.length === 0 ? (
         <EmptyState
           title={status === 'active' ? 'Nothing outstanding' : 'Nothing closed yet'}
           description={

@@ -147,3 +147,45 @@ describe('tokens', () => {
     expect(tokens.verifyToken(made.body.token)?.pv).toMatch(/^[A-Za-z0-9_-]{16}$/);
   });
 });
+
+describe('sign out', () => {
+  const stillValid = async (token: string) => {
+    const user = tokens.verifyToken(token)!;
+    const [row] = await db.query<{ password_hash: string; session_epoch: number }>(
+      'select password_hash, session_epoch from local_credential where sub = $1',
+      [user.sub],
+    );
+    return tokens.credentialVersion(row!.password_hash, row!.session_epoch) === user.pv;
+  };
+
+  it('ends every session for the account, and a new sign-in works', async () => {
+    const made = await register('leaver@example.co.za', 'leaving-pw-1', '10.9.0.1');
+    const sub = tokens.verifyToken(made.body.token)!.sub;
+    const other = await call('POST', '/auth/login', { email: 'leaver@example.co.za', password: 'leaving-pw-1' }, { sub: 'anonymous', ip: '10.9.0.2' });
+    expect(await stillValid(made.body.token)).toBe(true);
+    expect(await stillValid(other.body.token)).toBe(true);
+
+    const out = await call('POST', '/auth/logout', {}, { sub });
+    expect(out.status).toBe(200);
+    expect(await stillValid(made.body.token)).toBe(false);
+    expect(await stillValid(other.body.token)).toBe(false);
+
+    const again = await call('POST', '/auth/login', { email: 'leaver@example.co.za', password: 'leaving-pw-1' }, { sub: 'anonymous', ip: '10.9.0.3' });
+    expect(again.status).toBe(200);
+    expect(await stillValid(again.body.token)).toBe(true);
+  });
+
+  it('keeps tokens from before the epoch existed working (epoch 0 is the old fingerprint)', () => {
+    expect(tokens.credentialVersion('hash', 0)).toBe(tokens.credentialVersion('hash'));
+    expect(tokens.credentialVersion('hash', 1)).not.toBe(tokens.credentialVersion('hash'));
+  });
+
+  it('records failed sign-ins in the audit log', async () => {
+    await call('POST', '/auth/login', { email: 'leaver@example.co.za', password: 'wrong' }, { sub: 'anonymous', ip: '10.9.1.1' });
+    const rows = await db.query<{ detail: { email: string; knownAccount: boolean } }>(
+      `select detail from audit_log where action = 'auth.login_failed' and detail->>'email' = 'leaver@example.co.za'`,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]!.detail.knownAccount).toBe(true);
+  });
+});

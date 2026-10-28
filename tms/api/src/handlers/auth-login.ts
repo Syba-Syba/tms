@@ -40,7 +40,11 @@ export const handler = route(async (event) => {
     name: string;
     role: 'landlord' | 'tenant';
     password_hash: string;
-  }>('select sub, email, name, role, password_hash from local_credential where email = $1', [email]);
+    session_epoch: number;
+  }>(
+    'select sub, email, name, role, password_hash, session_epoch from local_credential where email = $1',
+    [email],
+  );
 
   // An unknown email still runs scrypt, against a hash that never matches, so the response
   // time does not say which emails have accounts. One message for both, for the same reason.
@@ -48,6 +52,16 @@ export const handler = route(async (event) => {
   if (!credential || !matched) {
     failedLoginsByAccount.record(email);
     failedLoginsByAddress.record(address);
+    // A run of these against one account, or from one address, is what a password-guessing
+    // attempt looks like afterwards. The rate limiter forgets on restart; this does not.
+    await audit({
+      actorSub: credential?.sub ?? '',
+      actorRole: credential?.role ?? 'unknown',
+      action: 'auth.login_failed',
+      entity: 'credential',
+      entityId: null,
+      detail: { email, address, knownAccount: Boolean(credential) },
+    });
     throw new ApiError(401, 'unauthorised', 'That email and password do not match.');
   }
   failedLoginsByAccount.clear(email);
@@ -68,7 +82,7 @@ export const handler = route(async (event) => {
     detail: { email: user.email },
   });
   return json(200, {
-    token: signToken({ ...user, pv: credentialVersion(credential.password_hash) }),
+    token: signToken({ ...user, pv: credentialVersion(credential.password_hash, credential.session_epoch) }),
     user,
   });
 });

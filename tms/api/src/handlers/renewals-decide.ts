@@ -4,7 +4,11 @@ import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { decideRenewalSchema } from '../domain/renewal';
 import { zar } from '../domain/money';
+import { sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
+import { renderLeaseDocument } from '../lib/lease-document';
+import { leaseParties } from '../lib/recipients';
+import { logger } from '../lib/logger';
 
 export const handler = route(async (event) => {
   const renewalId = event.pathParameters?.id;
@@ -32,7 +36,7 @@ export const handler = route(async (event) => {
     );
     if (!renewal) throw notFound('Renewal');
     if (renewal.status !== 'offered') throw conflict(`This offer is already ${renewal.status}.`);
-    if (new Date(renewal.respond_by) < new Date(new Date().toISOString().slice(0, 10))) {
+    if (renewal.respond_by < sastToday()) {
       throw conflict(`This offer expired on ${renewal.respond_by}. Ask for a new one.`);
     }
 
@@ -47,15 +51,25 @@ export const handler = route(async (event) => {
       };
     }
 
-    const [current] = await run<{ application_id: string; unit_id: string; applicant_id: string }>(
-      'select application_id, unit_id, applicant_id from lease where id = $1 for update',
+    const [current] = await run<{
+      application_id: string; unit_id: string; applicant_id: string; status: string; noticed: boolean;
+    }>(
+      `select application_id, unit_id, applicant_id, status,
+              exists (select 1 from termination t where t.lease_id = lease.id and t.status <> 'withdrawn') as noticed
+         from lease where id = $1 for update`,
       [renewal.lease_id],
     );
     if (!current) throw notFound('Lease');
+    // Serving notice lapses open offers, but an offer read just before that, or older data,
+    // must not renew a lease that is ending.
+    if (current.status !== 'active' || current.noticed) {
+      throw conflict('This lease is ending, so the offer can no longer be accepted.');
+    }
 
-    // 'scheduled' exists for exactly this moment: the new lease is real and signed, but the
-    // current one is still live until its last day. Two 'active' leases on one unit is
-    // blocked by the index, and rightly so.
+    // 'scheduled' exists for exactly this moment: the new lease is agreed, but the current one
+    // is still live until its last day. Two 'active' leases on one unit is blocked by the
+    // index, and rightly so. Accepting is not signing: the new lease goes live, and is billed,
+    // only once both parties have signed its document.
     const [created] = await run<{ id: string; ref_no: number }>(
       `insert into lease (application_id, unit_id, applicant_id, start_date, end_date,
                           monthly_rent_cents, escalation_pct, deposit_cents, status,
@@ -82,6 +96,28 @@ export const handler = route(async (event) => {
       depositTopUpCents: Number(renewal.deposit_top_up_cents),
     };
   });
+
+  // The new lease's document is rendered now, so the tenant can sign it in the same sitting.
+  // A failure here leaves the lease unsigned and the landlord can render it from the lease page.
+  let documentReady = false;
+  if (result.newLeaseId) {
+    try {
+      await renderLeaseDocument(result.newLeaseId);
+      documentReady = true;
+      const parties = await leaseParties(result.newLeaseId);
+      if (parties?.tenant) {
+        await notify({
+          leaseId: result.newLeaseId,
+          to: parties.tenant,
+          kind: 'lease_ready_to_sign',
+          dedupeKey: `lease_ready_to_sign:${result.newLeaseId}`,
+          data: { reference: parties.reference, unit: parties.unit, startDate: parties.startDate },
+        });
+      }
+    } catch (error) {
+      logger.error('Renewal lease document failed.', { leaseId: result.newLeaseId, error });
+    }
+  }
 
   const [landlord] = await query<{ sub: string | null; email: string; unit: string; tenant: string }>(
     `select ll.cognito_sub as sub, ll.email, p.name || ' ' || u.code as unit,
@@ -118,5 +154,5 @@ export const handler = route(async (event) => {
     entityId: renewalId,
   });
 
-  return json(200, result);
+  return json(200, { ...result, documentReady });
 });

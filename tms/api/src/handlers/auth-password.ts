@@ -36,7 +36,8 @@ export const handler = route(async (event) => {
     name: string;
     role: 'landlord' | 'tenant';
     password_hash: string;
-  }>('select email, name, role, password_hash from local_credential where sub = $1', [sub]);
+    session_epoch: number;
+  }>('select email, name, role, password_hash, session_epoch from local_credential where sub = $1', [sub]);
   if (!credential) throw new ApiError(404, 'not_found', 'No password is set for this account.');
 
   passwordChangesByAccount.record(sub);
@@ -61,5 +62,5 @@ export const handler = route(async (event) => {
   });
 
   const user = { sub, role: credential.role, name: credential.name, email: credential.email };
-  return json(200, { token: signToken({ ...user, pv: credentialVersion(passwordHash) }), user });
+  return json(200, { token: signToken({ ...user, pv: credentialVersion(passwordHash, credential.session_epoch) }), user });
 });

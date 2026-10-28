@@ -55,6 +55,7 @@ export const router = createBrowserRouter([
               { path: '/reports', lazy: screen('reports', 'Reports') },
               { path: '/documents', lazy: screen('documents', 'Documents') },
               { path: '/tickets', lazy: screen('tickets-list', 'TicketsList') },
+              { path: '/activity', lazy: screen('activity', 'Activity') },
               {
                 path: '/tickets/:ticketId',
                 lazy: screen('ticket-detail', 'TicketDetail'),

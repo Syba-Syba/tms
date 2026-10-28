@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router';
 import { Drawer } from '@hlonie/toolbox/ui';
 import { currentUser, endSession, isLandlord } from '../lib/session';
 import {
-  BuildingIcon, ChartIcon, FileIcon, HomeIcon, InboxIcon, LogOutIcon, MoreIcon, SettingsIcon, WalletIcon,
+  ActivityIcon, BuildingIcon, ChartIcon, FileIcon, HomeIcon, InboxIcon, LogOutIcon, MoreIcon, SettingsIcon, WalletIcon,
   WrenchIcon,
 } from './nav-icons';
 
@@ -25,6 +25,7 @@ const LANDLORD: Item[] = [
   { to: '/properties', label: 'Properties', icon: BuildingIcon },
   { to: '/applications', label: 'Applications', icon: InboxIcon },
   { to: '/reports', label: 'Reports', icon: ChartIcon },
+  { to: '/activity', label: 'Activity', icon: ActivityIcon },
   { to: '/settings/notifications', label: 'Settings', icon: SettingsIcon },
 ];
 

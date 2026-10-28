@@ -19,7 +19,9 @@ const arg = (flag) => {
   return index === -1 ? undefined : process.argv[index + 1];
 };
 
-const email = arg('--email');
+// Sign-in lowercases the email before looking it up, so a landlord created as
+// Name@Example.com could never sign in. Store it the way it will be searched for.
+const email = arg('--email')?.trim().toLowerCase();
 const name = arg('--name');
 const phone = arg('--phone') ?? '';
 const password = process.env.BOOTSTRAP_PASSWORD;

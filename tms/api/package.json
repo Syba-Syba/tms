@@ -9,6 +9,7 @@
     "deploy:dev": "serverless deploy --stage dev",
     "logs": "serverless logs -f api -t",
     "migrate": "node --env-file=.env scripts/migrate.mjs",
+    "migrate:deploy": "node scripts/migrate.mjs",
     "test": "vitest run",
     "predev": "node --env-file=.env scripts/ensure-dev-db.mjs",
     "dev": "tsx --env-file=.env src/local.ts",
@@ -22,6 +23,7 @@
     "prepackage": "npm run certs:fetch",
     "package": "serverless package",
     "start": "tsx --env-file=.env.selfhosted src/server.ts",
+    "jobs": "tsx --env-file=.env.selfhosted src/jobs.ts",
     "secrets:generate": "node scripts/generate-secrets.mjs",
     "bootstrap": "tsx --env-file=.env.selfhosted scripts/bootstrap.mjs",
     "migrate:selfhosted": "node --env-file=.env.selfhosted --import tsx scripts/migrate.mjs",
@@ -36,6 +38,7 @@
     "@aws-sdk/client-sesv2": "^3.1096.0",
     "@aws-sdk/s3-request-presigner": "^3.670.0",
     "@electric-sql/pglite": "^0.5.4",
+    "nodemailer": "^10.1.0",
     "pdf-lib": "^1.17.1",
     "pg": "^8.13.0",
     "zod": "4.6.6"
@@ -43,6 +46,7 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.7.5",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.11.10",
     "esbuild": "^0.25.0",
     "serverless": "^3.39.0",

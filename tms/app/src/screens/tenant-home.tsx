@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { Alert, Button, Card, EmptyState, Spinner } from '@hlonie/toolbox/ui';
+import { Alert, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Ledger } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate } from '../lib/format';
 import { currentUser } from '../lib/session';
+import { QueryState } from '../components/query-state';
 
 interface LeaseRow {
-  id: string; ref: string; unit: string; endDate: string;
+  id: string; ref: string; status: string; unit: string; startDate: string; endDate: string;
   monthlyRentCents: number; depositBalanceCents: number; outstandingCents: number;
   openTickets: number; terminationEffectiveOn: string | null; renewalOffered: boolean;
 }
@@ -21,14 +22,19 @@ interface LeaseRow {
  */
 export function TenantHome() {
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leases'],
     queryFn: () => api.get<{ items: LeaseRow[] }>('/leases'),
   });
 
-  if (isLoading) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your home" />;
+  }
 
-  const lease = data?.items[0];
+  // The list is newest first, so an accepted renewal that has not started yet would otherwise
+  // take over the home screen, with a zero deposit and none of the current lease's invoices.
+  const lease = data.items.find((item) => item.status === 'active') ?? data.items[0];
+  const upcoming = data.items.find((item) => item.status === 'scheduled' && item.id !== lease?.id);
   if (!lease) {
     return (
       <main className="mx-auto max-w-2xl px-5 py-6">
@@ -87,6 +93,15 @@ export function TenantHome() {
           </div>
         </div>
       </section>
+
+      {upcoming ? (
+        <Alert tone="info" title={`Your renewal ${upcoming.ref} starts ${formatDate(upcoming.startDate)}`} className="mb-4">
+          It only starts once you and your landlord have both signed it.{' '}
+          <button type="button" className="font-bold text-brand-500" onClick={() => navigate(`/lease/${upcoming.id}`)}>
+            Open the new lease
+          </button>
+        </Alert>
+      ) : null}
 
       {lease.renewalOffered ? (
         <Alert tone="info" title="You have a renewal offer" className="mb-4">

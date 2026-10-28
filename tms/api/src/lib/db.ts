@@ -97,7 +97,10 @@ export function getPool() {
     user: process.env.DB_USER ?? 'tms_app',
     password: resolvePassword,
     port: Number(process.env.DB_PORT ?? 5432),
-    max: 2,
+    // Two is right for Lambda, where each container serves one request at a time. The
+    // self-hosted server serves many at once, and with two connections a pair of requests
+    // each holding one inside a transaction and waiting for a second never finished.
+    max: Number(process.env.DB_POOL_MAX ?? (isSelfHosted() ? 10 : 2)),
     idleTimeoutMillis: 10_000,
     ssl: sslConfig(),
   });
@@ -141,7 +144,14 @@ const postgresDriver: Driver = {
  * one with no replication and no pg_dump, so self-hosting on it warns once at startup.
  */
 let warnedAboutPglite = false;
-let pglite: Promise<{ query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>; exec(sql: string): Promise<unknown> }> | undefined;
+interface PgliteQueryable {
+  query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+}
+interface PgliteDb extends PgliteQueryable {
+  exec(sql: string): Promise<unknown>;
+  transaction<T>(fn: (tx: PgliteQueryable) => Promise<T>): Promise<T>;
+}
+let pglite: Promise<PgliteDb> | undefined;
 
 function getPglite() {
   if (!allowsLocalDrivers()) {
@@ -173,15 +183,14 @@ const pgliteDriver: Driver = {
   },
   async transaction<T>(fn: (run: typeof query) => Promise<T>) {
     const db = await getPglite();
-    await db.exec('begin');
-    try {
-      const result = await fn(query);
-      await db.exec('commit');
-      return result;
-    } catch (error) {
-      await db.exec('rollback').catch(() => undefined);
-      throw error;
-    }
+    // PGlite is one connection. A bare `begin` on it let every other request's queries run
+    // inside this transaction, and a rollback took their writes with it. Its own transaction()
+    // holds the connection's lock until the callback settles, so the others queue behind it.
+    return db.transaction(async (tx) => {
+      const scoped = async <R>(text: string, params: unknown[] = []) =>
+        (await tx.query(text, params)).rows as R[];
+      return fn(scoped as typeof query);
+    });
   },
 };
 

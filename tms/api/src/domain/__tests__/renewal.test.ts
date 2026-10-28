@@ -124,7 +124,7 @@ describe('renewalTerms', () => {
   });
 
   it('lands a month-end lease on a month end, not the 3rd of March', () => {
-    const terms = renewalTerms({ ...base, currentEndDate: d('2027-01-30'), termMonths: 1 });
+    const terms = renewalTerms({ ...base, offeredOn: d('2027-01-01'), currentEndDate: d('2027-01-30'), termMonths: 1 });
     expect(iso(terms.newStartDate)).toBe('2027-01-31');
     expect(iso(terms.newEndDate)).toBe('2027-02-27');
   });

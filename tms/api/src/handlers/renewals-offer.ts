@@ -3,7 +3,8 @@ import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import { offerRenewalSchema, renewalTerms } from '../domain/renewal';
-import { zar } from '../domain/money';
+import { rentForPeriod, zar } from '../domain/money';
+import { dateFromIso, sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
 
 export const handler = route(async (event) => {
@@ -15,9 +16,9 @@ export const handler = route(async (event) => {
 
   const result = await withTransaction(async (run) => {
     const [lease] = await run<{
-      status: string; end_date: string; monthly_rent_cents: string; escalation_pct: string;
+      status: string; start_date: string; end_date: string; monthly_rent_cents: string; escalation_pct: string;
     }>(
-      `select status, end_date::text, monthly_rent_cents, escalation_pct
+      `select status, start_date::text, end_date::text, monthly_rent_cents, escalation_pct
          from lease where id = $1 for update`,
       [leaseId],
     );
@@ -40,13 +41,22 @@ export const handler = route(async (event) => {
     );
 
     const escalation = input.escalationPct ?? Number(lease.escalation_pct);
+    // The rent payable in the lease's final month, not the figure it started on. Escalating
+    // the base rent gave a two-year lease a renewal at no increase at all.
+    const currentRentCents = rentForPeriod(
+      Number(lease.monthly_rent_cents),
+      Number(lease.escalation_pct),
+      dateFromIso(lease.start_date),
+      dateFromIso(lease.end_date),
+    );
     const terms = renewalTerms({
       currentEndDate: new Date(lease.end_date),
-      currentRentCents: Number(lease.monthly_rent_cents),
+      currentRentCents,
       escalationPct: escalation,
       termMonths: input.termMonths,
       depositHeldCents: Number(held?.balance ?? 0),
-      offeredOn: new Date(),
+      // The South African date, so an offer made just after midnight is not dated yesterday.
+      offeredOn: dateFromIso(sastToday()),
       respondDays: input.respondDays,
     });
     // A landlord may name a figure instead of taking the escalation, but the deposit has to

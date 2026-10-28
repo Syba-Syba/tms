@@ -32,13 +32,8 @@ export const handler = route(async (event) => {
   const key = `applications/${applicationId}/${input.kind}/${crypto.randomUUID()}.${extension}`;
 
   // The browser uploads straight to S3, so a 10 MB payslip never travels through Lambda.
+  // No row yet: the document is on file only once /documents/confirm sees it landed.
   const uploadUrl = await storage().presignPut(key, input.contentType, 300);
-
-  await query(
-    `insert into application_document (application_id, kind, s3_key, content_type, size_bytes)
-     values ($1, $2, $3, $4, $5)`,
-    [applicationId, input.kind, key, input.contentType, input.sizeBytes],
-  );
 
   return json(201, { uploadUrl, key, expiresInSeconds: 300 });
 });

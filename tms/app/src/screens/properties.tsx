@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
-  Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, Drawer, EmptyState, Input, PageHeader, Spinner, useToast,
+  Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, Drawer, EmptyState, Input, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
+import { copyText } from '@hlonie/toolbox/hooks';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
 import { Ledger } from '../components/money';
 import { formatDate, status } from '../lib/format';
+import { QueryState } from '../components/query-state';
 
 interface Unit {
   id: string;
@@ -63,22 +65,34 @@ export function Properties() {
   // Ids the landlord has opened or closed by hand; everything else follows the default.
   const [toggled, setToggled] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['properties'],
     queryFn: () => api.get<{ items: Property[] }>('/properties'),
   });
 
   const copyApplicationLink = async (unit: Unit) => {
     const link = `${window.location.origin}/apply?unit=${unit.id}`;
-    await navigator.clipboard.writeText(link);
-    toast.show({
-      title: 'Application link copied',
-      description: 'Send it to anyone interested; the form opens on this unit.',
-      tone: 'success',
-    });
+    // Over plain HTTP there is no navigator.clipboard; copyText falls back to the selection
+    // API, and when even that fails the link is shown so it can be copied by hand.
+    if (await copyText(link)) {
+      toast.show({
+        title: 'Application link copied',
+        description: 'Send it to anyone interested; the form opens on this unit.',
+        tone: 'success',
+      });
+    } else {
+      toast.show({
+        title: 'Could not copy automatically',
+        description: `Copy this link by hand: ${link}`,
+        tone: 'warning',
+        duration: 15000,
+      });
+    }
   };
 
-  if (isLoading) return <main className="p-16 text-center"><Spinner /></main>;
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your properties" />;
+  }
   const items = data?.items ?? [];
   const totals = items.flatMap((property) => property.units);
   const occupied = totals.filter((unit) => unit.status === 'occupied');

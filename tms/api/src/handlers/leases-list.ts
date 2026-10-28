@@ -37,15 +37,14 @@ export const handler = route(async (event) => {
                        when 'interest' then d.amount_cents
                        else -d.amount_cents end)
                         from deposit_ledger d where d.lease_id = l.id), 0)::text as deposit_balance,
-            -- Open invoices less what has been paid against those same invoices. Subtracting
-            -- every payment on the lease counted months already settled, so any tenant with a
-            -- payment history showed as paid up however much they owed.
-            coalesce((select sum(i.total_cents) from invoice i
-                       where i.lease_id = l.id and i.status in ('issued', 'part_paid'))
-                     - coalesce((select sum(pay.amount_cents) from payment pay
-                                   join invoice pi on pi.id = pay.invoice_id
-                                  where pi.lease_id = l.id and pi.status in ('issued', 'part_paid')), 0),
-                     0)::text as outstanding,
+            -- Each open invoice less the payments made against it. Subtracting every payment
+            -- the lease ever received from only the unpaid invoices made arrears vanish as
+            -- soon as any earlier invoice had been paid.
+            coalesce((select sum(i.total_cents - coalesce((select sum(pay.amount_cents)
+                                                            from payment pay
+                                                           where pay.invoice_id = i.id), 0))
+                        from invoice i
+                       where i.lease_id = l.id and i.status in ('issued', 'part_paid')), 0)::text as outstanding,
             (select count(*) from ticket t
               where t.lease_id = l.id
                 and t.status not in ('closed', 'cancelled'))::text as open_tickets,

@@ -96,6 +96,10 @@ const addMonths = (date: Date, months: number) => {
  * The renewal starts the day after the current lease ends, so there is no gap and no overlap.
  * Rent carries the agreed escalation. The deposit is topped up to match the new rent rather
  * than refunded and recollected, because the tenant is not moving and the interest keeps running.
+ *
+ * A tenant holding over (the end date has passed) cannot start a lease in the past: the offer
+ * had expired the moment it was made. The renewal then starts on the first of the month once
+ * the full response time has run, and the tenant carries on month to month until then.
  */
 export function renewalTerms(input: {
   currentEndDate: Date;
@@ -107,16 +111,20 @@ export function renewalTerms(input: {
   respondDays?: number;
 }): RenewalTerms {
   const termMonths = input.termMonths ?? DEFAULT_TERM_MONTHS;
-  const newStartDate = new Date(input.currentEndDate.getTime() + 86400000);
+  const offeredDay = utc(input.offeredOn.getUTCFullYear(), input.offeredOn.getUTCMonth(), input.offeredOn.getUTCDate());
+  const respondFull = new Date(offeredDay.getTime() + (input.respondDays ?? DEFAULT_RESPOND_DAYS) * 86400000);
+  const dayAfterEnd = new Date(input.currentEndDate.getTime() + 86400000);
+  const holdingOver = dayAfterEnd <= offeredDay;
+
+  const newStartDate = holdingOver
+    ? respondFull.getUTCDate() === 1
+      ? respondFull
+      : utc(respondFull.getUTCFullYear(), respondFull.getUTCMonth() + 1, 1)
+    : dayAfterEnd;
   const newEndDate = new Date(addMonths(newStartDate, termMonths).getTime() - 86400000);
   const newRentCents = Math.round(input.currentRentCents * (1 + input.escalationPct / 100));
 
-  const respondBy = new Date(
-    Math.min(
-      input.offeredOn.getTime() + (input.respondDays ?? DEFAULT_RESPOND_DAYS) * 86400000,
-      newStartDate.getTime(),
-    ),
-  );
+  const respondBy = new Date(Math.min(respondFull.getTime(), newStartDate.getTime()));
 
   return {
     newStartDate,

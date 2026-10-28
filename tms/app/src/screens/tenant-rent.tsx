@@ -7,6 +7,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { formatDate, status } from '../lib/format';
+import { QueryState } from '../components/query-state';
 
 interface Proof {
   id: string;
@@ -60,7 +61,7 @@ export function TenantRent() {
   const { leaseId } = useParams();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { data } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['statement', leaseId],
     queryFn: () => api.get<Statement>(`/leases/${leaseId}/statement`),
   });
@@ -132,6 +133,10 @@ export function TenantRent() {
       setBusy(false);
     }
   };
+
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your statement" />;
+  }
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">

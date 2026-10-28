@@ -18,10 +18,22 @@ export const handler = route(async (event) => {
   if (event.requestContext.http.method === 'DELETE') {
     const deductionId = event.pathParameters?.deductionId;
     if (!deductionId) throw badRequest('A deduction id is required.');
-    await query('delete from deposit_deduction where id = $1 and termination_id = $2', [
-      deductionId,
-      terminationId,
-    ]);
+    await withTransaction(async (run) => {
+      const [termination] = await run<{ status: string }>(
+        'select status from termination where id = $1 for update',
+        [terminationId],
+      );
+      if (!termination) throw notFound('Termination');
+      // The statement and the ledger were written from these rows. Removing one afterwards
+      // would leave the sealed statement claiming a deduction the list no longer shows.
+      if (termination.status === 'settled') {
+        throw conflict('This deposit is already settled, so its deductions are fixed.');
+      }
+      await run('delete from deposit_deduction where id = $1 and termination_id = $2', [
+        deductionId,
+        terminationId,
+      ]);
+    });
     return json(200, { removed: true });
   }
 
@@ -50,7 +62,7 @@ export const handler = route(async (event) => {
           where f.id = $1 and t.id = $2 and i.kind = 'outgoing'`,
         [input.findingId, terminationId],
       );
-      if (!finding) throw badRequest('That finding is not on this lease\u2019s outgoing inspection.');
+      if (!finding) throw badRequest('That finding is not on this lease’s outgoing inspection.');
       if (!['poor', 'damaged', 'missing'].includes(finding.condition)) {
         throw badRequest('Only a poor, damaged or missing item supports a deduction.');
       }
@@ -66,6 +78,29 @@ export const handler = route(async (event) => {
           'This item is one condition step below how it came in, which is fair wear and tear rather than damage.',
         );
       }
+    }
+
+    // The evidence key is stored as given and /files/view later treats any row holding a key
+    // as authorisation to serve it. So it has to be a photo that already belongs to this
+    // lease: an inspection photo or a ticket photo, uploaded. Anything else (a signature
+    // image, another lease's document, a made-up path) is refused.
+    if (input.evidenceS3Key) {
+      const [evidence] = await run<{ ok: boolean }>(
+        `select exists (
+           select 1 from inspection_photo p
+             join inspection_finding f on f.id = p.finding_id
+             join inspection i on i.id = f.inspection_id
+             join termination t on t.lease_id = i.lease_id
+            where t.id = $1 and p.s3_key = $2 and p.uploaded
+           union all
+           select 1 from ticket_photo p
+             join ticket tk on tk.id = p.ticket_id
+             join termination t on t.lease_id = tk.lease_id
+            where t.id = $1 and p.s3_key = $2 and p.uploaded
+         ) as ok`,
+        [terminationId, input.evidenceS3Key],
+      );
+      if (!evidence?.ok) throw badRequest('Evidence must be a photo on this lease.', { evidenceS3Key: 'Not a photo on this lease.' });
     }
 
     const [row] = await run<{ id: string }>(

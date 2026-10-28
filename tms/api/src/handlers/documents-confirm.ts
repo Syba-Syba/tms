@@ -1,0 +1,76 @@
+import { z } from 'zod';
+import { requireApplicationAccess } from '../lib/access';
+import { withTransaction } from '../lib/db';
+import { storage } from '../lib/storage';
+import { badRequest, json, notFound, parseBody, route } from '../lib/http';
+import { sniffImageType } from '../lib/images';
+
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+const schema = z.object({ key: z.string().min(1).max(300) });
+
+const KEY = /^applications\/([0-9a-f-]{36})\/(id_copy|payslip|bank_statement|proof_of_address|other)\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
+
+const isPdf = (bytes: Uint8Array) =>
+  bytes.length >= 5 && Buffer.from(bytes.subarray(0, 5)).toString('latin1') === '%PDF-';
+
+/** The client calls this after the PUT succeeds. Only a confirmed upload is on file for the
+    landlord, so a failed PUT no longer shows as a document that does not exist. */
+export const handler = route(async (event) => {
+  const applicationId = event.pathParameters?.id;
+  if (!applicationId) throw badRequest('An application id is required.');
+  const input = parseBody(event, schema);
+
+  await requireApplicationAccess(event, applicationId);
+
+  const parts = KEY.exec(input.key);
+  if (!parts || parts[1] !== applicationId) throw badRequest('That upload is not for this application.');
+  const kind = parts[2]!;
+
+  let size: number | null;
+  try {
+    size = await storage().sizeOf(input.key);
+  } catch {
+    size = null;
+  }
+  if (size === null) throw badRequest('That upload has not landed yet. Retry the upload, then confirm.');
+  // A presigned PUT does not bind the body to the declared size, so the ceiling is checked here.
+  if (size > MAX_DOCUMENT_BYTES) throw badRequest('Files must be under 10 MB.');
+
+  // The stored type follows the bytes, not the label the client sent.
+  const bytes = await storage().get(input.key);
+  const image = sniffImageType(bytes);
+  const contentType = image === 'png' ? 'image/png' : image === 'jpg' ? 'image/jpeg' : isPdf(bytes) ? 'application/pdf' : null;
+  if (!contentType) throw badRequest('That upload is not a JPEG, PNG or PDF.');
+
+  await withTransaction(async (run) => {
+    const [application] = await run<{ status: string }>(
+      'select status from application where id = $1 for update',
+      [applicationId],
+    );
+    if (!application) throw notFound('Application');
+    if (!['draft', 'submitted', 'screening'].includes(application.status)) {
+      throw badRequest('This application is closed to new documents.');
+    }
+    // A confirm sent twice is one document.
+    const [existing] = await run<{ id: string }>(
+      'select id from application_document where s3_key = $1',
+      [input.key],
+    );
+    if (existing) return;
+    // The upload screen keeps one document per kind, so Replace supersedes the earlier one.
+    if (kind !== 'other') {
+      await run('delete from application_document where application_id = $1 and kind = $2', [
+        applicationId,
+        kind,
+      ]);
+    }
+    await run(
+      `insert into application_document (application_id, kind, s3_key, content_type, size_bytes)
+       values ($1, $2, $3, $4, $5)`,
+      [applicationId, kind, input.key, contentType, size],
+    );
+  });
+
+  return json(200, { confirmed: true });
+});

@@ -7,6 +7,12 @@ export interface SignaturePadHandle {
   toDataUrl: (type?: string) => string;
 }
 
+/**
+ * Below this much ink, in CSS pixels, the pad still counts as blank. A stray tap on the way
+ * to the button used to count as a signature, and a transparent PNG went into the lease.
+ */
+const MIN_STROKE_LENGTH = 20;
+
 /** Draws like a paper form: a baseline with an X, so people sign where they expect to. */
 export const SignaturePad = forwardRef<
   SignaturePadHandle,
@@ -14,7 +20,8 @@ export const SignaturePad = forwardRef<
 >(function SignaturePad({ height = 180, onEnd, className }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
-  const empty = useRef(true);
+  const inked = useRef(0);
+  const last = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,14 +45,16 @@ export const SignaturePad = forwardRef<
     const down = (event: PointerEvent) => {
       canvas.setPointerCapture(event.pointerId);
       drawing.current = true;
-      empty.current = false;
       const { x, y } = point(event);
+      last.current = { x, y };
       ctx.beginPath();
       ctx.moveTo(x, y);
     };
     const move = (event: PointerEvent) => {
       if (!drawing.current) return;
       const { x, y } = point(event);
+      inked.current += Math.hypot(x - last.current.x, y - last.current.y);
+      last.current = { x, y };
       ctx.lineTo(x, y);
       ctx.stroke();
     };
@@ -72,9 +81,9 @@ export const SignaturePad = forwardRef<
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-      empty.current = true;
+      inked.current = 0;
     },
-    isEmpty: () => empty.current,
+    isEmpty: () => inked.current < MIN_STROKE_LENGTH,
     toDataUrl: (type = 'image/png') => canvasRef.current?.toDataURL(type) ?? '',
   }));
 

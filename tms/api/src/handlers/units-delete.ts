@@ -43,14 +43,17 @@ export const handler = route(async (event) => {
     }
 
     await run('delete from unit where id = $1', [unitId]);
-    await audit({
-      actorSub: person.sub,
-      actorRole: 'landlord',
-      action: 'unit.deleted',
-      entity: 'unit',
-      entityId: unitId,
-      detail: { code: unit.code },
-    });
+    await audit(
+      {
+        actorSub: person.sub,
+        actorRole: 'landlord',
+        action: 'unit.deleted',
+        entity: 'unit',
+        entityId: unitId,
+        detail: { code: unit.code },
+      },
+      run,
+    );
   });
 
   return json(200, { removed: true });

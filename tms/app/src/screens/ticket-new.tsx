@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
-import { Camera, CameraResultType } from '@capacitor/camera';
 import { Button, Card, CardBody, PageHeader, SegmentedControl, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { TextField } from '@hlonie/toolbox/forms';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
+import { pickPhoto, putFile, type PickedPhoto } from '../lib/photos';
+import { uploadPending } from '../lib/uploads';
 
 const CATEGORIES = [
   { value: 'plumbing', label: 'Plumbing' },
@@ -26,17 +28,60 @@ export function TicketNew() {
   const { leaseId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { control, handleSubmit, formState } = useForm<{ title: string; description: string }>();
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]['value']>('plumbing');
   const [severity, setSeverity] = useState<keyof typeof SLA_COPY>('routine');
-  const [photos, setPhotos] = useState<{ src: string; state: UploadState }[]>([]);
+  const [photos, setPhotos] = useState<{ photo: PickedPhoto; state: UploadState }[]>([]);
 
   const capture = async () => {
-    const photo = await Camera.getPhoto({ quality: 70, width: 1600, resultType: CameraResultType.DataUrl });
-    if (photo.dataUrl) setPhotos((current) => [...current, { src: photo.dataUrl!, state: 'queued' }]);
+    try {
+      const photo = await pickPhoto();
+      if (photo) setPhotos((current) => [...current, { photo, state: 'queued' }]);
+    } catch (error) {
+      toast.show({ title: 'Could not read that photo', description: humanError(error), tone: 'danger' });
+    }
+  };
+
+  // Set once the report is in. A photo that failed stays here to retry: the ticket screen
+  // cannot add photos, so leaving would lose it.
+  const [ticketId, setTicketId] = useState<string | null>(null);
+
+  const uploadPhotos = async (id: string) =>
+    uploadPending(
+      photos,
+      async (entry) => {
+        const { uploadUrl, photoId } = await api.post<{ uploadUrl: string; photoId: string }>(
+          `/tickets/${id}/photos/presign`,
+          { phase: 'report', contentType: entry.photo.contentType, sizeBytes: entry.photo.blob.size },
+        );
+        await putFile(uploadUrl, entry.photo.blob, entry.photo.contentType);
+        await api.post('/photos/confirm', { scope: 'ticket', photoId });
+      },
+      (index, state) => setPhotos((current) => current.map((p, i) => (i === index ? { ...p, state } : p))),
+    );
+
+  const finish = (id: string, failed: number) => {
+    queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    queryClient.invalidateQueries({ queryKey: ['leases'] });
+    if (failed) {
+      setTicketId(id);
+      toast.show({
+        title: 'Reported',
+        description: `${failed} photo${failed === 1 ? '' : 's'} did not upload. Retry here, or finish without ${failed === 1 ? 'it' : 'them'}.`,
+        tone: 'warning',
+      });
+      return;
+    }
+    toast.show({ title: ticketId ? 'Photos added' : 'Reported', description: SLA_COPY[severity], tone: 'success' });
+    navigate(-1);
   };
 
   const submit = handleSubmit(async (values) => {
+    if (ticketId) {
+      finish(ticketId, await uploadPhotos(ticketId));
+      return;
+    }
     try {
       const ticket = await api.post<{ id: string }>(`/leases/${leaseId}/tickets`, {
         category,
@@ -44,18 +89,7 @@ export function TicketNew() {
         ...values,
       });
       // Photos upload after creation so a dropped connection never loses the written report.
-      for (const [index, photo] of photos.entries()) {
-        const blob = await (await fetch(photo.src)).blob();
-        const { uploadUrl, photoId } = await api.post<{ uploadUrl: string; photoId: string }>(
-          `/tickets/${ticket.id}/photos/presign`,
-          { phase: 'report', contentType: 'image/jpeg', sizeBytes: blob.size },
-        );
-        await fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'content-type': 'image/jpeg' } });
-        await api.post('/photos/confirm', { scope: 'ticket', photoId });
-        setPhotos((current) => current.map((p, i) => (i === index ? { ...p, state: 'synced' } : p)));
-      }
-      toast.show({ title: 'Reported', description: SLA_COPY[severity], tone: 'success' });
-      navigate(-1);
+      finish(ticket.id, await uploadPhotos(ticket.id));
     } catch (error) {
       toast.show({ title: 'Not sent', description: humanError(error), tone: 'danger' });
     }
@@ -99,16 +133,21 @@ export function TicketNew() {
             required
           />
           <div className="flex gap-2">
-            {photos.map((photo, index) => (
-              <UploadTile key={index} className="w-16" src={photo.src} state={photo.state} />
+            {photos.map((entry, index) => (
+              <UploadTile key={index} className="w-16" src={entry.photo.dataUrl} state={entry.state} />
             ))}
             <Button variant="outline" size="sm" onClick={capture}>
               Add photo
             </Button>
           </div>
           <Button block loading={formState.isSubmitting} onClick={submit}>
-            Send report
+            {ticketId ? 'Retry photos' : 'Send report'}
           </Button>
+          {ticketId ? (
+            <Button block variant="outline" disabled={formState.isSubmitting} onClick={() => navigate(-1)}>
+              Finish without them
+            </Button>
+          ) : null}
         </CardBody>
       </Card>
     </main>

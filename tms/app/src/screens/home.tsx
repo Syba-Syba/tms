@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { Badge, Card, CardBody, EmptyState, Input, PageHeader, Spinner } from '@hlonie/toolbox/ui';
+import { Badge, Card, CardBody, EmptyState, Input, PageHeader } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api } from '../api/client';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, status } from '../lib/format';
+import { QueryState } from '../components/query-state';
 import { isLandlord } from '../lib/session';
 import { TenantHome } from './tenant-home';
 
@@ -81,11 +82,15 @@ function LandlordHome() {
     queryFn: () => api.get<{ items: { status: string }[] }>('/privacy-requests'),
   });
 
-  if (leases.isLoading) {
+  if (!leases.data) {
     return (
-      <main className="mx-auto flex max-w-6xl justify-center px-4 py-16">
-        <Spinner />
-      </main>
+      <QueryState
+        isLoading={leases.isLoading}
+        isError={leases.isError}
+        error={leases.error}
+        onRetry={leases.refetch}
+        what="Your units"
+      />
     );
   }
 

@@ -3,7 +3,7 @@ import { cn } from '../lib/cn';
 
 /** A reference the reader may need to type into a bank app: label above, value in mono. Click copies. */
 export function TagField({ label, value, className }: { label: string; value: string; className?: string }) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, failed, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
@@ -14,8 +14,9 @@ export function TagField({ label, value, className }: { label: string; value: st
         className,
       )}
     >
-      <span className="text-[12px] text-ink-muted">{copied ? 'Copied' : label}</span>
-      <span className="font-mono text-[15px] font-medium text-ink">{value}</span>
+      <span className="text-[12px] text-ink-muted">{copied ? 'Copied' : failed ? 'Select to copy' : label}</span>
+      {/* select-all so a failed copy still leaves the value one long-press from the clipboard. */}
+      <span className="select-all font-mono text-[15px] font-medium text-ink">{value}</span>
     </button>
   );
 }

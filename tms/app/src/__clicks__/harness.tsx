@@ -170,7 +170,6 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
         await call('POST', `/leases/${leaseId}/signature`, {
           party: 'landlord',
           signatureBase64: SIG,
-          otpVerified: true,
           pdfSha256: lease.pdfSha256,
         });
       }
@@ -185,7 +184,6 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
         await call('POST', `/leases/${leaseId}/signature`, {
           party: 'tenant',
           signatureBase64: SIG,
-          otpVerified: true,
           pdfSha256: lease.pdfSha256,
         });
         localStorage.setItem('CapacitorStorage.id_token', landlordToken);

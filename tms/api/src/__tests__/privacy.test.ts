@@ -191,8 +191,15 @@ describe('erasure', () => {
 describe('retention sweep', () => {
   it('purges paperwork of applicants declined over a year ago, and keeps the rest', async () => {
     const { as } = await register('Old Applicant', 'old-applicant@example.co.za', PRIVACY_VERSION);
+    // One open application per unit, so the second goes to a unit of its own.
+    const [unit] = await db.query<{ id: string }>(
+      `insert into unit (property_id, code, bedrooms, bathrooms, monthly_rent_cents, deposit_cents)
+       values ('22222222-2222-2222-2222-222222222222', 'C9', 1, 1, 500000, 500000) returning id`,
+    );
     const old = await apply(as!, { email: 'old-applicant@example.co.za' });
-    const recent = await apply(as!, { email: 'old-applicant@example.co.za' });
+    const recent = await apply(as!, { email: 'old-applicant@example.co.za', unitId: unit!.id });
+    expect(old.status).toBe(201);
+    expect(recent.status).toBe(201);
     for (const id of [old.body.id, recent.body.id]) {
       await db.query(
         `insert into application_document (application_id, kind, s3_key, content_type, size_bytes)

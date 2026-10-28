@@ -271,7 +271,18 @@ describe('documents come back out', () => {
     });
     expect(presigned.status).toBe(201);
     // Standing in for the browser's direct upload.
-    await storageLib.storage().put(presigned.body.key, new Uint8Array([9, 9]), 'application/pdf');
+    await storageLib.storage().put(
+      presigned.body.key,
+      new Uint8Array(Buffer.from('%PDF-1.4\n%%EOF\n', 'latin1')),
+      'application/pdf',
+    );
+    // A document is on file only once its upload is confirmed.
+    const confirmed = await call('POST', `/applications/${application.body.id}/documents/confirm`, {
+      sub: 'sub-fresh-applicant',
+      groups: 'tenant',
+      body: { key: presigned.body.key },
+    });
+    expect(confirmed.status).toBe(200);
 
     const asLandlord = await call('GET', `/applications/${application.body.id}/documents`);
     expect(asLandlord.status).toBe(200);

@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
@@ -8,6 +8,7 @@ import { credentialVersion, verifyToken } from './lib/authtoken';
 import { query } from './lib/db';
 import { logger } from './lib/logger';
 import { assertSelfHostedConfig, mode } from './lib/mode';
+import { startScheduler } from './lib/scheduler';
 import { localPathFor, verifyLocalSignature } from './lib/storage';
 
 /**
@@ -35,6 +36,13 @@ const PORT = Number(process.env.PORT ?? 3001);
 // tenant database on the local network the first time anyone ran this.
 const HOST = process.env.HOST ?? '127.0.0.1';
 const WEB_ROOT = resolve(process.env.WEB_ROOT ?? '../app/dist');
+/**
+ * Behind a reverse proxy every connection comes from the proxy's own address, so the sign-in
+ * rate limit locked everyone out together and every signature recorded the proxy. Only on
+ * an explicit opt-in: a client can write any X-Forwarded-For it likes when there is no proxy.
+ */
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+const RUN_JOBS = process.env.RUN_JOBS !== 'false';
 
 /**
  * A signature and an expiry only say the token was issued once. This also says it was issued
@@ -45,11 +53,11 @@ const WEB_ROOT = resolve(process.env.WEB_ROOT ?? '../app/dist');
 async function currentUser(token: string) {
   const user = verifyToken(token);
   if (!user?.pv) return null;
-  const [row] = await query<{ password_hash: string }>(
-    'select password_hash from local_credential where sub = $1',
+  const [row] = await query<{ password_hash: string; session_epoch: number }>(
+    'select password_hash, session_epoch from local_credential where sub = $1',
     [user.sub],
   );
-  return row && credentialVersion(row.password_hash) === user.pv ? user : null;
+  return row && credentialVersion(row.password_hash, row.session_epoch) === user.pv ? user : null;
 }
 
 /** The only routes that answer without a token, because they are how you get one. */
@@ -132,38 +140,61 @@ const readBody = (request: IncomingMessage, limit: number) =>
     request.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
-        // A lying or absent content-length is caught here, mid-stream.
+        // A lying or absent content-length is caught here, mid-stream. The stream is paused,
+        // not destroyed, so the 413 reaches the client before the socket goes.
+        request.pause();
         reject(new BodyTooLarge());
-        request.destroy();
         return;
       }
       chunks.push(chunk);
     });
     request.on('end', () => resolve_(Buffer.concat(chunks)));
     request.on('error', reject);
+    request.on('aborted', () => reject(new Error('Request aborted by the client.')));
   });
 
-const tooLarge = (response: import('node:http').ServerResponse, limit: number) =>
-  sendJson(response, 413, {
-    error: { code: 'too_large', message: `Requests are limited to ${Math.round(limit / 1024 / 1024)} MB.` },
-  });
-
-const sendJson = (response: import('node:http').ServerResponse, status: number, body: unknown) => {
+const sendJson = (response: ServerResponse, status: number, body: unknown) => {
+  if (response.headersSent) return;
   const text = JSON.stringify(body);
   response.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) });
   response.end(text);
 };
 
+const tooLarge = (request: IncomingMessage, response: ServerResponse, limit: number) => {
+  sendJson(response, 413, {
+    error: { code: 'too_large', message: `Requests are limited to ${Math.round(limit / 1024 / 1024)} MB.` },
+  });
+  // The rest of the body is never read; close once the answer is on the wire.
+  response.once('finish', () => request.destroy());
+};
+
+/**
+ * The address a request came from, as the rate limiter and the signature records see it.
+ * Proxies append to X-Forwarded-For, so only the last entry is the one our own proxy wrote;
+ * anything to its left came from the client and can be forged. This assumes one proxy hop.
+ */
+function clientAddress(request: IncomingMessage): string {
+  if (TRUST_PROXY) {
+    const hops = String(request.headers['x-forwarded-for'] ?? '')
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    const forwarded = hops[hops.length - 1];
+    if (forwarded) return forwarded;
+  }
+  return request.socket.remoteAddress ?? '127.0.0.1';
+}
+
 /** A top-level page load or refresh, as opposed to a fetch() from the running app. */
 function isPageLoad(request: Pick<IncomingMessage, 'headers'>): boolean {
-  const mode = request.headers['sec-fetch-mode'];
-  if (mode) return mode === 'navigate';
+  const fetchMode = request.headers['sec-fetch-mode'];
+  if (fetchMode) return fetchMode === 'navigate';
   // Older browsers send no fetch metadata; a page load is the only GET that asks for HTML first.
   return /^text\/html/i.test(String(request.headers.accept ?? ''));
 }
 
 /** Serves the built SPA. Unknown paths fall through to index.html so client routing works. */
-async function serveWeb(pathname: string, response: import('node:http').ServerResponse) {
+async function serveWeb(pathname: string, response: ServerResponse) {
   const candidate = resolve(WEB_ROOT, `.${pathname}`);
   // A request for ../../etc/passwd must not escape the web root.
   const inside = candidate === WEB_ROOT || candidate.startsWith(WEB_ROOT + sep);
@@ -184,11 +215,7 @@ async function serveWeb(pathname: string, response: import('node:http').ServerRe
 }
 
 /** Signed GET and PUT under /files, the on-disk stand-in for presigned S3 URLs. */
-async function serveFile(
-  request: IncomingMessage,
-  response: import('node:http').ServerResponse,
-  url: URL,
-) {
+async function serveFile(request: IncomingMessage, response: ServerResponse, url: URL) {
   const key = url.pathname.slice('/files/'.length).split('/').map(decodeURIComponent).join('/');
   const method = request.method === 'PUT' ? 'PUT' : 'GET';
   const ok = verifyLocalSignature(
@@ -209,7 +236,7 @@ async function serveFile(
       try {
         body = await readBody(request, FILE_LIMIT);
       } catch (error) {
-        if (error instanceof BodyTooLarge) return tooLarge(response, FILE_LIMIT);
+        if (error instanceof BodyTooLarge) return tooLarge(request, response, FILE_LIMIT);
         throw error;
       }
       await writeFile(path, body);
@@ -222,6 +249,9 @@ async function serveFile(
         'content-length': bytes.length,
         // A signed link to someone's lease must not be cached by a shared proxy.
         'cache-control': 'private, no-store',
+        // Uploads are displayed by the app, never run as a page. An HTML or SVG file that
+        // reached storage under a photo's key must not execute on this origin.
+        'content-security-policy': "default-src 'none'; sandbox",
       });
       response.end(bytes);
     }
@@ -230,7 +260,7 @@ async function serveFile(
   }
 }
 
-createServer(async (request, response) => {
+async function handle(request: IncomingMessage, response: ServerResponse) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
   const method = request.method ?? 'GET';
   const started = Date.now();
@@ -285,7 +315,7 @@ createServer(async (request, response) => {
     try {
       body = (await readBody(request, JSON_LIMIT)).toString('utf8');
     } catch (error) {
-      if (error instanceof BodyTooLarge) return tooLarge(response, JSON_LIMIT);
+      if (error instanceof BodyTooLarge) return tooLarge(request, response, JSON_LIMIT);
       throw error;
     }
   }
@@ -304,7 +334,7 @@ createServer(async (request, response) => {
       http: {
         method,
         path: url.pathname,
-        sourceIp: request.socket.remoteAddress ?? '127.0.0.1',
+        sourceIp: clientAddress(request),
         userAgent: headers['user-agent'] ?? 'self-hosted',
       },
       authorizer: user
@@ -319,35 +349,77 @@ createServer(async (request, response) => {
     },
   } as unknown as APIGatewayProxyEventV2WithJWTAuthorizer;
 
-  try {
-    const result = (await api(event)) as {
-      statusCode: number;
-      headers?: Record<string, string>;
-      body?: string;
-    };
-    response.writeHead(result.statusCode, {
-      'content-type': 'application/json',
-      // The API answers with data belonging to one signed-in person.
-      'cache-control': 'private, no-store',
-      ...result.headers,
-    });
-    response.end(result.body ?? '');
-    logger.info('Request completed.', {
-      status: result.statusCode,
-      method,
-      path: url.pathname,
-      durationMs: Date.now() - started,
-    });
-  } catch (error) {
-    logger.error('Unhandled failure.', { error, method, path: url.pathname });
+  const result = (await api(event)) as {
+    statusCode: number;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+  response.writeHead(result.statusCode, {
+    'content-type': 'application/json',
+    // The API answers with data belonging to one signed-in person.
+    'cache-control': 'private, no-store',
+    ...result.headers,
+  });
+  response.end(result.body ?? '');
+  logger.info('Request completed.', {
+    status: result.statusCode,
+    method,
+    path: url.pathname,
+    durationMs: Date.now() - started,
+  });
+}
+
+/**
+ * Everything a request does runs inside this one catch. The URL parse, the static file reads
+ * and the body read all used to sit outside the try block around the API call, so a malformed
+ * path or a connection dropped mid-upload became an unhandled rejection, and Node's answer to
+ * that is to exit: one bad request took the whole site down for every tenant.
+ */
+const server = createServer((request, response) => {
+  handle(request, response).catch((error: unknown) => {
+    logger.error('Unhandled failure.', { error, method: request.method, path: request.url });
     sendJson(response, 500, {
       error: { code: 'internal_error', message: 'Something went wrong on our side.' },
     });
+    if (!response.writableEnded) response.end();
+  });
+});
+
+// A client that sends garbage before the request line gets a plain 400 instead of an
+// exception on the server; a socket that errors is just closed.
+server.on('clientError', (error: NodeJS.ErrnoException, socket) => {
+  if (error.code === 'ECONNRESET' || !socket.writable) {
+    socket.destroy();
+    return;
   }
-}).listen(PORT, HOST, () => {
+  socket.end('HTTP/1.1 400 Bad Request\r\nconnection: close\r\n\r\n');
+});
+
+// Belt and braces: nothing above should reach here, and if something does the log line is
+// worth more than a dead process.
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection.', { error: reason });
+});
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception.', { error });
+});
+
+server.listen(PORT, HOST, () => {
   logger.info('Self-hosted API and web app started.', {
     url: `http://${HOST}:${PORT}`,
     webRoot: WEB_ROOT,
     database: process.env.DB_DRIVER === 'pglite' ? 'pglite' : 'postgres',
+    trustProxy: TRUST_PROXY,
+    jobs: RUN_JOBS ? 'in-process' : 'external (RUN_JOBS=false)',
   });
+  if (RUN_JOBS) startScheduler();
 });
+
+const shutdown = (signal: string) => {
+  logger.info('Stopping.', { signal });
+  server.close(() => process.exit(0));
+  // In-flight requests get a moment; a stuck one does not get to keep the port.
+  setTimeout(() => process.exit(0), 5_000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

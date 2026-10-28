@@ -45,6 +45,9 @@ export default defineConfig(({ command, mode }) => {
         // Documents are large and private, so only the shell is precached.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
+        // A signed document link opens in a new tab, which is a navigation. Without this the
+        // service worker answered it with the app shell instead of the PDF.
+        navigateFallbackDenylist: [/^\/files\//, /^\/auth\//],
       },
     }),
   ],

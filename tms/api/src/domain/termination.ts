@@ -105,11 +105,30 @@ export type TerminationReason = keyof typeof NOTICE_BUSINESS_DAYS;
 export const serveNoticeSchema = z.object({
   initiatedBy: z.enum(['tenant', 'landlord', 'mutual']),
   reason: z.enum(['end_of_term', 'early_tenant', 'breach_by_tenant', 'breach_by_landlord', 'mutual']),
-  noticeGivenOn: z.coerce.date(),
+  // The tenant's notice is dated the day it is served, whatever the client sends; a landlord
+  // may record one received up to a month ago. Omitted, it is today.
+  noticeGivenOn: z.coerce.date().optional(),
   // Only supplied when the parties agree a later date than the minimum.
   effectiveOn: z.coerce.date().optional(),
   penaltyCents: z.number().int().min(0).optional(),
 });
+
+/** CPA s14(2)(d): a fixed term that runs past its end date carries on month to month, and
+    either party ends it on 20 business days' notice. */
+export const HOLDOVER_NOTICE_BUSINESS_DAYS = 20;
+
+/** How far past the lease end (or the earliest date, once the lease has run out) an agreed
+    or month-to-month end date may go. Anything later is a new lease, not a notice. */
+export const LATEST_AFTER_END_DAYS = 31;
+
+const runOut = (noticeGivenOn: Date, leaseEnd: Date) => leaseEnd <= noticeGivenOn;
+
+/** The business days of notice this notice needs. A lease past its end date is month to month,
+    so even 'end_of_term' needs the full 20 days then. */
+export function noticeBusinessDays(reason: TerminationReason, noticeGivenOn: Date, leaseEnd: Date): number {
+  if (reason !== 'mutual' && runOut(noticeGivenOn, leaseEnd)) return HOLDOVER_NOTICE_BUSINESS_DAYS;
+  return NOTICE_BUSINESS_DAYS[reason];
+}
 
 /** The earliest lawful end date. A lease cannot end before its notice period runs out, and an
     early cancellation cannot run past the lease end date either. */
@@ -118,13 +137,27 @@ export function earliestEffectiveDate(
   noticeGivenOn: Date,
   leaseEnd: Date,
 ): Date {
-  // Notice served after the lease has already run out ends it immediately. Returning the
-  // lease end date here would put the effective date before the notice date, which the
-  // database rejects outright and the caller would only ever see as a 500.
-  if (leaseEnd <= noticeGivenOn) return noticeGivenOn;
+  // Notice served after the lease has already run out: it is month to month by then, so the
+  // notice period runs from the notice date. Ending it that same day was a same-day exit.
+  if (runOut(noticeGivenOn, leaseEnd)) {
+    return reason === 'mutual' ? noticeGivenOn : addBusinessDays(noticeGivenOn, HOLDOVER_NOTICE_BUSINESS_DAYS);
+  }
   if (reason === 'end_of_term') return leaseEnd;
   const afterNotice = addBusinessDays(noticeGivenOn, NOTICE_BUSINESS_DAYS[reason]);
   return afterNotice > leaseEnd ? leaseEnd : afterNotice;
+}
+
+/** The latest end date a notice may name. A one-sided notice ends the lease by its end date at
+    the latest; only an agreed one, or a lease already month to month, goes a little past it. */
+export function latestEffectiveDate(
+  reason: TerminationReason,
+  noticeGivenOn: Date,
+  leaseEnd: Date,
+): Date {
+  if (reason !== 'mutual' && !runOut(noticeGivenOn, leaseEnd)) return leaseEnd;
+  const earliest = earliestEffectiveDate(reason, noticeGivenOn, leaseEnd);
+  const from = earliest > leaseEnd ? earliest : leaseEnd;
+  return addDays(from, LATEST_AFTER_END_DAYS);
 }
 
 /* ------------------------------------------------------------------ *
@@ -168,6 +201,7 @@ export interface Reconciliation {
   deductionsCents: number;
   arrearsCents: number;
   penaltyCents: number;
+  rentCreditCents: number;
   refundCents: number;
   tenantOwesCents: number;
 }
@@ -180,12 +214,15 @@ export function reconcile(input: {
   deductionsCents: number;
   arrearsCents: number;
   penaltyCents: number;
+  /** Rent paid for days after the lease ended. The landlord owes it back on top of the deposit. */
+  rentCreditCents?: number;
 }): Reconciliation {
   const heldCents = input.depositCents + input.interestCents;
   const claimed = input.deductionsCents + input.arrearsCents + input.penaltyCents;
-  const net = heldCents - claimed;
+  const net = heldCents + (input.rentCreditCents ?? 0) - claimed;
   return {
     ...input,
+    rentCreditCents: input.rentCreditCents ?? 0,
     heldCents,
     refundCents: Math.max(0, net),
     tenantOwesCents: Math.max(0, -net),

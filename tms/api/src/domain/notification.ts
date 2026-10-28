@@ -51,7 +51,7 @@ export const TEMPLATES: Record<string, Template> = {
     subject: (d) => `Rent for ${d('period')} is ${d('daysLate')} days late`,
     body: (d) =>
       `${d('amount')} for ${d('period')} was due on ${d('dueOn')} and is still outstanding.\n\n` +
-      `Pay by EFT using the reference ${d('reference')}. If something has gone wrong, reply and tell us before it grows.\n\n` +
+      `Pay by EFT using the reference ${d('reference')}. If something has gone wrong, tell your landlord before it grows.\n\n` +
       `${d('unit')}`,
   },
   proof_submitted: {
@@ -131,6 +131,35 @@ export const TEMPLATES: Record<string, Template> = {
       `Both signatures are on ${d('reference')} for ${d('unit')}.\n\n` +
       `Your copy is attached to the lease in the app. It records the date, time, device and a fingerprint of the exact document.`,
   },
+  application_approved: {
+    category: 'lease',
+    urgent: false,
+    subject: (d) => `Your application for ${d('unit')} is approved`,
+    body: (d) =>
+      `The landlord approved your application for ${d('unit')}.\n\n` +
+      `The lease comes next: you will get a message when it is ready to read and sign in the app.`,
+  },
+  application_declined: {
+    category: 'lease',
+    urgent: false,
+    subject: (d) => `Your application for ${d('unit')} was not approved`,
+    body: (d) => `The landlord declined your application for ${d('unit')}.\n\nThe reason given: ${d('reason')}`,
+  },
+  lease_ready_to_sign: {
+    category: 'lease',
+    urgent: false,
+    subject: (d) => `Your lease for ${d('unit')} is ready to sign`,
+    body: (d) =>
+      `Lease ${d('reference')} for ${d('unit')} is ready. Read it and sign it in the app.\n\n` +
+      `It starts on ${d('startDate')}.`,
+  },
+  lease_activated: {
+    category: 'lease',
+    urgent: false,
+    subject: (d) => `Your lease for ${d('unit')} starts today`,
+    body: (d) =>
+      `Lease ${d('reference')} for ${d('unit')} is now active. Rent invoices for it will appear in the app.`,
+  },
   notice_served: {
     category: 'lease',
     urgent: false,
@@ -170,8 +199,8 @@ export const TEMPLATES: Record<string, Template> = {
     urgent: false,
     subject: (d) => `${d('tenant')} is staying at ${d('unit')}`,
     body: (d) =>
-      `${d('tenant')} accepted the renewal. The new lease starts ${d('startDate')}.\n\n` +
-      `Deposit top-up owed: ${d('topUp')}.`,
+      `${d('tenant')} accepted the renewal. The new lease starts ${d('startDate')} once you have both ` +
+      `signed it: open it in the app to sign.\n\nDeposit top-up owed: ${d('topUp')}.`,
   },
   renewal_declined: {
     category: 'lease',
@@ -199,6 +228,13 @@ export const TEMPLATES: Record<string, Template> = {
   },
 };
 
+/** A subject is one line. A ticket title is typed by a tenant, and it is most of the subject
+    of an urgent email to the landlord, so a newline or an essay in it is cut down here. */
+export const subjectLine = (value: string) => {
+  const flat = value.replace(/\s+/g, ' ').trim();
+  return flat.length > 110 ? `${flat.slice(0, 109).trimEnd()}…` : flat;
+};
+
 export const render = (kind: string, data: Record<string, string>) => {
   const template = TEMPLATES[kind];
   if (!template) throw new Error(`No notification template for "${kind}".`);
@@ -206,7 +242,7 @@ export const render = (kind: string, data: Record<string, string>) => {
   return {
     category: template.category,
     urgent: template.urgent,
-    subject: template.subject(field),
+    subject: subjectLine(template.subject(field)),
     body: template.body(field),
   };
 };

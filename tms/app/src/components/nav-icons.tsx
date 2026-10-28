@@ -48,3 +48,6 @@ export const MoreIcon = (p: SVGProps<SVGSVGElement>) => (
 export const LogOutIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}><path d="M15 4h4v16h-4" /><path d="M10 17l-5-5 5-5" /><path d="M5 12h11" /></Svg>
 );
+export const ActivityIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><path d="M8 6h12M8 12h12M8 18h12" /><circle cx="4" cy="6" r="0.8" /><circle cx="4" cy="12" r="0.8" /><circle cx="4" cy="18" r="0.8" /></Svg>
+);
