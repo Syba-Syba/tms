@@ -6,6 +6,7 @@ import { Ledger } from '../components/money';
 import { QueryError } from '../components/query-state';
 import { isLandlord } from '../lib/session';
 import { capitalise, formatDateTime, status as statusOf } from '../lib/format';
+import { PAGE } from '../lib/layout';
 
 interface Ticket {
   id: string;
@@ -33,7 +34,7 @@ export function TicketsList() {
   const items = data?.items ?? [];
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-6">
+    <main className={PAGE.reading}>
       <PageHeader
         title="Maintenance"
         description={

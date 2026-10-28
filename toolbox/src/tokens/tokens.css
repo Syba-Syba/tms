@@ -38,6 +38,11 @@
   --tb-warning: #a35b06;
   --tb-danger: #b42318;
   --tb-info: #2f5d8a;
+  /* The same states, dark enough to read as small text on their own tinted badge (WCAG 4.5:1). */
+  --tb-success-ink: #1a6841;
+  --tb-warning-ink: #8b4d05;
+  --tb-danger-ink: #991e14;
+  --tb-info-ink: #284f75;
   --tb-marker: #f2d675;
 
   --tb-bg: var(--tb-neutral-50);
@@ -92,6 +97,10 @@
   --tb-warning: #e0a050;
   --tb-danger: #f07a6e;
   --tb-info: #7fa9d6;
+  --tb-success-ink: #5fbf8b;
+  --tb-warning-ink: #e0a050;
+  --tb-danger-ink: #f07a6e;
+  --tb-info-ink: #7fa9d6;
   --tb-ring: #6fc2a1;
   --tb-action: #f1f1ee;
   --tb-action-hover: #ffffff;

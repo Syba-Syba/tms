@@ -7,6 +7,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
+import { PAGE } from '../lib/layout';
 
 const CATEGORIES: Record<string, string> = {
   rates: 'Rates',
@@ -127,7 +128,7 @@ function downloadCsv(name: string, rows: (string | number)[][]) {
 /** What the portfolio earned, who owes what, and the costs behind both. */
 export function Reports() {
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6">
+    <main className={PAGE.medium}>
       <PageHeader title="Reports" description="Income, costs and arrears, ready for your accountant." />
       <Tabs
         items={[

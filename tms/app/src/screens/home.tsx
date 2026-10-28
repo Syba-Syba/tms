@@ -5,11 +5,12 @@ import { Badge, Card, CardBody, EmptyState, Input, PageHeader } from '@hlonie/to
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api } from '../api/client';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
-import { daysUntil, formatDate, status } from '../lib/format';
+import { daysUntil, formatDate, headlineZar, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { SetupChecklist } from '../components/setup-checklist';
 import { isLandlord } from '../lib/session';
 import { TenantHome } from './tenant-home';
+import { PAGE } from '../lib/layout';
 
 interface LeaseRow {
   id: string;
@@ -199,14 +200,14 @@ function LandlordHome() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-5">
+    <main className={PAGE.wide}>
       <PageHeader title="Overview" description={`${rows.length} lease${rows.length === 1 ? '' : 's'} running.`} />
       <SetupChecklist />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Collected this month" value={month.data ? zar(month.data.totals.collectedCents) : '...'}
-          hint={month.data ? `of ${zar(month.data.totals.invoicedCents)} invoiced` : undefined} />
-        <Stat label="Arrears" value={zar(arrears)} danger={arrears > 0}
+        <Stat label="Collected this month" value={month.data ? headlineZar(month.data.totals.collectedCents) : '...'}
+          hint={month.data ? `of ${headlineZar(month.data.totals.invoicedCents)} invoiced` : undefined} />
+        <Stat label="Arrears" value={headlineZar(arrears)} danger={arrears > 0}
           hint={owing > 0 ? `${owing} tenant${owing === 1 ? '' : 's'} owing` : 'Nobody owes anything'} to="/reports" />
         <Stat label="Slips to check" value={String(slipCount)} to="/payments" />
         <Stat label="Open maintenance" value={String(openTickets.length)}

@@ -5,6 +5,7 @@ import { Button, Card, CardBody, EmptyState, PageHeader, SegmentedControl, Spinn
 import { api } from '../api/client';
 import { QueryError } from '../components/query-state';
 import { describeAction } from '../lib/activity';
+import { PAGE } from '../lib/layout';
 
 interface Entry {
   id: number;
@@ -46,7 +47,7 @@ export function Activity() {
   const items = data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-6">
+    <main className={PAGE.reading}>
       <PageHeader
         title="Activity"
         description="Every change on your properties, every document opened, and every sign-in to your account."

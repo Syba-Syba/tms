@@ -41,7 +41,7 @@ describe('the public listings page', () => {
 
     mount('/properties', <Route path="/properties" element={<Properties />} />);
     expect(await screen.findByText(/1 photo$/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit J1' }));
     const listing = await screen.findByRole('region', { name: 'Listing' });
     expect(listing.querySelectorAll('img')).toHaveLength(1);
     fireEvent.change(within(listing).getByLabelText('Description'), { target: { value: 'Garden flat under a jacaranda.' } });

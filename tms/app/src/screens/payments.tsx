@@ -8,6 +8,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
+import { PAGE } from '../lib/layout';
 
 interface ProofRow {
   id: string;
@@ -57,7 +58,7 @@ const confidenceTone = { high: 'success', medium: 'warning', low: 'neutral' } as
 /** Money coming in that the landlord has not typed: tenants' slips and the bank statement. */
 export function Payments() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-6">
+    <main className={PAGE.reading}>
       <PageHeader title="Payments" description="Check tenants' slips and match your bank statement to leases." />
       <Tabs
         items={[

@@ -14,6 +14,7 @@ import { listingsUrl, useLandlord } from '../lib/landlord';
 import { Ledger } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
+import { PAGE } from '../lib/layout';
 
 interface Unit {
   id: string;
@@ -134,7 +135,7 @@ export function Properties() {
     });
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+    <main className={PAGE.wide}>
       <PageHeader
         title="Properties"
         description={
@@ -243,20 +244,22 @@ export function Properties() {
                                   : 'No applications yet'}
                             </p>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 sm:gap-3">
                             <Ledger cents={unit.monthlyRentCents} className="text-[15px]" />
                             <Badge tone={shownStatus.tone}>{shownStatus.label}</Badge>
                             {unit.status === 'occupied' && unit.leaseId ? (
                               <Link
                                 to={`/leases/${unit.leaseId}`}
-                                className="text-[13px] font-bold text-brand-500"
+                                aria-label={`Lease for ${unit.code}`}
+                                className="inline-flex min-h-11 items-center px-1 text-[13px] font-bold text-brand-500 sm:min-h-0"
                               >
                                 Lease
                               </Link>
                             ) : (
                               <button
                                 type="button"
-                                className="text-[13px] font-bold text-brand-500"
+                                aria-label={`Copy the application link for ${unit.code}`}
+                                className="inline-flex min-h-11 items-center px-1 text-[13px] font-bold text-brand-500 sm:min-h-0"
                                 onClick={() => copyApplicationLink(unit)}
                               >
                                 Copy link
@@ -264,7 +267,8 @@ export function Properties() {
                             )}
                             <button
                               type="button"
-                              className="text-[13px] font-semibold text-ink-muted hover:text-ink"
+                              aria-label={`Edit ${unit.code}`}
+                              className="inline-flex min-h-11 items-center px-1 text-[13px] font-semibold text-ink-muted hover:text-ink sm:min-h-0"
                               onClick={() => setEditingUnit(unit)}
                             >
                               Edit

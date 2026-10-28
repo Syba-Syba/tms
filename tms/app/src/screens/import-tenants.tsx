@@ -7,6 +7,7 @@ import {
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { localToday } from '../lib/dates';
+import { PAGE } from '../lib/layout';
 
 interface Unit { id: string; code: string; status: 'vacant' | 'held' | 'occupied' }
 interface Property { id: string; name: string; units: Unit[] }
@@ -148,7 +149,7 @@ export function ImportTenants() {
 
   if (done !== null) {
     return (
-      <main className="mx-auto max-w-2xl px-5 py-6">
+      <main className={PAGE.narrow}>
         <PageHeader title="Current tenants" />
         <Alert tone="success" title={`${done} ${done === 1 ? 'tenancy' : 'tenancies'} added`}>
           This month's rent is on each lease, and the monthly run bills from next month as usual.{' '}
@@ -166,7 +167,7 @@ export function ImportTenants() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader title="Add current tenants" description="Tenancies that started before you used Threshold. No application or signing needed." />
       <SegmentedControl
         className="mb-5"

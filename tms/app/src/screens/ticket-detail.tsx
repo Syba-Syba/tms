@@ -9,6 +9,7 @@ import { Ledger } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { SignedImage } from '../components/signed-image';
 import { capitalise, formatDateTime, status } from '../lib/format';
+import { PAGE } from '../lib/layout';
 
 interface DirectoryEntry {
   id: string;
@@ -121,7 +122,7 @@ export function TicketDetail() {
   const landlord = data.viewer.isLandlord;
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader
         title={data.title}
         description={`${data.unit} · ${capitalise(data.category)} · reported by ${data.tenant}`}

@@ -9,6 +9,7 @@ import { Ledger } from '../components/money';
 import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
+import { PAGE } from '../lib/layout';
 
 interface ComparisonItem {
   room: string;
@@ -126,7 +127,7 @@ export function Termination() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-6">
+    <main className={PAGE.reading}>
       <PageHeader
         title="Then and now"
         description={`${data.summary.unchanged} unchanged, ${data.summary.wearAndTear} fair wear, ${data.summary.deductible} deductible.`}

@@ -6,6 +6,7 @@ import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { currentLease } from '../lib/leases';
 import { useOpenDocument } from '../lib/open-document';
+import { PAGE } from '../lib/layout';
 
 interface Lease {
   id: string; ref: string; unit: string; startDate: string; endDate: string; hasDocument: boolean;
@@ -36,7 +37,7 @@ export function Documents() {
     // "Nothing filed yet" is only true once the list has actually answered with no lease.
     if (list.isSuccess && !leaseId) {
       return (
-        <main className="mx-auto max-w-2xl px-5 py-6">
+        <main className={PAGE.narrow}>
           <EmptyState title="Nothing filed yet" description="Documents appear as your tenancy produces them." />
         </main>
       );
@@ -53,7 +54,7 @@ export function Documents() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader
         title="Documents"
         description="Your lease, every inspection and every invoice. Keep these; they are what settles a dispute."
