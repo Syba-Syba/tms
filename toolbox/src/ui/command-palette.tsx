@@ -49,9 +49,9 @@ export function CommandPalette({ commands, placeholder = 'Search actions...' }: 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Dialog.Content
-          className="fixed left-1/2 top-24 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-surface shadow-lg focus:outline-none"
+          className="fixed left-1/2 top-24 z-40 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-surface shadow-lg focus:outline-none"
           aria-label="Command palette"
         >
           <input
