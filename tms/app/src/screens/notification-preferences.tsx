@@ -4,6 +4,7 @@ import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hl
 import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
 import { SettingsNav } from '../components/settings-nav';
+import { TwoStep } from '../components/two-step';
 import { PrivacyRequests } from '../components/privacy-requests';
 import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
@@ -78,6 +79,9 @@ export function NotificationPreferences() {
 
       <div className="mb-6">
         <ChangePassword />
+      </div>
+      <div className="mb-6">
+        <TwoStep />
       </div>
 
       <h2 className="label mb-1">Notifications</h2>

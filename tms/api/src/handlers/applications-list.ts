@@ -42,6 +42,8 @@ export const handler = route(async (event) => {
        left join lease l on l.application_id = a.id and l.status <> 'cancelled'
       where ($1 = 'all' or a.status = $1)
         and pr.landlord_id = $3
+        -- Imported tenancies never went through the queue, so they stay out of it.
+        and a.source = 'online'
       order by a.submitted_at desc nulls last
       limit $2`,
     [status, limit, landlordId],

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, CardBody, Input, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
+import { Link } from 'react-router';
+import { Alert, Button, Card, CardBody, Input, Modal, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
+import { useTwoStep } from '../components/two-step';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
@@ -33,6 +35,9 @@ export function SettingsAccount() {
   // "Another bank" picked from the list: only then is the bank's name typed in.
   const [otherBank, setOtherBank] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const twoStep = useTwoStep();
+  const [asking, setAsking] = useState(false);
+  const [code, setCode] = useState('');
 
   useEffect(() => {
     if (!data) return;
@@ -58,12 +63,20 @@ export function SettingsAccount() {
       await api.put('/landlord', body);
       await queryClient.invalidateQueries({ queryKey: ['landlord'] });
       toast.show({ title: message, tone: 'success' });
+      setAsking(false);
+      setCode('');
     } catch (failure) {
       toast.show({ title: 'Not saved', description: humanError(failure), tone: 'danger' });
     } finally {
       setBusy(null);
     }
   };
+
+  // Replacing an account already on file needs a current two-step code: a stolen password
+  // must not be enough to send the rent somewhere else.
+  const onFile = data.account.bank;
+  const replacing = Boolean(onFile) && (bank.accountNumber !== onFile?.accountNumber || bank.branchCode !== onFile?.branchCode);
+  const twoStepOff = twoStep.data ? !twoStep.data.enabled : false;
 
   const bankReady =
     bank.name.trim().length >= 2 &&
@@ -211,11 +224,20 @@ export function SettingsAccount() {
                     />
                   </Field>
                 </div>
+                {owner && replacing && twoStepOff ? (
+                  <Alert tone="warning" title="Turn on two-step sign-in first">
+                    Changing the account rent goes into needs a code from your phone.{' '}
+                    <Link to="/settings/notifications" className="font-bold text-brand-500">Turn it on under You</Link>.
+                  </Alert>
+                ) : null}
                 {owner ? (
-                  <Button loading={busy === 'bank'} disabled={busy !== null || !bankReady}
-                    onClick={() => save('bank', { bank }, 'Bank account saved')}>
+                  <Button loading={busy === 'bank'} disabled={busy !== null || !bankReady || (replacing && twoStepOff)}
+                    onClick={() => (replacing && twoStep.data ? setAsking(true) : save('bank', { bank }, 'Bank account saved'))}>
                     Save bank account
                   </Button>
+                ) : null}
+                {replacing ? (
+                  <p className="text-xs text-ink-muted">Every tenant is emailed that the account changed, and so are you.</p>
                 ) : null}
                 <p className="text-xs text-ink-muted">
                   A change is recorded in Activity with the last four digits, old and new, so a swapped account is always traceable.
@@ -269,6 +291,17 @@ export function SettingsAccount() {
           </CardBody>
         </Card>
       </section>
+      <Modal open={asking} onOpenChange={setAsking} title="Confirm the new bank account"
+        description={`Rent will go to ${bank.name}, account ending ${bank.accountNumber.slice(-4)}. Enter the code from your authenticator app.`}>
+        <div className="space-y-3">
+          <Input aria-label="Code from the app" inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
+            value={code} onChange={(event) => setCode(event.target.value)} />
+          <Button block loading={busy === 'bank'} disabled={code.trim().length < 6}
+            onClick={() => save('bank', { bank, code: code.trim() }, 'Bank account changed. Your tenants have been told.')}>
+            Change the account
+          </Button>
+        </div>
+      </Modal>
     </main>
   );
 }

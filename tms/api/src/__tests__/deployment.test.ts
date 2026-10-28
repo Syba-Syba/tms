@@ -43,14 +43,16 @@ describe('serverless.yml', () => {
     expect(missing).toEqual([]);
   });
 
-  it('gives every HTTP route an authorizer', () => {
+  it('gives every HTTP route an authorizer, except the one PayFast posts to', () => {
     const open: string[] = [];
     for (const [name, fn] of Object.entries<any>(config.functions)) {
       for (const event of fn.events ?? []) {
-        if (event.httpApi && !event.httpApi.authorizer) open.push(`${name} ${event.httpApi.path}`);
+        if (event.httpApi && !event.httpApi.authorizer) open.push(`${name} ${event.httpApi.method} ${event.httpApi.path}`);
       }
     }
-    expect(open).toEqual([]);
+    // PayFast has no token to send. That handler checks the signature, the sender and PayFast's
+    // own confirmation instead; nothing else may join this list without the same.
+    expect(open).toEqual(['api POST /billing/notify']);
   });
 
   /* The suite below was green while the package held .ts files and no dependencies, because

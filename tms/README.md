@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Eighty-five routes in all; the table lists the shape of each family rather than every verb.
+Ninety-six routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -695,6 +695,101 @@ notifications go to the owner and the business email, not to each agent.
 Routes: `GET /landlord`, `PUT /landlord`, `GET /landlord/team`, `POST /landlord/invites`,
 `POST /landlord/invites/{id}/revoke`, `POST /landlord/members/{sub}/remove`, and the public
 `POST /invites/lookup` and `POST /invites/accept`, which take the token in the body.
+
+## Current tenants
+
+A landlord who starts with tenants already in place adds them under Overview, Add current
+tenants: one from a form, or many from a CSV (template on the page). `POST /leases/import`
+takes `rows` or `csv`; `dryRun: true` reports every problem by line, and the real run writes
+all rows or none.
+
+Each row becomes an approved application and an active lease marked `source = 'import'`, so
+it stays out of the applications queue and needs no signing. The unit is marked occupied, the
+deposit held goes on the ledger, and this month's rent is invoiced at import (paid or not, as
+the landlord says), so the monthly run does not bill it again. Arrears from before this month
+become one invoice due on the date they were first owed, and follow the arrears steps.
+
+The rent entered is today's rent. `lease.escalates_from` is set to the last anniversary of the
+lease start, and escalation counts from there, so years already past are not escalated again.
+
+Imported tenants have no sign-in. The landlord can email them a link (`tenant_invite`, single
+use, 7 days, stored hashed). A tenant with no account chooses a password; one who already has
+an account must enter that account's password, so the link alone never opens an existing
+account.
+
+## Two-step sign-in and bank details
+
+Changed bank details are how rent gets stolen: whoever controls the landlord's sign-in can
+point every invoice at their own account. So:
+
+- Anyone can turn on two-step sign-in under Settings, You: scan a QR code into an authenticator
+  app, confirm a code, keep ten single-use recovery codes. Codes are RFC 6238 (SHA1, 30 s,
+  6 digits), checked one step either side, and a step once used is refused. The secret is kept
+  AES-GCM encrypted under a key derived from `AUTH_SECRET`; recovery codes are kept hashed.
+- With it on, sign-in asks for the code after the password, and a wrong code counts as a failed
+  attempt. A password reset link changes the password but no longer signs in; neither does a
+  tenant's lease invitation for an account that has two-step on.
+- The first bank account can be added freely. Replacing one needs the owner to have two-step on
+  and to give a current code (`PUT /landlord` with `code`). Resaving the same details does not.
+- On a change, the owner is emailed at the business address and their sign-in address, every
+  tenant on an active lease gets a notice they cannot switch off, and the rent screen shows a
+  warning beside the account for 30 days.
+
+This applies to the local auth driver. Under Cognito, its own MFA protects the sign-in and the
+bank change goes through with the same notices.
+
+## Plans and billing
+
+Landlords pay monthly by how many units they run. Prices live in `api/src/domain/plans.ts`
+(Starter up to 5 units R199, Standard up to 20 R449, Pro up to 60 R999, VAT included) and every
+screen and limit reads them from there. They are placeholders: set your own before launch.
+
+- Every landlord account starts on a 30-day trial with room for 60 units. Paying during the
+  trial keeps the trial: the paid month starts when it ends.
+- A lapsed account turns read-only for the landlord and their agents: everything can be seen,
+  nothing changed, except sign-in, settings, billing and their own data. Tenants are never
+  stopped. A failed payment gets 7 days' grace; a cancelled plan runs to the end of the month
+  paid for. Scheduled jobs (invoices, reminders, interest) keep running either way.
+- Units past the plan are refused with a prompt to move up, from the form and from imports.
+
+`BILLING_DRIVER` picks how payment works: `payfast` (the default in aws mode), `off` (the
+default self-hosted: nobody is charged) or `local` (development only: the Plan screen
+simulates PayFast through the same code path).
+
+With PayFast, the Plan screen posts a signed subscription form (monthly, until cancelled) to
+PayFast; card details never reach this server. PayFast then posts an ITN to
+`POST /billing/notify`, the one route without a sign-in. It is applied only if the signature
+matches, the sender resolves to a PayFast host, PayFast confirms the data back, and the amount is
+what the plan costs; each payment applies once by PayFast's payment id, and anything rejected is
+kept in `billing_event` with the reason. Plan changes and cancelling go through PayFast's
+subscriptions API.
+
+Before going live, run the whole flow in the PayFast sandbox (merchant 10000100): a first
+payment, a plan change, a cancellation. In particular check that `billing_date` set to the
+trial's end starts the monthly charges on that date as intended.
+
+## WhatsApp
+
+Every notification already queued a WhatsApp copy for anyone with a phone number; nothing sent
+it. With `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` set (Meta's WhatsApp Cloud API), the
+dispatcher sends it. WhatsApp only lets a business start a conversation with an approved
+template, so every message goes through one, `WHATSAPP_TEMPLATE` (default `threshold_update`):
+create it in Meta Business Manager as a Utility template with one body parameter, for example
+"Threshold update: {{1}} Open the app for the details." The notice's subject and text fill the
+parameter, flattened to one line under 900 characters as Meta requires. A number that is not
+on WhatsApp is parked, not retried; email still reaches the person. `WHATSAPP_API_VERSION`
+defaults to v23.0: move it up as Meta retires versions.
+
+## Charges on top of rent
+
+Landlords add water, electricity, levies or one-off charges on the lease page.
+`POST /leases/{id}/charges` takes the month, kind (`utility` or `other`), what it is for and the
+amount. A charge goes on that month's invoice while it is not due yet, and the tenant is told.
+For a month already due it goes on the next invoice instead, named for its month ("Water
+(October 2026)"), so a charge is never overdue the day it is added. For a month not invoiced
+yet it waits in `pending_charge` and the monthly run adds it. A charge comes off only while it
+is unpaid. Invoice totals move by the charge's amount rather than being summed from lines,
+because older invoices carry a total with no lines.
 
 ## Expenses and reports
 

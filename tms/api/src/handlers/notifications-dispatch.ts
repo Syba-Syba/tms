@@ -1,5 +1,6 @@
 import { query } from '../lib/db';
 import { jobLogger } from '../lib/logger';
+import { sendWhatsapp, whatsappConfig } from '../lib/whatsapp';
 
 const log = jobLogger('notifications-dispatch');
 
@@ -94,8 +95,15 @@ async function deliver(row: Pending): Promise<void> {
     await (await emailSender())(row);
     return;
   }
-  // WhatsApp and push are modelled but not connected. Failing them would retry forever, so
-  // they are parked and stay visible in the table for when a sender exists.
+  if (row.channel === 'whatsapp') {
+    const config = whatsappConfig();
+    if (config) {
+      await sendWhatsapp(config, row.recipient_to, row.subject, row.body);
+      return;
+    }
+  }
+  // Push, and WhatsApp until WHATSAPP_TOKEN is set, are not connected. Failing them would retry
+  // forever, so they are parked and stay visible in the table for when a sender exists.
   throw Object.assign(new Error(`Channel ${row.channel} is not connected yet.`), { skip: true });
 }
 

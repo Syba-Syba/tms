@@ -53,6 +53,19 @@ provider:
     # sending domain is verified in SES.
     NOTIFY_MODE: ${ssm:/tms/${self:provider.stage}/notify-mode, 'skip'}
     NOTIFY_FROM: ${ssm:/tms/${self:provider.stage}/notify-from, 'no-reply@example.invalid'}
+    # Landlord subscriptions. PayFast needs outbound internet from the VPC (NAT) for the
+    # notification check and the subscriptions API. PAYFAST_SANDBOX=true until it goes live.
+    BILLING_DRIVER: payfast
+    PAYFAST_MERCHANT_ID: ${ssm:/tms/${self:provider.stage}/payfast-merchant-id}
+    PAYFAST_MERCHANT_KEY: ${ssm:/tms/${self:provider.stage}/payfast-merchant-key}
+    PAYFAST_PASSPHRASE: ${ssm:/tms/${self:provider.stage}/payfast-passphrase}
+    PAYFAST_SANDBOX: ${ssm:/tms/${self:provider.stage}/payfast-sandbox, 'true'}
+    PUBLIC_APP_URL: ${ssm:/tms/${self:provider.stage}/public-app-url}
+    PUBLIC_API_URL: ${ssm:/tms/${self:provider.stage}/public-api-url}
+    # WhatsApp is optional: with no token, WhatsApp messages are parked and email still goes.
+    WHATSAPP_TOKEN: ${ssm:/tms/${self:provider.stage}/whatsapp-token, ''}
+    WHATSAPP_PHONE_NUMBER_ID: ${ssm:/tms/${self:provider.stage}/whatsapp-phone-number-id, ''}
+    WHATSAPP_TEMPLATE: ${ssm:/tms/${self:provider.stage}/whatsapp-template, 'threshold_update'}
   # The database sits in a private subnet behind an RDS Proxy, which a Lambda outside the VPC
   # cannot route to at all. Note that attaching a VPC also removes the default route to the
   # internet: Secrets Manager, S3, KMS and SES then need either interface endpoints in that
@@ -133,6 +146,11 @@ functions:
           path: /{proxy+}
           authorizer:
             name: cognito
+      # PayFast posts payment notifications with no token. The handler checks the signature,
+      # the sender and PayFast's confirmation instead.
+      - httpApi:
+          method: POST
+          path: /billing/notify
 
 
   invoicesRun:

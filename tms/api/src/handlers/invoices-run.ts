@@ -31,6 +31,7 @@ interface BillableLease {
   end_date: string;
   monthly_rent_cents: string;
   escalation_pct: string;
+  escalates_from: string | null;
   termination_effective_on: string | null;
   renewal_starts_on: string | null;
   unit_code: string;
@@ -58,6 +59,7 @@ export const handler = async (input?: { periods?: string[] }) => {
       // month (RHA s5(5)) and is billed as such. A renewal signed late then skips the months
       // the old lease already billed, so nobody pays twice for the same days.
       `select l.id, l.status, l.start_date::text, l.end_date::text, l.monthly_rent_cents, l.escalation_pct,
+              l.escalates_from::text,
               t.effective_on::text as termination_effective_on,
               ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on,
               u.code as unit_code,
@@ -101,7 +103,8 @@ export const handler = async (input?: { periods?: string[] }) => {
       const rent = rentForWindow({
         baseRentCents: Number(lease.monthly_rent_cents),
         escalationPct: Number(lease.escalation_pct),
-        leaseStart: dateFromIso(lease.start_date),
+        // An imported lease states its current rent, so escalation counts from when that took effect.
+        leaseStart: dateFromIso(lease.escalates_from ?? lease.start_date),
         window,
       });
       try {
@@ -113,7 +116,7 @@ export const handler = async (input?: { periods?: string[] }) => {
              returning id`,
             [lease.id, periodIso, rent, window.from, window.to],
           );
-          if (!invoice) return false;
+          if (!invoice) return null;
           await run(
             `insert into invoice_line (invoice_id, kind, description, amount_cents)
              values ($1, 'rent', $2, $3)`,
@@ -123,7 +126,25 @@ export const handler = async (input?: { periods?: string[] }) => {
               rent,
             ],
           );
-          return true;
+          // Charges the landlord added for this month before it was billed: water, levies.
+          const extras = await run<{ kind: string; description: string; amount_cents: string }>(
+            `delete from pending_charge where lease_id = $1 and period_start = $2
+             returning kind, description, amount_cents::text`,
+            [lease.id, periodIso],
+          );
+          for (const extra of extras) {
+            await run(
+              `insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, $2, $3, $4)`,
+              [invoice.id, extra.kind, extra.description, extra.amount_cents],
+            );
+          }
+          if (extras.length > 0) {
+            await run(
+              'update invoice set total_cents = total_cents + $2 where id = $1',
+              [invoice.id, extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0)],
+            );
+          }
+          return { totalCents: rent + extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0) };
         });
         if (!created) continue;
         issued += 1;
@@ -135,7 +156,7 @@ export const handler = async (input?: { periods?: string[] }) => {
             dedupeKey: `invoice_issued:${lease.id}:${periodIso}`,
             data: {
               period: periodIso.slice(0, 7),
-              amount: zar(rent),
+              amount: zar(created.totalCents),
               dueOn: periodIso,
               reference: lease.lease_ref,
               unit: lease.unit_label,

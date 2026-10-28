@@ -38,6 +38,15 @@ export const TEMPLATES: Record<string, Template> = {
       `Pay by EFT using the reference ${d('reference')} exactly, or the payment cannot be matched to your unit.\n\n` +
       `${d('unit')}`,
   },
+  charge_added: {
+    category: 'money',
+    urgent: false,
+    subject: (d) => `${d('description')}: ${d('amount')} added to your ${d('period')} invoice`,
+    body: (d) =>
+      `Your landlord added ${d('description')} of ${d('amount')} to your ${d('period')} invoice for ${d('unit')}. ` +
+      `It now comes to ${d('total')}.\n\nPay by EFT using the reference ${d('reference')}. ` +
+      `If you think it is wrong, ask your landlord for the meter reading or the account it comes from.`,
+  },
   payment_received: {
     category: 'money',
     urgent: false,
@@ -105,6 +114,16 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `${d('tenant')} at ${d('unit')} owes ${d('amount')}, ${d('daysLate')} days late, and has had three reminders.\n\n` +
       `Open the lease in the app to review and send the letter of demand, or pause reminders if you have agreed a plan.`,
+  },
+  // Deadline, so it cannot be switched off: changed bank details are how rent gets stolen.
+  landlord_bank_changed: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `${d('landlord')} changed the account for your rent`,
+    body: (d) =>
+      `From now on, rent for ${d('unit')} goes to ${d('bank')}, account ending ${d('last4')}. Keep using the reference ${d('reference')}.\n\n` +
+      `If ${d('landlord')} did not tell you about this themselves, phone them on ${d('phone')} before you pay. ` +
+      `Changing bank details is a common way to steal rent, and the rent screen in the app always shows the account on file.`,
   },
   letter_of_demand: {
     category: 'deadline',

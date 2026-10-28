@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
-import { api, humanError } from '../api/client';
+import { api, errorCode, humanError } from '../api/client';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { startSession, type SessionUser } from '../lib/session';
 
@@ -14,10 +14,15 @@ export function Join() {
   const toast = useToast();
   const [password, setPassword] = useState('');
   const [consent, setConsent] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const invite = useQuery({
     queryKey: ['invite', token],
-    queryFn: () => api.post<{ name: string; email: string; landlord: string }>('/invites/lookup', { token }),
+    queryFn: () =>
+      api.post<{ kind: 'agent' | 'tenant'; name: string; email: string; landlord: string; unit?: string; hasAccount: boolean }>(
+        '/invites/lookup',
+        { token },
+      ),
     enabled: token.length > 0,
     retry: false,
   });
@@ -26,11 +31,15 @@ export function Join() {
     setBusy(true);
     try {
       const result = await api.post<{ token: string; user: SessionUser }>('/invites/accept', {
-        token, password, consentVersion: PRIVACY_VERSION,
+        token, password, consentVersion: PRIVACY_VERSION, ...(code ? { code } : {}),
       });
       await startSession(result.token, result.user);
       navigate('/', { replace: true });
     } catch (failure) {
+      if (errorCode(failure) === 'code_required') {
+        setCode('');
+        return;
+      }
       toast.show({ title: 'Could not join', description: humanError(failure), tone: 'danger' });
     } finally {
       setBusy(false);
@@ -49,15 +58,27 @@ export function Join() {
       ) : (
         <>
           <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">
-            Join {invite.data.landlord}
+            {invite.data.kind === 'tenant' ? `Your lease for ${invite.data.unit}` : `Join ${invite.data.landlord}`}
           </h1>
           <p className="mb-5 text-[14px] text-ink-muted">
-            Hi {invite.data.name}. Choose a password to help run their rentals. You sign in as {invite.data.email}.
+            Hi {invite.data.name}.{' '}
+            {invite.data.kind === 'tenant'
+              ? `${invite.data.landlord} runs your lease on Threshold: your rent, your statement, proof of payment and repairs. `
+              : 'Choose a password to help run their rentals. '}
+            {invite.data.hasAccount
+              ? `You already have an account as ${invite.data.email}. Enter its password to add this lease to it.`
+              : `You sign in as ${invite.data.email}.`}
           </p>
           <Card>
             <CardBody className="space-y-3">
-              <Input type="password" aria-label="Password" placeholder="Password, at least 8 characters"
-                autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <Input type="password" aria-label="Password"
+                placeholder={invite.data.hasAccount ? 'Your password' : 'Password, at least 8 characters'}
+                autoComplete={invite.data.hasAccount ? 'current-password' : 'new-password'}
+                value={password} onChange={(event) => setPassword(event.target.value)} />
+              {code !== null ? (
+                <Input aria-label="Code from your authenticator app" inputMode="numeric" autoComplete="one-time-code"
+                  placeholder="Code from your authenticator app" value={code} onChange={(event) => setCode(event.target.value)} />
+              ) : null}
               <Checkbox
                 id="join-consent"
                 checked={consent}
@@ -70,9 +91,14 @@ export function Join() {
                   </span>
                 }
               />
-              <Button block loading={busy} disabled={password.length < 8 || !consent} onClick={join}>
-                Join
+              <Button block loading={busy} disabled={password.length < (invite.data.hasAccount ? 1 : 8) || !consent} onClick={join}>
+                {invite.data.kind === 'tenant' ? 'Open my lease' : 'Join'}
               </Button>
+              {invite.data.hasAccount ? (
+                <p className="text-center text-[13px] text-ink-muted">
+                  Forgot it? <Link to="/forgot-password" className="font-bold text-brand-500">Reset your password</Link>, then open this link again.
+                </p>
+              ) : null}
             </CardBody>
           </Card>
         </>

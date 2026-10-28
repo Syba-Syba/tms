@@ -69,6 +69,8 @@ const PUBLIC_ROUTES = new Set([
   // The token in the body is the credential: it only ever opens its own invitation.
   'POST /invites/lookup',
   'POST /invites/accept',
+  // PayFast's notifications. Trusted on its own checks, not a sign-in.
+  'POST /billing/notify',
 ]);
 
 /**

@@ -14,10 +14,13 @@ export const handler = route(async (event) => {
 
   // The reference a tenant puts on their EFT. The rent screen used to show a fixed one.
   const [lease] = await query<{
-    ref: string; landlord: string; bank_name: string | null; bank_account_holder: string | null;
+    ref: string; landlord: string; landlord_phone: string; bank_changed_on: string | null; bank_name: string | null; bank_account_holder: string | null;
     bank_account_number: string | null; bank_branch_code: string | null;
   }>(
-    `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, ll.trading_name as landlord,
+    `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, ll.trading_name as landlord, ll.phone as landlord_phone,
+            (select max(a.at)::date::text from audit_log a
+              where a.entity = 'landlord' and a.entity_id = ll.id and a.action = 'landlord.bank_changed'
+                and a.at > now() - interval '30 days') as bank_changed_on,
             ll.bank_name, ll.bank_account_holder, ll.bank_account_number, ll.bank_branch_code
        from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
        join landlord ll on ll.id = p.landlord_id
@@ -91,6 +94,9 @@ export const handler = route(async (event) => {
     // Where to pay: the landlord's account, or null until they add one.
     landlord: lease?.landlord ?? null,
     bank: lease ? bankOf(lease) : null,
+    // A recent change gets a warning on the tenant's screen: it is how rent gets stolen.
+    bankChangedOn: lease?.bank_changed_on ?? null,
+    landlordPhone: lease?.landlord_phone ?? null,
     balanceCents: invoiced - received,
     ageing,
     depositBalanceCents: depositBalance,

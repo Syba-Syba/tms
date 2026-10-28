@@ -20,10 +20,16 @@ export function ResetPassword() {
   const save = async () => {
     setBusy(true);
     try {
-      const result = await api.post<{ token: string; user: SessionUser }>('/auth/reset/confirm', {
+      const result = await api.post<{ token: string | null; user: SessionUser | null }>('/auth/reset/confirm', {
         token,
         newPassword: password,
       });
+      if (!result.token || !result.user) {
+        // Two-step sign-in is on: the emailed link changes the password but does not sign in.
+        toast.show({ title: 'Password changed', description: 'Sign in with it and your authenticator code.', tone: 'success' });
+        navigate('/login', { replace: true });
+        return;
+      }
       await startSession(result.token, result.user);
       toast.show({ title: 'Password changed', description: 'You are signed in.', tone: 'success' });
       navigate('/', { replace: true });

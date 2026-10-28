@@ -27,7 +27,7 @@ export async function renderLeaseDocument(
     escalation_pct: string;
     first_name: string;
     last_name: string;
-    id_number_last4: string;
+    id_number_last4: string | null;
     unit_code: string;
     property_name: string;
     address: string;
