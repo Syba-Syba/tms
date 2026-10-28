@@ -6,9 +6,15 @@ import { query } from '../lib/db';
 import { mode } from '../lib/mode';
 import { failedLoginsByAccount, failedLoginsByAddress } from '../lib/ratelimit';
 import { json, parseBody, route, tooManyRequests, ApiError } from '../lib/http';
+import { checkSecondStep, twoStepEnabled } from '../lib/two-step';
 
 // The cap on password length keeps scrypt's input bounded; nobody types 200 characters.
-const schema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
+const schema = z.object({
+  email: z.string().email().max(254),
+  password: z.string().min(1).max(200),
+  // The authenticator code, or a recovery code, when two-step sign-in is on.
+  code: z.string().trim().max(12).optional(),
+});
 
 /** Only the local driver answers here. In production, Cognito's hosted UI signs people in and
     API Gateway checks the token, so this route existing would be a misconfiguration. */
@@ -63,6 +69,20 @@ export const handler = route(async (event) => {
       detail: { email, address, knownAccount: Boolean(credential) },
     });
     throw new ApiError(401, 'unauthorised', 'That email and password do not match.');
+  }
+  // The password was right. With two-step on, it is not enough: the code comes next, and a
+  // wrong code counts as a failed attempt, so six digits cannot be guessed at leisure.
+  if (await twoStepEnabled(credential.sub)) {
+    if (!input.code) throw new ApiError(401, 'code_required', 'Enter the code from your authenticator app.');
+    if (!(await checkSecondStep(credential.sub, input.code))) {
+      failedLoginsByAccount.record(email);
+      failedLoginsByAddress.record(address);
+      await audit({
+        actorSub: credential.sub, actorRole: credential.role, action: 'auth.login_failed', entity: 'credential',
+        entityId: null, detail: { email, address, knownAccount: true, secondStep: true },
+      });
+      throw new ApiError(401, 'code_wrong', 'That code did not match. Use the newest one, or a recovery code.');
+    }
   }
   failedLoginsByAccount.clear(email);
 

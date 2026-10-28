@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
-import { api, humanError } from '../api/client';
+import { api, errorCode, humanError } from '../api/client';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { startSession, type SessionUser } from '../lib/session';
 
@@ -14,6 +14,7 @@ export function Join() {
   const toast = useToast();
   const [password, setPassword] = useState('');
   const [consent, setConsent] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const invite = useQuery({
     queryKey: ['invite', token],
@@ -30,11 +31,15 @@ export function Join() {
     setBusy(true);
     try {
       const result = await api.post<{ token: string; user: SessionUser }>('/invites/accept', {
-        token, password, consentVersion: PRIVACY_VERSION,
+        token, password, consentVersion: PRIVACY_VERSION, ...(code ? { code } : {}),
       });
       await startSession(result.token, result.user);
       navigate('/', { replace: true });
     } catch (failure) {
+      if (errorCode(failure) === 'code_required') {
+        setCode('');
+        return;
+      }
       toast.show({ title: 'Could not join', description: humanError(failure), tone: 'danger' });
     } finally {
       setBusy(false);
@@ -70,6 +75,10 @@ export function Join() {
                 placeholder={invite.data.hasAccount ? 'Your password' : 'Password, at least 8 characters'}
                 autoComplete={invite.data.hasAccount ? 'current-password' : 'new-password'}
                 value={password} onChange={(event) => setPassword(event.target.value)} />
+              {code !== null ? (
+                <Input aria-label="Code from your authenticator app" inputMode="numeric" autoComplete="one-time-code"
+                  placeholder="Code from your authenticator app" value={code} onChange={(event) => setCode(event.target.value)} />
+              ) : null}
               <Checkbox
                 id="join-consent"
                 checked={consent}

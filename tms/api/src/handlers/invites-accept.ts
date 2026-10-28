@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from '../lib/passwords';
 import { hashResetToken, requireLocalDriver } from '../lib/password-reset';
 import { recordConsent } from '../lib/privacy';
 import { failedLoginsByAccount } from '../lib/ratelimit';
+import { checkSecondStep, twoStepEnabled } from '../lib/two-step';
 import { PRIVACY_VERSION } from '../domain/privacy';
 
 const schema = z.object({
@@ -16,6 +17,8 @@ const schema = z.object({
   // At least 8 for a new password; an existing account's password is checked as it is.
   password: z.string().min(1).max(200, 'Use at most 200 characters.'),
   consentVersion: z.string().max(20),
+  // For a tenant joining an account that has two-step sign-in on.
+  code: z.string().trim().max(12).optional(),
 });
 
 const requireNewPassword = (password: string) => {
@@ -77,6 +80,13 @@ async function claimLease(run: Run, hash: string, input: z.infer<typeof schema>)
       throw new ApiError(401, 'unauthorised', 'That is not the password for this email. Use the one you sign in with.');
     }
     if (existing.role !== 'tenant') throw conflict('This email signs in to a landlord account. Ask your landlord to use another address.');
+    if (await twoStepEnabled(existing.sub, run)) {
+      if (!input.code) throw new ApiError(401, 'code_required', 'Enter the code from your authenticator app.');
+      if (!(await checkSecondStep(existing.sub, input.code, run))) {
+        failedLoginsByAccount.record(invite.email);
+        throw new ApiError(401, 'code_wrong', 'That code did not match.');
+      }
+    }
     const user: User = { sub: existing.sub, role: 'tenant', name: existing.name, email: invite.email };
     // They may have applied somewhere before, which made a tenant record for this sign-in.
     // The lease moves onto it, and the record the landlord typed in goes.

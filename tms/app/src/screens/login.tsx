@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
-import { api, baseUrl, humanError } from '../api/client';
+import { api, baseUrl, errorCode, humanError } from '../api/client';
 import { safeReturnPath } from '../lib/safe-path';
 import { startSession, type SessionUser } from '../lib/session';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // Asked for once the password is right and two-step sign-in is on.
+  const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [apiDown, setApiDown] = useState(false);
 
@@ -32,6 +34,7 @@ export function Login() {
       const result = await api.post<{ token: string; user: SessionUser }>('/auth/login', {
         email,
         password,
+        ...(code ? { code } : {}),
       });
       await startSession(result.token, result.user);
       // Back to wherever the guard caught them, e.g. a copied /apply?unit= link. The target
@@ -40,6 +43,15 @@ export function Login() {
         replace: true,
       });
     } catch (error) {
+      const reason = errorCode(error);
+      if (reason === 'code_required') {
+        setCode('');
+        return;
+      }
+      if (reason === 'code_wrong') {
+        toast.show({ title: 'That code did not match', description: 'Use the newest code in the app, or a recovery code.', tone: 'danger' });
+        return;
+      }
       const wrongCreds = (error as { status?: number }).status === 401;
       toast.show({
         title: 'Sign in failed',
@@ -92,8 +104,24 @@ export function Login() {
             onChange={(event) => setPassword(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && email && password && signIn()}
           />
-          <Button block loading={busy} disabled={!email || !password} onClick={signIn}>
-            Sign in
+          {code !== null ? (
+            <div className="space-y-1.5">
+              <label htmlFor="login-code" className="block text-sm font-medium text-ink">Code from your authenticator app</label>
+              <Input
+                id="login-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                placeholder="123 456"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                onKeyDown={(event) => event.key === 'Enter' && code.trim().length >= 6 && signIn()}
+              />
+              <p className="text-xs text-ink-muted">Lost your phone? Type one of your recovery codes instead.</p>
+            </div>
+          ) : null}
+          <Button block loading={busy} disabled={!email || !password || (code !== null && code.trim().length < 6)} onClick={signIn}>
+            {code !== null ? 'Continue' : 'Sign in'}
           </Button>
           <p className="text-center text-[13px]">
             <Link to="/forgot-password" className="font-bold text-brand-500">Forgot your password?</Link>

@@ -82,6 +82,10 @@ export async function signedUrl(key: string) {
 
 /** The server explains refusals precisely ("suburb: at least 2 characters"); this unwraps
     that explanation so a toast never says less than the API did. */
+/** The API's machine-readable reason, e.g. 'code_required', or null. */
+export const errorCode = (error: unknown): string | null =>
+  (error as { body?: { error?: { code?: string } } })?.body?.error?.code ?? null;
+
 export function humanError(error: unknown, fallback = 'Something went wrong. Try again.'): string {
   const body = (error as { body?: { error?: { message?: string; details?: Record<string, string> } } })?.body;
   if (!body?.error) {

@@ -45,6 +45,7 @@ import { handler as invites_lookup } from './handlers/invites-lookup';
 import { handler as invites_accept } from './handlers/invites-accept';
 import { handler as leases_import } from './handlers/leases-import';
 import { handler as leases_tenant_invite } from './handlers/leases-tenant-invite';
+import { handler as two_step } from './handlers/two-step';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -104,6 +105,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/auth/password', auth_password],
   ['POST', '/auth/reset/request', auth_reset_request],
   ['POST', '/auth/reset/confirm', auth_reset_confirm],
+  ['GET', '/auth/two-step', two_step],
+  ['POST', '/auth/two-step', two_step],
   ['POST', '/auth/logout', auth_logout],
   ['GET', '/audit', audit_list],
   ['POST', '/applications', applications_create],

@@ -25,6 +25,8 @@ interface Statement {
   reference: string | null;
   landlord: string | null;
   bank: { name: string; holder: string; accountNumber: string; branchCode: string } | null;
+  bankChangedOn: string | null;
+  landlordPhone: string | null;
   balanceCents: number;
   depositBalanceCents: number;
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string }[];
@@ -150,6 +152,12 @@ export function TenantRent() {
       <Card className="mb-4">
         <CardBody className="space-y-3">
           <p className="label">Pay by EFT</p>
+          {data.bankChangedOn && data.bank ? (
+            <Alert tone="warning" title={`This account changed on ${formatDate(data.bankChangedOn)}`}>
+              If {data.landlord ?? 'your landlord'} did not tell you themselves, phone them
+              {data.landlordPhone ? ` on ${data.landlordPhone}` : ''} before you pay.
+            </Alert>
+          ) : null}
           {data.bank ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[14px]">
               <dt className="text-ink-muted">Bank</dt>

@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Eighty-seven routes in all; the table lists the shape of each family rather than every verb.
+Eighty-nine routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -716,6 +716,27 @@ Imported tenants have no sign-in. The landlord can email them a link (`tenant_in
 use, 7 days, stored hashed). A tenant with no account chooses a password; one who already has
 an account must enter that account's password, so the link alone never opens an existing
 account.
+
+## Two-step sign-in and bank details
+
+Changed bank details are how rent gets stolen: whoever controls the landlord's sign-in can
+point every invoice at their own account. So:
+
+- Anyone can turn on two-step sign-in under Settings, You: scan a QR code into an authenticator
+  app, confirm a code, keep ten single-use recovery codes. Codes are RFC 6238 (SHA1, 30 s,
+  6 digits), checked one step either side, and a step once used is refused. The secret is kept
+  AES-GCM encrypted under a key derived from `AUTH_SECRET`; recovery codes are kept hashed.
+- With it on, sign-in asks for the code after the password, and a wrong code counts as a failed
+  attempt. A password reset link changes the password but no longer signs in; neither does a
+  tenant's lease invitation for an account that has two-step on.
+- The first bank account can be added freely. Replacing one needs the owner to have two-step on
+  and to give a current code (`PUT /landlord` with `code`). Resaving the same details does not.
+- On a change, the owner is emailed at the business address and their sign-in address, every
+  tenant on an active lease gets a notice they cannot switch off, and the rent screen shows a
+  warning beside the account for 30 days.
+
+This applies to the local auth driver. Under Cognito, its own MFA protects the sign-in and the
+bank change goes through with the same notices.
 
 ## Expenses and reports
 
