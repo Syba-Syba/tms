@@ -82,3 +82,7 @@ tms/api/certs/*.pem
 # Serverless build output
 .serverless/
 .esbuild/
+
+# Hosted kit: secrets and backups stay on the server.
+deploy/.env.production
+deploy/backups/

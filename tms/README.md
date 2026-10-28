@@ -22,6 +22,15 @@ Android APK and web PWA from one codebase.
 
 Estimated running cost at this size: 15 to 25 USD a month.
 
+## Running it as the hosted service
+
+`deploy/` runs the self-hosted build on one server with Docker: the app, Postgres (through its
+socket, no open port), Caddy for HTTPS, and nightly backups with a restore check and a restore
+script. `deploy/README.md` is the runbook. `GET /health` is public for an uptime monitor: 200
+when the database answers, the daily jobs ran in the last two days and the last backup is under
+36 hours old. Unhandled errors and failed jobs are emailed to `ALERT_EMAIL`, at most once an hour
+per kind, sent directly so they still go out when the database is what broke.
+
 ## Running it for real without AWS
 
 There are three modes, and `APP_MODE` picks the middle one:
@@ -260,7 +269,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Ninety-six routes in all; the table lists the shape of each family rather than every verb.
+Ninety-seven routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 

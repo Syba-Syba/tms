@@ -52,6 +52,7 @@ import { handler as billing_plan } from './handlers/billing-plan';
 import { handler as billing_notify } from './handlers/billing-notify';
 import { handler as billing_simulate } from './handlers/billing-simulate';
 import { handler as leases_charges } from './handlers/leases-charges';
+import { handler as health } from './handlers/health';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -106,6 +107,7 @@ type Handler = (
  * event.pathParameters, so this only has to match the path and fill those in.
  */
 const ROUTES: Array<[string, string, Handler]> = [
+  ['GET', '/health', health],
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
   ['POST', '/auth/password', auth_password],

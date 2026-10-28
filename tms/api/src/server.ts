@@ -62,6 +62,8 @@ async function currentUser(token: string) {
 
 /** The only routes that answer without a token, because they are how you get one. */
 const PUBLIC_ROUTES = new Set([
+  // For the uptime monitor and the container health check. Says nothing about anyone.
+  'GET /health',
   'POST /auth/login',
   'POST /auth/register',
   'POST /auth/reset/request',

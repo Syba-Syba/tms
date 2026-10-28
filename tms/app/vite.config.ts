@@ -28,12 +28,13 @@ export default defineConfig(({ command, mode }) => {
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Kruis Court Tenants',
-        short_name: 'Kruis Court',
+        name: 'Threshold',
+        short_name: 'Threshold',
+        description: 'Leases, rent, deposits and repairs for South African rentals.',
         start_url: '/',
         display: 'standalone',
-        background_color: '#e9e6e0',
-        theme_color: '#6d3557',
+        background_color: '#f7f7f5',
+        theme_color: '#1d5e4a',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
