@@ -31,6 +31,7 @@ interface BillableLease {
   end_date: string;
   monthly_rent_cents: string;
   escalation_pct: string;
+  escalates_from: string | null;
   termination_effective_on: string | null;
   renewal_starts_on: string | null;
   unit_code: string;
@@ -58,6 +59,7 @@ export const handler = async (input?: { periods?: string[] }) => {
       // month (RHA s5(5)) and is billed as such. A renewal signed late then skips the months
       // the old lease already billed, so nobody pays twice for the same days.
       `select l.id, l.status, l.start_date::text, l.end_date::text, l.monthly_rent_cents, l.escalation_pct,
+              l.escalates_from::text,
               t.effective_on::text as termination_effective_on,
               ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on,
               u.code as unit_code,
@@ -101,7 +103,8 @@ export const handler = async (input?: { periods?: string[] }) => {
       const rent = rentForWindow({
         baseRentCents: Number(lease.monthly_rent_cents),
         escalationPct: Number(lease.escalation_pct),
-        leaseStart: dateFromIso(lease.start_date),
+        // An imported lease states its current rent, so escalation counts from when that took effect.
+        leaseStart: dateFromIso(lease.escalates_from ?? lease.start_date),
         window,
       });
       try {

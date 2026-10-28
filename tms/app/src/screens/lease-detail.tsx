@@ -15,9 +15,10 @@ import { randomId } from '../lib/ids';
 import { useOpenDocument } from '../lib/open-document';
 
 interface Lease {
-  id: string; ref: string; status: string; unit: string; tenant: string;
+  id: string; ref: string; status: string; unit: string; tenant: string; tenantEmail: string;
   startDate: string; endDate: string; monthlyRentCents: number; escalationPct: number;
   depositCents: number; hasDocument: boolean; pdfKey: string | null;
+  source: 'online' | 'import'; tenantHasAccount: boolean; tenantInviteSentAt: string | null;
   viewer: { isLandlord: boolean; isTenant: boolean };
   inspections: { id: string; kind: string; status: string; scheduledFor: string; findings: number; flagged: number; reportKey: string | null }[];
   termination: { id: string; status: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null; deductions: number; statementKey: string | null } | null;
@@ -222,6 +223,32 @@ export function LeaseDetail() {
           ))}
         </CardBody>
       </Card>
+
+      {data.source === 'import' && landlord ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line p-4">
+          <div className="min-w-0">
+            <p className="text-[14px] font-semibold text-ink">Brought in from before Threshold</p>
+            <p className="text-[13px] text-ink-muted">
+              The signed lease stays on paper.{' '}
+              {data.tenantHasAccount
+                ? `${data.tenant} uses the app.`
+                : data.tenantInviteSentAt
+                  ? `${data.tenant} was invited to the app ${formatDate(data.tenantInviteSentAt.slice(0, 10))} and has not joined yet.`
+                  : `${data.tenant} is not using the app yet.`}
+            </p>
+          </div>
+          {!data.tenantHasAccount ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => run(() => api.post(`/leases/${leaseId}/tenant-invite`, {}), `Invitation sent to ${data.tenantEmail}`)}
+            >
+              {data.tenantInviteSentAt ? 'Send the invitation again' : 'Invite to the app'}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {data.pdfKey ? (
         <button

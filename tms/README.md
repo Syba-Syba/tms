@@ -260,7 +260,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Eighty-five routes in all; the table lists the shape of each family rather than every verb.
+Eighty-seven routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -695,6 +695,27 @@ notifications go to the owner and the business email, not to each agent.
 Routes: `GET /landlord`, `PUT /landlord`, `GET /landlord/team`, `POST /landlord/invites`,
 `POST /landlord/invites/{id}/revoke`, `POST /landlord/members/{sub}/remove`, and the public
 `POST /invites/lookup` and `POST /invites/accept`, which take the token in the body.
+
+## Current tenants
+
+A landlord who starts with tenants already in place adds them under Overview, Add current
+tenants: one from a form, or many from a CSV (template on the page). `POST /leases/import`
+takes `rows` or `csv`; `dryRun: true` reports every problem by line, and the real run writes
+all rows or none.
+
+Each row becomes an approved application and an active lease marked `source = 'import'`, so
+it stays out of the applications queue and needs no signing. The unit is marked occupied, the
+deposit held goes on the ledger, and this month's rent is invoiced at import (paid or not, as
+the landlord says), so the monthly run does not bill it again. Arrears from before this month
+become one invoice due on the date they were first owed, and follow the arrears steps.
+
+The rent entered is today's rent. `lease.escalates_from` is set to the last anniversary of the
+lease start, and escalation counts from there, so years already past are not escalated again.
+
+Imported tenants have no sign-in. The landlord can email them a link (`tenant_invite`, single
+use, 7 days, stored hashed). A tenant with no account chooses a password; one who already has
+an account must enter that account's password, so the link alone never opens an existing
+account.
 
 ## Expenses and reports
 

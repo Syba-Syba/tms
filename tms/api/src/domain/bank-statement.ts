@@ -165,7 +165,7 @@ function parseOfx(text: string): ParsedStatement {
  * CSV
  * ------------------------------------------------------------------ */
 
-function splitRow(line: string, delimiter: string): string[] {
+export function splitRow(line: string, delimiter: string): string[] {
   const cells: string[] = [];
   let cell = '';
   let quoted = false;
@@ -193,7 +193,7 @@ function splitRow(line: string, delimiter: string): string[] {
   return cells;
 }
 
-function detectDelimiter(lines: string[]): string {
+export function detectDelimiter(lines: string[]): string {
   const sample = lines.slice(0, 20).join('\n');
   const counts = [',', ';', '\t', '|'].map((d) => [d, sample.split(d).length] as const);
   return counts.sort((a, b) => b[1] - a[1])[0]![0];

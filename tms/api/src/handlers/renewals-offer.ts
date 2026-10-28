@@ -17,8 +17,9 @@ export const handler = route(async (event) => {
   const result = await withTransaction(async (run) => {
     const [lease] = await run<{
       status: string; start_date: string; end_date: string; monthly_rent_cents: string; escalation_pct: string;
+      escalates_from: string | null;
     }>(
-      `select status, start_date::text, end_date::text, monthly_rent_cents, escalation_pct
+      `select status, start_date::text, end_date::text, monthly_rent_cents, escalation_pct, escalates_from::text
          from lease where id = $1 for update`,
       [leaseId],
     );
@@ -46,7 +47,7 @@ export const handler = route(async (event) => {
     const currentRentCents = rentForPeriod(
       Number(lease.monthly_rent_cents),
       Number(lease.escalation_pct),
-      dateFromIso(lease.start_date),
+      dateFromIso(lease.escalates_from ?? lease.start_date),
       dateFromIso(lease.end_date),
     );
     const terms = renewalTerms({

@@ -43,6 +43,8 @@ import { handler as landlord_invite_revoke } from './handlers/landlord-invite-re
 import { handler as landlord_member_remove } from './handlers/landlord-member-remove';
 import { handler as invites_lookup } from './handlers/invites-lookup';
 import { handler as invites_accept } from './handlers/invites-accept';
+import { handler as leases_import } from './handlers/leases-import';
+import { handler as leases_tenant_invite } from './handlers/leases-tenant-invite';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -120,6 +122,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/leases', leases_list],
   ['GET', '/leases/{id}', leases_get],
   ['GET', '/leases/{id}/statement', leases_statement],
+  ['POST', '/leases/import', leases_import],
+  ['POST', '/leases/{id}/tenant-invite', leases_tenant_invite],
   ['GET', '/leases/{id}/arrears', arrears_get],
   ['POST', '/leases/{id}/arrears/letter', arrears_letter],
   ['POST', '/leases/{id}/arrears/pause', arrears_pause],

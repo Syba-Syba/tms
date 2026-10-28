@@ -22,9 +22,9 @@ export function SetupChecklist() {
     { done: data.onboarding.unit, title: 'Add a unit with its rent', detail: 'Each flat or room you let on its own lease.', to: '/properties' },
     {
       done: data.onboarding.tenant,
-      title: 'Share your listings link',
-      detail: 'Applicants apply through it. Approve one and the lease follows.',
-      to: '/settings/account',
+      title: 'Add your tenants',
+      detail: 'Bring in the ones renting now, or share your listings link for new applicants.',
+      to: '/tenants/import',
     },
   ];
   const left = steps.filter((step) => !step.done).length;

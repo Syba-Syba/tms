@@ -17,7 +17,11 @@ export function Join() {
   const [busy, setBusy] = useState(false);
   const invite = useQuery({
     queryKey: ['invite', token],
-    queryFn: () => api.post<{ name: string; email: string; landlord: string }>('/invites/lookup', { token }),
+    queryFn: () =>
+      api.post<{ kind: 'agent' | 'tenant'; name: string; email: string; landlord: string; unit?: string; hasAccount: boolean }>(
+        '/invites/lookup',
+        { token },
+      ),
     enabled: token.length > 0,
     retry: false,
   });
@@ -49,15 +53,23 @@ export function Join() {
       ) : (
         <>
           <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">
-            Join {invite.data.landlord}
+            {invite.data.kind === 'tenant' ? `Your lease for ${invite.data.unit}` : `Join ${invite.data.landlord}`}
           </h1>
           <p className="mb-5 text-[14px] text-ink-muted">
-            Hi {invite.data.name}. Choose a password to help run their rentals. You sign in as {invite.data.email}.
+            Hi {invite.data.name}.{' '}
+            {invite.data.kind === 'tenant'
+              ? `${invite.data.landlord} runs your lease on Threshold: your rent, your statement, proof of payment and repairs. `
+              : 'Choose a password to help run their rentals. '}
+            {invite.data.hasAccount
+              ? `You already have an account as ${invite.data.email}. Enter its password to add this lease to it.`
+              : `You sign in as ${invite.data.email}.`}
           </p>
           <Card>
             <CardBody className="space-y-3">
-              <Input type="password" aria-label="Password" placeholder="Password, at least 8 characters"
-                autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <Input type="password" aria-label="Password"
+                placeholder={invite.data.hasAccount ? 'Your password' : 'Password, at least 8 characters'}
+                autoComplete={invite.data.hasAccount ? 'current-password' : 'new-password'}
+                value={password} onChange={(event) => setPassword(event.target.value)} />
               <Checkbox
                 id="join-consent"
                 checked={consent}
@@ -70,9 +82,14 @@ export function Join() {
                   </span>
                 }
               />
-              <Button block loading={busy} disabled={password.length < 8 || !consent} onClick={join}>
-                Join
+              <Button block loading={busy} disabled={password.length < (invite.data.hasAccount ? 1 : 8) || !consent} onClick={join}>
+                {invite.data.kind === 'tenant' ? 'Open my lease' : 'Join'}
               </Button>
+              {invite.data.hasAccount ? (
+                <p className="text-center text-[13px] text-ink-muted">
+                  Forgot it? <Link to="/forgot-password" className="font-bold text-brand-500">Reset your password</Link>, then open this link again.
+                </p>
+              ) : null}
             </CardBody>
           </Card>
         </>

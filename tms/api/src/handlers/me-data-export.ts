@@ -36,7 +36,7 @@ export const handler = route(async (event) => {
       'from the app.',
     account,
     applicant: applicant
-      ? { ...applicant, id: undefined, idNumber: `ending ${String(applicant.id_number_last4)}`, id_number_last4: undefined }
+      ? { ...applicant, id: undefined, idNumber: applicant.id_number_last4 ? `ending ${String(applicant.id_number_last4)}` : null, id_number_last4: undefined }
       : null,
     applications: await byApplicant(
       `select a.id, p.name || ' ' || u.code as unit, a.status, a.occupants, a.preferred_move_in, a.pets,

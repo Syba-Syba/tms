@@ -204,7 +204,7 @@ export interface LeaseData {
   ref: string;
   landlordName: string;
   tenantName: string;
-  tenantIdLast4: string;
+  tenantIdLast4: string | null;
   unitLabel: string;
   address: string;
   startDate: string;
@@ -222,7 +222,7 @@ export async function renderLeasePdf(input: LeaseData) {
   ctx.y -= 34;
   rule(ctx);
   pair(ctx, 'Landlord', lease.landlordName);
-  pair(ctx, 'Tenant', `${lease.tenantName} (ID ····${lease.tenantIdLast4})`);
+  pair(ctx, 'Tenant', lease.tenantIdLast4 ? `${lease.tenantName} (ID ····${lease.tenantIdLast4})` : lease.tenantName);
   pair(ctx, 'Premises', `${lease.unitLabel}, ${lease.address}`);
   pair(ctx, 'Term', `${lease.startDate} to ${lease.endDate}`);
   pair(ctx, 'Monthly rent', zar(lease.rentCents));

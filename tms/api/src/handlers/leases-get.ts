@@ -12,13 +12,16 @@ export const handler = route(async (event) => {
     id: string; ref: string; status: string; start_date: string; end_date: string;
     monthly_rent_cents: string; escalation_pct: string; deposit_cents: string;
     unit: string; tenant: string; tenant_email: string; pdf_sha256: string | null;
-    pdf_s3_key: string | null;
+    pdf_s3_key: string | null; source: string; tenant_has_account: boolean; invite_sent_at: string | null;
   }>(
     `select l.id, 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, l.status,
             l.start_date::text, l.end_date::text, l.monthly_rent_cents, l.escalation_pct,
             l.deposit_cents, p.name || ' ' || u.code as unit,
             a.first_name || ' ' || a.last_name as tenant, a.email as tenant_email,
-            l.pdf_sha256, l.pdf_s3_key
+            l.pdf_sha256, l.pdf_s3_key, l.source, a.cognito_sub is not null as tenant_has_account,
+            (select max(i.created_at)::text from tenant_invite i
+              where i.lease_id = l.id and i.accepted_at is null and i.revoked_at is null and i.expires_at > now())
+              as invite_sent_at
        from lease l
        join unit u on u.id = l.unit_id
        join property p on p.id = u.property_id
@@ -103,6 +106,10 @@ export const handler = route(async (event) => {
     hasDocument: Boolean(lease.pdf_sha256),
     pdfKey: lease.pdf_s3_key,
     pdfSha256: lease.pdf_sha256,
+    // 'import': the paperwork was done before Threshold, so there is no lease document or signatures here.
+    source: lease.source,
+    tenantHasAccount: lease.tenant_has_account,
+    tenantInviteSentAt: access.isLandlord ? lease.invite_sent_at : null,
     signatures: signatures.map((row) => ({ party: row.party, signedAt: row.signed_at })),
     viewer: { isLandlord: access.isLandlord, isTenant: access.isTenant },
     inspections: inspections.map((row) => ({

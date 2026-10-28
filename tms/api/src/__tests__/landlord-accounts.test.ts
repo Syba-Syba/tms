@@ -177,7 +177,7 @@ describe('agents', () => {
     expect(await db.query('select 1 from landlord_invite where token_hash = $1', [token])).toHaveLength(0);
 
     const looked = await call('POST', '/invites/lookup', null, { token });
-    expect(looked.body).toEqual({ name: 'Ayanda Khumalo', email: 'ayanda@example.co.za', landlord: 'Ndlovu Homes' });
+    expect(looked.body).toEqual({ kind: 'agent', name: 'Ayanda Khumalo', email: 'ayanda@example.co.za', landlord: 'Ndlovu Homes', hasAccount: false });
 
     const joined = await call('POST', '/invites/accept', null, { token, password: 'agent-password', consentVersion: PRIVACY_VERSION });
     expect(joined.status).toBe(201);

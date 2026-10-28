@@ -280,7 +280,10 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
     <section>
       <div className="mb-2 flex items-center justify-between gap-3">
         <h2 className="label">Leases</h2>
-        <Link to="/properties" className="text-xs font-bold text-brand-500">Properties</Link>
+        <span className="flex gap-4">
+          <Link to="/tenants/import" className="text-xs font-bold text-brand-500">Add current tenants</Link>
+          <Link to="/properties" className="text-xs font-bold text-brand-500">Properties</Link>
+        </span>
       </div>
       {rows.length > 6 ? (
         <Input
@@ -292,7 +295,10 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
         />
       ) : null}
       {rows.length === 0 ? (
-        <EmptyState title="No leases yet" description="Once a lease is signed it appears here." />
+        <EmptyState
+          title="No leases yet"
+          description="A lease appears here once it is signed, or as soon as you add a tenant who is renting already."
+        />
       ) : shown.length === 0 ? (
         <p className="text-[13px] text-ink-muted">No lease matches "{search}".</p>
       ) : (
