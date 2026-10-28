@@ -33,7 +33,11 @@ export function Register() {
       // A landlord lands on the dashboard, where the setup checklist waits. An applicant goes
       // back to the listing they came from, if they followed a landlord's link.
       const listing = params.get('landlord');
-      navigate(kind === 'landlord' ? '/' : listing ? `/apply?landlord=${encodeURIComponent(listing)}` : '/apply', {
+      const unit = params.get('unit');
+      const apply = listing
+        ? `/apply?landlord=${encodeURIComponent(listing)}${unit ? `&unit=${encodeURIComponent(unit)}` : ''}`
+        : '/apply';
+      navigate(kind === 'landlord' ? '/' : apply, {
         replace: true,
       });
     } catch (error) {

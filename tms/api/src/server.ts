@@ -66,6 +66,8 @@ const PUBLIC_ROUTES = new Set([
   'GET /health',
   // The operator's name and registration details, for the public terms page.
   'GET /company',
+  // A landlord's public listings page: vacant units and their photos, nothing about people.
+  'GET /listings',
   'POST /auth/login',
   'POST /auth/register',
   'POST /auth/reset/request',

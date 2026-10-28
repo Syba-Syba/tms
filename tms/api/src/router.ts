@@ -79,6 +79,8 @@ import { handler as me_erasure } from './handlers/me-erasure';
 import { handler as privacy_requests_list } from './handlers/privacy-requests-list';
 import { handler as privacy_requests_decide } from './handlers/privacy-requests-decide';
 import { handler as photos_confirm } from './handlers/photos-confirm';
+import { handler as unit_photos } from './handlers/unit-photos';
+import { handler as listings } from './handlers/listings';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
 import { handler as terminations_comparison } from './handlers/terminations-comparison';
@@ -168,6 +170,9 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['PUT', '/units/{id}', units_update],
   ['DELETE', '/units/{id}', units_delete],
   ['GET', '/units/available', units_available],
+  ['POST', '/units/{id}/photos', unit_photos],
+  ['DELETE', '/units/{id}/photos/{photoId}', unit_photos],
+  ['GET', '/listings', listings],
   ['GET', '/contractors', contractors_list],
   ['GET', '/applications/{id}/documents', applications_documents],
   ['GET', '/inspections/{id}', inspections_get],

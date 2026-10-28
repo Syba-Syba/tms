@@ -266,13 +266,15 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /properties, /properties/{id}/units | landlord | add stock; PUT on either edits it |
 | DELETE | /properties/{id}, /units/{id} | landlord | remove stock; refused whenever there is lease or application history |
 | GET | /units/available | any signed-in user | vacant units for the application form |
+| GET | /listings?landlord={slug} | public | one landlord's vacant, listed units with photos |
+| POST, DELETE | /units/{id}/photos, /units/{id}/photos/{photoId} | landlord | add a listing photo (then `/photos/confirm`), remove one |
 | GET | /applications/{id}/documents | landlord or owner | the uploaded paperwork, each with a signed view link |
 | GET | /contractors | landlord | the directory that builds itself from past assignments |
 | GET | /inspections/{id} | both | full inspection state: findings, photos, signatures, draft |
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred routes in all; the table lists the shape of each family rather than every verb.
+One hundred and three routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -697,8 +699,10 @@ step with `landlord_member`, so seeds and landlord notifications work as before.
   POPIA request. Removing an agent moves their session epoch, so they are signed out at once.
 - **Bank details** print on invoices and the letter of demand and show on the tenant's rent
   screen. A change is in Activity with the old and new last four digits.
-- **Listings link.** Each landlord has `/apply?landlord=their-name`. With more than one landlord
-  on the installation, the vacant-unit list needs it, so no landlord shows another's units.
+- **Listings link.** Each landlord has `/l/their-name`, a public page of their vacant units (see
+  Listings below). Apply on it leads to `/apply?landlord=their-name&unit=…`. With more than one
+  landlord on the installation, the vacant-unit list needs the name, so no landlord shows
+  another's units.
 
 Limits for now: landlord sign-up and invitations use the local auth driver; under Cognito they
 need a sign-up flow that puts the person in the `landlord` group, which is not built. Landlord
@@ -796,6 +800,22 @@ trial's end starts the monthly charges on that date as intended.
   tax invoice: the words, both VAT numbers and 15% VAT taken out of the inclusive price. The
   landlord's own VAT number goes under Settings, Account.
 
+## Listings
+
+- `/l/their-name` needs no sign-in, so a landlord can put it on Property24, Facebook or a
+  WhatsApp status. It shows vacant units only: photos, rent, deposit, bedrooms, bathrooms,
+  parking, furnished, pets, the date it is free and a description. The suburb shows; the
+  street address and anything about tenants do not.
+- Listing details and up to 12 photos are edited in the unit's drawer on Properties. A unit can
+  be hidden from the page with "Show on my listings page" switched off.
+- Photos take the same path as repair photos: a presigned upload, then `/photos/confirm` reads
+  the bytes, refuses anything that is not a real JPEG or PNG and keeps its own copy. The app
+  redraws each photo through a canvas first, which drops EXIF, so a phone's GPS position never
+  reaches the public page.
+- Photo links on the page are signed and last an hour; the page refetches before they expire.
+- Apply goes through sign-in or sign-up and keeps the landlord and the unit, so the applicant
+  lands on the form for the unit they picked.
+
 ## WhatsApp
 
 Every notification already queued a WhatsApp copy for anyone with a phone number; nothing sent
@@ -886,6 +906,7 @@ through `app/src/lib/format.ts`.
 | Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
 | Privacy notice | `/privacy` | anyone |
 | Terms of service | `/terms` | anyone |
+| Listings | `/l/{slug}` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

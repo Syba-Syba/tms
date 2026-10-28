@@ -42,7 +42,8 @@ export function ApplyStart() {
     () => new URLSearchParams(window.location.search).get('unit') ?? '',
   );
 
-  // The landlord's listings link: /apply?landlord=their-name. It is what scopes the list.
+  // Arrives from the landlord's listings page, /l/their-name, as /apply?landlord=their-name.
+  // It is what scopes the list.
   const landlord = new URLSearchParams(window.location.search).get('landlord') ?? '';
   const { data: available, isError: unknownLandlord } = useQuery({
     queryKey: ['available-units', landlord],

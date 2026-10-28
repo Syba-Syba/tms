@@ -35,4 +35,5 @@ export function useLandlord() {
 }
 
 /** The link a landlord shares so applicants see only their units. */
-export const listingsUrl = (slug: string) => `${window.location.origin}/apply?landlord=${slug}`;
+/** The public page a landlord shares: their vacant units with photos, no sign-in needed. */
+export const listingsUrl = (slug: string) => `${window.location.origin}/l/${slug}`;

@@ -269,7 +269,7 @@ export function SettingsAccount() {
         <Card>
           <CardBody className="space-y-3">
             <p className="text-[13.5px] text-ink">
-              Share it on a listing site, WhatsApp or your own website. Applicants who open it see your vacant units and nobody else's.
+              Share it on a listing site, WhatsApp or your own website. It shows your vacant units with their photos, and nobody else's. Add photos and a description from each unit on Properties.
             </p>
             {link ? (
               <div className="flex flex-wrap items-center gap-2">
