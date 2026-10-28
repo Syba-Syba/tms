@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.pglite*
+**/.storage*
+**/.env
+**/.env.selfhosted
+**/.env.production
+deploy/backups
+.git
+**/*.log
+**/coverage

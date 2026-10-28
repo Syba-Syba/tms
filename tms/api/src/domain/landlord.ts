@@ -31,6 +31,7 @@ export const updateAccountSchema = z
     email: z.string().trim().email().max(254),
     phone,
     registrationNo: z.string().trim().max(40).nullable(),
+    vatNo: z.string().trim().regex(/^4[0-9]{9}$/, 'A VAT number is 10 digits starting with 4.').nullable(),
     slug: z.string().trim().toLowerCase().regex(SLUG, 'Use 3 to 40 lowercase letters, digits or hyphens.'),
     bank,
   })

@@ -46,6 +46,9 @@ export const router = createBrowserRouter([
       { path: '/join', lazy: screen('join', 'Join') },
       // Public, so it can be read before signing up.
       { path: '/privacy', lazy: screen('privacy', 'Privacy') },
+      { path: '/terms', lazy: screen('terms', 'Terms') },
+      // A landlord's public listings page: no sign-in, so it can be shared anywhere.
+      { path: '/l/:slug', lazy: screen('listings', 'Listings') },
       {
         element: <RequireAuth />,
         children: [

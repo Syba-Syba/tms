@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { requireApplicationAccess } from '../lib/access';
+import { hasCreditConsent } from './credit-check';
 import { query } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, json, notFound, parseBody, route } from '../lib/http';
 
 const schema = z.object({
-  kind: z.enum(['id_copy', 'payslip', 'bank_statement', 'proof_of_address', 'other']),
+  kind: z.enum(['id_copy', 'payslip', 'bank_statement', 'proof_of_address', 'other', 'credit_report']),
   contentType: z.enum(['image/jpeg', 'image/png', 'application/pdf']),
   sizeBytes: z.number().int().positive().max(10 * 1024 * 1024, 'Files must be under 10 MB.'),
 });
@@ -15,7 +16,12 @@ export const handler = route(async (event) => {
   if (!applicationId) throw badRequest('An application id is required.');
   const input = parseBody(event, schema);
 
-  await requireApplicationAccess(event, applicationId);
+  const access = await requireApplicationAccess(event, applicationId);
+  // A bureau report is the landlord's to file, and only once the applicant agreed to the check.
+  if (input.kind === 'credit_report') {
+    if (!access.isLandlord) throw badRequest('Only the landlord files a credit report.');
+    if (!(await hasCreditConsent(applicationId))) throw badRequest('The applicant has not agreed to a credit check.');
+  }
 
   const [application] = await query<{ id: string; status: string }>(
     'select id, status from application where id = $1',

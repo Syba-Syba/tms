@@ -90,6 +90,19 @@ async function smtpSender(): Promise<Sender> {
 
 const emailSender = () => (sender ??= MODE === 'smtp' ? smtpSender() : sesSender());
 
+/**
+ * Sends one email now, outside the outbox, for alerts to whoever runs the service: when the
+ * database is the thing that broke, a message queued in it never leaves. Logs instead in
+ * skip mode.
+ */
+export async function sendDirectEmail(to: string, subject: string, body: string): Promise<void> {
+  if (MODE === 'skip') {
+    log.info('Alert not emailed, NOTIFY_MODE=skip.', { subject });
+    return;
+  }
+  await (await emailSender())({ id: 'direct', channel: 'email', recipient_to: to, subject, body, attempts: 1, stale: false });
+}
+
 async function deliver(row: Pending): Promise<void> {
   if (row.channel === 'email') {
     await (await emailSender())(row);

@@ -8,6 +8,7 @@ import { handler as arrearsRun } from '../handlers/arrears-run';
 import { sastToday } from '../domain/dates';
 import { audit } from './audit';
 import { logger } from './logger';
+import { alert, describeError } from './alerts';
 
 /**
  * The jobs EventBridge runs in the AWS deployment, run from inside the self-hosted
@@ -106,6 +107,7 @@ export function startScheduler(
       const count = previous?.day === today ? previous.count + 1 : 1;
       failures.set(job.name, { day: today, count, at: now().getTime() });
       logger.error('Job failed.', { job: job.name, why, error, failuresToday: count });
+      void alert(`job:${job.name}`, `Scheduled job ${job.name} failed`, `Failure ${count} today (${why}).\n\n${describeError(error)}`);
       return false;
     } finally {
       inFlight.delete(job.name);

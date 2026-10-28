@@ -4,6 +4,7 @@ import { Button, Card, CardBody, Checkbox, Input, SegmentedControl, useToast } f
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
+import { TERMS_VERSION } from '../lib/terms';
 
 type Kind = 'tenant' | 'landlord';
 
@@ -26,13 +27,17 @@ export function Register() {
       const result = await api.post<{ token: string; user: SessionUser }>('/auth/register', {
         ...form,
         consentVersion: PRIVACY_VERSION,
-        ...(kind === 'landlord' ? { landlord: business } : {}),
+        ...(kind === 'landlord' ? { landlord: business, termsVersion: TERMS_VERSION } : {}),
       });
       await startSession(result.token, result.user);
       // A landlord lands on the dashboard, where the setup checklist waits. An applicant goes
       // back to the listing they came from, if they followed a landlord's link.
       const listing = params.get('landlord');
-      navigate(kind === 'landlord' ? '/' : listing ? `/apply?landlord=${encodeURIComponent(listing)}` : '/apply', {
+      const unit = params.get('unit');
+      const apply = listing
+        ? `/apply?landlord=${encodeURIComponent(listing)}${unit ? `&unit=${encodeURIComponent(unit)}` : ''}`
+        : '/apply';
+      navigate(kind === 'landlord' ? '/' : apply, {
         replace: true,
       });
     } catch (error) {
@@ -48,7 +53,7 @@ export function Register() {
     form.password.length < 8 ? 'a password of at least 8 characters' : null,
     kind === 'landlord' && business.tradingName.trim().length < 2 ? 'your business name' : null,
     kind === 'landlord' && !/^\+?[0-9 ]{9,16}$/.test(business.phone.trim()) ? 'a phone number' : null,
-    !consent ? 'your agreement to the privacy notice' : null,
+    !consent ? (kind === 'landlord' ? 'your agreement to the terms and privacy notice' : 'your agreement to the privacy notice') : null,
   ].filter(Boolean);
   const ready = missing.length === 0;
 
@@ -119,11 +124,20 @@ export function Register() {
             checked={consent}
             onChange={(event) => setConsent(event.target.checked)}
             label={
-              <span>
-                I have read the{' '}
-                <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
-                and agree to it
-              </span>
+              kind === 'landlord' ? (
+                <span>
+                  I have read the{' '}
+                  <Link to="/terms" target="_blank" className="font-bold text-brand-500">terms of service</Link> and{' '}
+                  <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                  and agree to them
+                </span>
+              ) : (
+                <span>
+                  I have read the{' '}
+                  <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                  and agree to it
+                </span>
+              )
             }
           />
           <Button block loading={busy} disabled={!ready} onClick={create}>

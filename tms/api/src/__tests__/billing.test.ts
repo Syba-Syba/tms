@@ -8,6 +8,7 @@ import { addMonth } from '../lib/subscription';
 import { checkoutFields, itnParamString, itnSignatureValid, parseItn, signFields } from '../lib/payfast';
 import { addDaysIso, sastToday } from '../domain/dates';
 import { PRIVACY_VERSION } from '../domain/privacy';
+import { TERMS_VERSION } from '../domain/company';
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
 const today = sastToday();
@@ -191,7 +192,7 @@ describe('paying during the trial', () => {
   it('keeps the trial and starts the paid month when it ends', async () => {
     const signed = await call('POST', '/auth/register', { sub: 'anonymous', groups: 'tenant' }, {
       name: 'Early Payer', email: 'early@example.co.za', password: 'a-long-password', consentVersion: PRIVACY_VERSION,
-      landlord: { tradingName: 'Early Rentals', phone: '0825550202' },
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'Early Rentals', phone: '0825550202' },
     });
     const owner = { sub: signed.body.user.sub, groups: 'landlord' };
     const checkout = await call('POST', '/billing/checkout', owner, { plan: 'starter' });
@@ -210,7 +211,7 @@ describe('with PayFast', () => {
     process.env.PAYFAST_SANDBOX = 'true';
     const signed = await call('POST', '/auth/register', { sub: 'anonymous', groups: 'tenant' }, {
       name: 'Card Payer', email: 'card@example.co.za', password: 'a-long-password', consentVersion: PRIVACY_VERSION,
-      landlord: { tradingName: 'Card Rentals', phone: '0825550303' },
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'Card Rentals', phone: '0825550303' },
     });
     const checkout = await call('POST', '/billing/checkout', { sub: signed.body.user.sub, groups: 'landlord' }, { plan: 'pro' });
     expect(checkout.body.action).toBe('https://sandbox.payfast.co.za/eng/process');

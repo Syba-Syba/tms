@@ -52,6 +52,9 @@ import { handler as billing_plan } from './handlers/billing-plan';
 import { handler as billing_notify } from './handlers/billing-notify';
 import { handler as billing_simulate } from './handlers/billing-simulate';
 import { handler as leases_charges } from './handlers/leases-charges';
+import { handler as health } from './handlers/health';
+import { handler as company } from './handlers/company';
+import { handler as billing_invoices } from './handlers/billing-invoices';
 import { handler as arrears_get } from './handlers/arrears-get';
 import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
@@ -76,6 +79,9 @@ import { handler as me_erasure } from './handlers/me-erasure';
 import { handler as privacy_requests_list } from './handlers/privacy-requests-list';
 import { handler as privacy_requests_decide } from './handlers/privacy-requests-decide';
 import { handler as photos_confirm } from './handlers/photos-confirm';
+import { handler as unit_photos } from './handlers/unit-photos';
+import { handler as listings } from './handlers/listings';
+import { handler as credit_check } from './handlers/credit-check';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
 import { handler as terminations_comparison } from './handlers/terminations-comparison';
@@ -106,6 +112,8 @@ type Handler = (
  * event.pathParameters, so this only has to match the path and fill those in.
  */
 const ROUTES: Array<[string, string, Handler]> = [
+  ['GET', '/health', health],
+  ['GET', '/company', company],
   ['POST', '/auth/login', auth_login],
   ['POST', '/auth/register', auth_register],
   ['POST', '/auth/password', auth_password],
@@ -120,6 +128,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/applications/{id}/decision', applications_decide],
   ['POST', '/applications/{id}/documents/presign', documents_presign],
   ['POST', '/applications/{id}/documents/confirm', documents_confirm],
+  ['GET', '/applications/{id}/credit-check', credit_check],
+  ['POST', '/applications/{id}/credit-check', credit_check],
   ['POST', '/applications/{id}/lease', leases_generate],
   ['POST', '/leases/{id}/signature', leases_sign],
   ['POST', '/leases/{id}/render', leases_render],
@@ -163,6 +173,9 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['PUT', '/units/{id}', units_update],
   ['DELETE', '/units/{id}', units_delete],
   ['GET', '/units/available', units_available],
+  ['POST', '/units/{id}/photos', unit_photos],
+  ['DELETE', '/units/{id}/photos/{photoId}', unit_photos],
+  ['GET', '/listings', listings],
   ['GET', '/contractors', contractors_list],
   ['GET', '/applications/{id}/documents', applications_documents],
   ['GET', '/inspections/{id}', inspections_get],
@@ -191,6 +204,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/privacy-requests/{id}/decision', privacy_requests_decide],
   ['GET', '/billing', billing_get],
   ['POST', '/billing/checkout', billing_checkout],
+  ['GET', '/billing/invoices', billing_invoices],
+  ['POST', '/billing/invoices/{id}/render', billing_invoices],
   ['POST', '/billing/plan', billing_plan],
   ['POST', '/billing/notify', billing_notify],
   ['POST', '/billing/simulate', billing_simulate],

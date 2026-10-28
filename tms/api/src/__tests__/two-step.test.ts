@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { base32Decode, base32Encode, codeFor, matchingStep, openSecret, sealSecret, stepAt } from '../lib/totp';
 import { PRIVACY_VERSION } from '../domain/privacy';
+import { TERMS_VERSION } from '../domain/company';
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
 
@@ -162,7 +163,7 @@ describe('changing the bank account', () => {
   it('lets a new landlord add the first account freely, then asks for two-step before a change', async () => {
     const signed = await call('POST', '/auth/register', NOBODY, {
       name: 'New Owner', email: 'new.owner@example.co.za', password: 'a-long-password', consentVersion: PRIVACY_VERSION,
-      landlord: { tradingName: 'New Owner Rentals', phone: '0825550101' },
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'New Owner Rentals', phone: '0825550101' },
     });
     const owner = { sub: signed.body.user.sub, groups: 'landlord' };
     expect((await call('PUT', '/landlord', owner, bank('1111111111'))).status).toBe(200);

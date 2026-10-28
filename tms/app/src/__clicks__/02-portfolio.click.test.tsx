@@ -148,7 +148,9 @@ describe('applying and processing the queue', () => {
     fireEvent.blur(label('Gross monthly income'));
     type(label('Occupants'), '1');
     type(label('Move in'), daysFromNow(30));
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(document.getElementById('application-consent')!);
+    // Optional, and ticked here so the landlord can record a credit check below.
+    fireEvent.click(document.getElementById('application-credit-consent')!);
     fireEvent.click(screen.getByRole('button', { name: 'Continue to documents' }));
     await screen.findByText('PROBE-DOCS', undefined, { timeout: 10000 });
   });
@@ -170,6 +172,16 @@ describe('applying and processing the queue', () => {
       await screen.findAllByText('Queue Applicant', undefined, { timeout: 3000 }).catch(() => [] as HTMLElement[])
     ).find((node) => node.closest('tr'));
     if (waiting) {
+      // The applicant agreed to a credit check on the form, so the landlord records one first.
+      fireEvent.click(within(waiting.closest('tr')!).getByRole('button', { name: 'No documents yet' }));
+      const credit = await screen.findByRole('region', { name: 'Credit check' });
+      fireEvent.change(await within(credit).findByLabelText('Score'), { target: { value: '702' } });
+      fireEvent.click(within(credit).getByRole('button', { name: 'Save the credit check' }));
+      await screen.findByText('Credit check recorded');
+      expect(within(credit).getByText('Score 702')).toBeTruthy();
+      expect(within(credit).getByText('Clear record')).toBeTruthy();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Credit check' })).toBeNull());
       fireEvent.click(within(waiting.closest('tr')!).getByRole('button', { name: 'Approve' }));
       await screen.findByText('Application approved');
     }

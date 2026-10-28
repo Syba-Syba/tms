@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { requireLeaseAccessVia } from '../lib/access';
+import { membershipOf, requireLeaseAccessVia } from '../lib/access';
+import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
@@ -8,21 +9,33 @@ import { isEmbeddableImage } from '../lib/pdf';
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
-const schema = z.object({ scope: z.enum(['inspection', 'ticket']), photoId: z.guid() });
+const schema = z.object({ scope: z.enum(['inspection', 'ticket', 'unit']), photoId: z.guid() });
+
+const leaseSql = (scope: 'inspection' | 'ticket') =>
+  scope === 'inspection'
+    ? `select i.lease_id from inspection_photo p
+         join inspection_finding f on f.id = p.finding_id
+         join inspection i on i.id = f.inspection_id
+        where p.id = $1`
+    : `select t.lease_id from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1`;
 
 /** The client calls this after the PUT succeeds. Only confirmed photos reach a sealed report,
     so an abandoned upload is invisible instead of fatal. */
 export const handler = route(async (event) => {
   const input = parseBody(event, schema);
-  const table = input.scope === 'inspection' ? 'inspection_photo' : 'ticket_photo';
-  const leaseSql =
-    input.scope === 'inspection'
-      ? `select i.lease_id from inspection_photo p
-           join inspection_finding f on f.id = p.finding_id
-           join inspection i on i.id = f.inspection_id
-          where p.id = $1`
-      : `select t.lease_id from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1`;
-  await requireLeaseAccessVia(event, leaseSql, [input.photoId], 'Photo');
+  const table = input.scope === 'inspection' ? 'inspection_photo' : input.scope === 'ticket' ? 'ticket_photo' : 'unit_photo';
+  if (input.scope === 'unit') {
+    // A listing photo belongs to the landlord's account, not to a lease.
+    const { landlordId } = await membershipOf(requireLandlord(event));
+    const [own] = await query<{ id: string }>(
+      `select ph.id from unit_photo ph join unit u on u.id = ph.unit_id join property p on p.id = u.property_id
+        where ph.id = $1 and p.landlord_id = $2`,
+      [input.photoId, landlordId],
+    );
+    if (!own) throw notFound('Photo');
+  } else {
+    await requireLeaseAccessVia(event, leaseSql(input.scope), [input.photoId], 'Photo');
+  }
 
   const [photo] = await query<{ s3_key: string; uploaded: boolean }>(
     `select s3_key, uploaded from ${table} where id = $1`,
@@ -60,9 +73,9 @@ export const handler = route(async (event) => {
   const keptKey = `${photo.s3_key.replace(/\.[a-z]+$/, '')}.kept.${type === 'png' ? 'png' : 'jpg'}`;
   await storage().put(keptKey, bytes, contentType);
 
-  if (input.scope === 'ticket') {
+  if (input.scope === 'ticket' || input.scope === 'unit') {
     await query(
-      `update ticket_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
+      `update ${table} set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
       [input.photoId, contentType, size, keptKey],
     );
     return json(200, { confirmed: true, key: keptKey });

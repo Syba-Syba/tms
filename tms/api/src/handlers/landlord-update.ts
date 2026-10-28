@@ -48,6 +48,7 @@ export const handler = route(async (event) => {
   if (input.email !== undefined) set('email', input.email.toLowerCase());
   if (input.phone !== undefined) set('phone', input.phone);
   if (input.registrationNo !== undefined) set('registration_no', input.registrationNo || null);
+  if (input.vatNo !== undefined) set('vat_no', input.vatNo || null);
   if (input.slug !== undefined) set('slug', input.slug);
   if (input.bank) {
     set('bank_name', input.bank.name);

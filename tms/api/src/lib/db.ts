@@ -47,10 +47,12 @@ function sslConfig() {
     // A self-hosted Postgres on the same machine has no certificate and needs none: the
     // traffic never leaves the loopback interface. Anywhere else it crosses a network, so
     // turning TLS off would be exactly the mistake this guard exists to prevent.
-    if (isSelfHosted() && LOOPBACK.has(env.DB_HOST)) return undefined;
+    // A Unix socket path never touches a network either: the hosted kit shares Postgres's
+    // socket directory with the app container instead of opening a port.
+    if (isSelfHosted() && (LOOPBACK.has(env.DB_HOST) || env.DB_HOST.startsWith('/'))) return undefined;
     throw new Error(
       `DB_SSL=off needs NODE_ENV=development, or self-hosted mode with the database on ` +
-        `localhost. DB_HOST is ${env.DB_HOST}.`,
+        `localhost or a Unix socket. DB_HOST is ${env.DB_HOST}.`,
     );
   }
   // rejectUnauthorized:false would accept any certificate, which defeats the point.

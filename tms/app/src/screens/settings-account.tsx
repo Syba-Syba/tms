@@ -29,7 +29,7 @@ export function SettingsAccount() {
   const { data, isLoading, isError, error, refetch } = useLandlord();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [details, setDetails] = useState({ tradingName: '', email: '', phone: '', registrationNo: '' });
+  const [details, setDetails] = useState({ tradingName: '', email: '', phone: '', registrationNo: '', vatNo: '' });
   const [bank, setBank] = useState<Bank>(blankBank);
   const [slug, setSlug] = useState('');
   // "Another bank" picked from the list: only then is the bank's name typed in.
@@ -46,6 +46,7 @@ export function SettingsAccount() {
       email: data.account.email,
       phone: data.account.phone,
       registrationNo: data.account.registrationNo ?? '',
+      vatNo: data.account.vatNo ?? '',
     });
     setBank(data.account.bank ?? blankBank);
     setOtherBank(Boolean(data.account.bank && !BANKS.some((entry) => entry.name === data.account.bank!.name)));
@@ -135,13 +136,28 @@ export function SettingsAccount() {
                 onChange={(event) => setDetails({ ...details, registrationNo: event.target.value })}
               />
             </Field>
+            <Field label="VAT number" htmlFor="acct-vat-number" hint="Optional. Ten digits starting with 4. It prints on your invoices from Threshold so you can claim the VAT."
+              error={details.vatNo && !/^4[0-9]{9}$/.test(details.vatNo) ? 'A VAT number is ten digits and starts with 4.' : undefined}>
+              <Input
+                id="acct-vat-number"
+                inputMode="numeric"
+                maxLength={10}
+                disabled={!owner}
+                value={details.vatNo}
+                onChange={(event) => setDetails({ ...details, vatNo: event.target.value.replace(/\D/g, '') })}
+              />
+            </Field>
             <p className="text-xs text-ink-muted">These print on leases, invoices and letters.</p>
             {owner ? (
               <Button
                 loading={busy === 'details'}
-                disabled={busy !== null || details.tradingName.trim().length < 2}
+                disabled={busy !== null || details.tradingName.trim().length < 2 || (details.vatNo !== '' && !/^4[0-9]{9}$/.test(details.vatNo))}
                 onClick={() =>
-                  save('details', { ...details, registrationNo: details.registrationNo.trim() || null }, 'Business details saved')
+                  save(
+                    'details',
+                    { ...details, registrationNo: details.registrationNo.trim() || null, vatNo: details.vatNo || null },
+                    'Business details saved',
+                  )
                 }
               >
                 Save business details
@@ -253,7 +269,7 @@ export function SettingsAccount() {
         <Card>
           <CardBody className="space-y-3">
             <p className="text-[13.5px] text-ink">
-              Share it on a listing site, WhatsApp or your own website. Applicants who open it see your vacant units and nobody else's.
+              Share it on a listing site, WhatsApp or your own website. It shows your vacant units with their photos, and nobody else's. Add photos and a description from each unit on Properties.
             </p>
             {link ? (
               <div className="flex flex-wrap items-center gap-2">

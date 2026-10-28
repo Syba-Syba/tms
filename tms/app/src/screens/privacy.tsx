@@ -46,7 +46,16 @@ export function Privacy() {
                 'To send you messages about your rent, maintenance and lease. You choose the channels in Settings, except for statutory deadlines.',
               ]}
             />
-            We do not sell your information or use it for marketing. We do not run credit checks.
+            We do not sell your information or use it for marketing.
+          </Section>
+
+          <Section title="Credit checks">
+            Only if you agree, on your application or later. Your landlord then checks your record with a
+            registered credit bureau, such as TransUnion, Experian, XDS or TPN, using their own account,
+            and records the result here: the bureau, the date, the score, any judgements or defaults, and
+            the report. Threshold never contacts a bureau itself. You can see what was recorded on your
+            application, and it is deleted with your other application documents. You may refuse; the
+            landlord may then decide without a check, or decline.
           </Section>
 
           <Section title="Who sees it">
@@ -96,7 +105,7 @@ export function Privacy() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
       <h2 className="mb-1 text-[16px] font-bold">{title}</h2>
@@ -105,7 +114,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function List({ items }: { items: string[] }) {
+export function List({ items }: { items: string[] }) {
   return (
     <ul className="list-disc space-y-1 pl-5">
       {items.map((item) => (

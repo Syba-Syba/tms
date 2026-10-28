@@ -10,6 +10,12 @@ const COLUMNS: Record<string, string> = {
   bathrooms: 'bathrooms',
   monthlyRentCents: 'monthly_rent_cents',
   depositCents: 'deposit_cents',
+  description: 'description',
+  availableFrom: 'available_from',
+  furnished: 'furnished',
+  petsAllowed: 'pets_allowed',
+  parkingBays: 'parking_bays',
+  listed: 'listed',
 };
 
 /** Rent edits apply to the listing only. A signed lease copied its own figures at generation. */

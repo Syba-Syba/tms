@@ -7,6 +7,7 @@ import { NotificationPreferences } from '../screens/notification-preferences';
 import { Login } from '../screens/login';
 import { startSession } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
+import { TERMS_VERSION } from '../lib/terms';
 
 const type = (element: Element, value: string) => fireEvent.change(element, { target: { value } });
 const stamp = Date.now();
@@ -42,7 +43,7 @@ describe('two-step sign-in', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         name: 'Two Step', email, password: 'a-long-password', consentVersion: PRIVACY_VERSION,
-        landlord: { tradingName: `Two Step Rentals ${stamp}`, phone: '0825550199' },
+        termsVersion: TERMS_VERSION, landlord: { tradingName: `Two Step Rentals ${stamp}`, phone: '0825550199' },
       }),
     });
     const signed = await response.json();

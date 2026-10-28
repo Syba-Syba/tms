@@ -42,4 +42,15 @@ describe('database TLS', () => {
     const { getPool } = await import('../lib/db');
     expect(() => getPool()).toThrow(/DB_SSL=off needs/);
   });
+
+  /* The hosted kit shares Postgres's socket directory with the app container, so the
+     connection never touches a network and there is no certificate to check. */
+  it('allows a plaintext connection to a self-hosted database through its Unix socket', async () => {
+    process.env.DB_SSL = 'off';
+    process.env.NODE_ENV = 'production';
+    process.env.APP_MODE = 'self-hosted';
+    process.env.DB_HOST = '/var/run/postgresql';
+    const { getPool } = await import('../lib/db');
+    expect(() => getPool()).not.toThrow();
+  });
 });

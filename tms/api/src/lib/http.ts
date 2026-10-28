@@ -1,3 +1,4 @@
+import { alert, describeError } from './alerts';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { ZodError, type ZodSchema } from 'zod';
 import { createLogger } from './logger';
@@ -89,6 +90,12 @@ export const route =
         });
       }
       log.error('Unhandled failure.', { error, durationMs: Date.now() - started });
+      const http = event.requestContext?.http;
+      void alert(
+        `request:${http?.method} ${event.rawPath ?? http?.path}`,
+        `Error on ${http?.method} ${event.rawPath ?? http?.path}`,
+        describeError(error),
+      );
       return json(500, {
         error: { code: 'internal_error', message: 'Something went wrong on our side.' },
       });

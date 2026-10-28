@@ -22,6 +22,15 @@ Android APK and web PWA from one codebase.
 
 Estimated running cost at this size: 15 to 25 USD a month.
 
+## Running it as the hosted service
+
+`deploy/` runs the self-hosted build on one server with Docker: the app, Postgres (through its
+socket, no open port), Caddy for HTTPS, and nightly backups with a restore check and a restore
+script. `deploy/README.md` is the runbook. `GET /health` is public for an uptime monitor: 200
+when the database answers, the daily jobs ran in the last two days and the last backup is under
+36 hours old. Unhandled errors and failed jobs are emailed to `ALERT_EMAIL`, at most once an hour
+per kind, sent directly so they still go out when the database is what broke.
+
 ## Running it for real without AWS
 
 There are three modes, and `APP_MODE` picks the middle one:
@@ -242,6 +251,9 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /me/erasure-request | tenant | ask for erasure; immediate when there is nothing to keep |
 | GET | /privacy-requests | landlord | erasure requests from their applicants and tenants |
 | POST | /privacy-requests/{id}/decision | landlord | erase, or refuse with a reason |
+| GET | /billing/invoices | landlord | their numbered invoices from Threshold |
+| POST | /billing/invoices/{id}/render | landlord | make the invoice PDF once and return its key |
+| GET | /company | public | the operator's name, registration and contact details |
 | GET | /audit | landlord | the audit log for their own properties and account, newest first (`?entity=&entityId=&before=&limit=`) |
 | POST | /applications | tenant | submit an application, holds the unit |
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
@@ -254,13 +266,16 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /properties, /properties/{id}/units | landlord | add stock; PUT on either edits it |
 | DELETE | /properties/{id}, /units/{id} | landlord | remove stock; refused whenever there is lease or application history |
 | GET | /units/available | any signed-in user | vacant units for the application form |
+| GET | /listings?landlord={slug} | public | one landlord's vacant, listed units with photos |
+| POST, DELETE | /units/{id}/photos, /units/{id}/photos/{photoId} | landlord | add a listing photo (then `/photos/confirm`), remove one |
+| GET, POST | /applications/{id}/credit-check | both | the applicant's agreement and the recorded result; the applicant agrees, the landlord records |
 | GET | /applications/{id}/documents | landlord or owner | the uploaded paperwork, each with a signed view link |
 | GET | /contractors | landlord | the directory that builds itself from past assignments |
 | GET | /inspections/{id} | both | full inspection state: findings, photos, signatures, draft |
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-Ninety-six routes in all; the table lists the shape of each family rather than every verb.
+One hundred and five routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -685,8 +700,10 @@ step with `landlord_member`, so seeds and landlord notifications work as before.
   POPIA request. Removing an agent moves their session epoch, so they are signed out at once.
 - **Bank details** print on invoices and the letter of demand and show on the tenant's rent
   screen. A change is in Activity with the old and new last four digits.
-- **Listings link.** Each landlord has `/apply?landlord=their-name`. With more than one landlord
-  on the installation, the vacant-unit list needs it, so no landlord shows another's units.
+- **Listings link.** Each landlord has `/l/their-name`, a public page of their vacant units (see
+  Listings below). Apply on it leads to `/apply?landlord=their-name&unit=…`. With more than one
+  landlord on the installation, the vacant-unit list needs the name, so no landlord shows
+  another's units.
 
 Limits for now: landlord sign-up and invitations use the local auth driver; under Cognito they
 need a sign-up flow that puts the person in the `landlord` group, which is not built. Landlord
@@ -758,7 +775,7 @@ simulates PayFast through the same code path).
 
 With PayFast, the Plan screen posts a signed subscription form (monthly, until cancelled) to
 PayFast; card details never reach this server. PayFast then posts an ITN to
-`POST /billing/notify`, the one route without a sign-in. It is applied only if the signature
+`POST /billing/notify`, which takes no sign-in. It is applied only if the signature
 matches, the sender resolves to a PayFast host, PayFast confirms the data back, and the amount is
 what the plan costs; each payment applies once by PayFast's payment id, and anything rejected is
 kept in `billing_event` with the reason. Plan changes and cancelling go through PayFast's
@@ -767,6 +784,57 @@ subscriptions API.
 Before going live, run the whole flow in the PayFast sandbox (merchant 10000100): a first
 payment, a plan change, a cancellation. In particular check that `billing_date` set to the
 trial's end starts the monthly charges on that date as intended.
+
+## Terms of service and invoices
+
+- The terms of service live at `/terms`, public and in plain language. Landlords agree to them
+  when they sign up, and again whenever `TERMS_VERSION` changes (`api/src/domain/company.ts` and
+  `app/src/lib/terms.ts`; a test keeps the two equal). Each acceptance is a `consent` row of
+  kind `terms_of_service`, beside the privacy notice ones. Tenants do not sign them.
+- The terms are a draft written against the CPA, ECTA and POPIA. Have a South African attorney
+  read them before the first paying customer.
+- Every payment PayFast confirms creates a numbered invoice in the same transaction
+  (`billing_invoice`, numbered from 1001 by a sequence, so numbers never repeat or skip a sale).
+  It keeps a copy of both parties' details as they were that day, is emailed to the owner, and
+  is listed on the Plan screen with its PDF.
+- `COMPANY_*` in the environment sets who the supplier is. With `COMPANY_VAT_NO` set, the PDF is a
+  tax invoice: the words, both VAT numbers and 15% VAT taken out of the inclusive price. The
+  landlord's own VAT number goes under Settings, Account.
+
+## Listings
+
+- `/l/their-name` needs no sign-in, so a landlord can put it on Property24, Facebook or a
+  WhatsApp status. It shows vacant units only: photos, rent, deposit, bedrooms, bathrooms,
+  parking, furnished, pets, the date it is free and a description. The suburb shows; the
+  street address and anything about tenants do not.
+- Listing details and up to 12 photos are edited in the unit's drawer on Properties. A unit can
+  be hidden from the page with "Show on my listings page" switched off.
+- Photos take the same path as repair photos: a presigned upload, then `/photos/confirm` reads
+  the bytes, refuses anything that is not a real JPEG or PNG and keeps its own copy. The app
+  redraws each photo through a canvas first, which drops EXIF, so a phone's GPS position never
+  reaches the public page.
+- Photo links on the page are signed and last an hour; the page refetches before they expire.
+- Apply goes through sign-in or sign-up and keeps the landlord and the unit, so the applicant
+  lands on the form for the unit they picked.
+
+## Credit checks
+
+- Threshold does not query a credit bureau. The landlord runs the check with their own
+  TransUnion, Experian, XDS, Compuscan or TPN account and records it on the application: the
+  bureau, the date, the score, judgements, defaults, an outcome (clear, minor issues, adverse)
+  and the bureau's report as a PDF.
+- Nothing is recorded without the applicant's agreement. They can give it on the application
+  form (an optional box) or later from their documents screen. It is a `consent` row of kind
+  `credit_check` tied to the application.
+- The report is filed as an application document of kind `credit_report`, which only the
+  landlord can upload. So it is shown, exported, swept twelve months after a decline, and
+  erased by the same rules as payslips and ID copies; the recorded result goes with it.
+- The applicant sees the recorded result and the report on their application, which POPIA
+  section 23 gives them and which lets them dispute an error with the bureau.
+- The privacy notice changed to say all this (version 2026-10-28), so everyone is asked to agree
+  to it again on their next sign-in.
+- A direct bureau integration needs a subscriber contract with a bureau or TPN, their API
+  credentials, and registration as a user of credit information. It would fill the same record.
 
 ## WhatsApp
 
@@ -857,6 +925,8 @@ through `app/src/lib/format.ts`.
 | Sign in, create an account | `/login`, `/register` | anyone |
 | Forgot password, choose a new one from the emailed link | `/forgot-password`, `/reset-password` | anyone |
 | Privacy notice | `/privacy` | anyone |
+| Terms of service | `/terms` | anyone |
+| Listings | `/l/{slug}` | anyone |
 
 The state machine lives on the server. Screens read `viewer.isLandlord` and the current status
 from the API rather than deciding for themselves what is allowed, so the UI cannot drift from

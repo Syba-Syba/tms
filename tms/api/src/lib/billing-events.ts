@@ -1,7 +1,47 @@
 import { query, withTransaction } from './db';
 import { addMonth, subscriptionOf } from './subscription';
 import { planById } from '../domain/plans';
-import { sastToday } from '../domain/dates';
+import { addDaysIso, sastToday } from '../domain/dates';
+import { company, vatIn } from '../domain/company';
+import { zar } from '../domain/money';
+
+type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/**
+ * The invoice for a payment: numbered, dated, with the parties as they stand today, and the VAT
+ * in it when the operator is registered. The owner is emailed; the PDF is made when opened.
+ */
+async function issueInvoice(
+  run: Run,
+  input: { landlordId: string; eventId: string; plan: { id: string; name: string }; amountCents: number; from: string; to: string; today: string },
+) {
+  const supplier = company();
+  const [landlord] = await run<{ trading_name: string; email: string; registration_no: string | null; vat_no: string | null; owner: string | null }>(
+    'select trading_name, email, registration_no, vat_no, cognito_sub as owner from landlord where id = $1',
+    [input.landlordId],
+  );
+  const vat = vatIn(input.amountCents, Boolean(supplier.vatNo));
+  const [invoice] = await run<{ number: string }>(
+    `insert into billing_invoice (landlord_id, billing_event_id, issued_on, period_from, period_to, plan, amount_cents, vat_cents, supplier, recipient)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning number::text`,
+    [
+      input.landlordId, input.eventId, input.today, input.from, input.to, input.plan.id, input.amountCents, vat,
+      JSON.stringify(supplier),
+      JSON.stringify({ name: landlord!.trading_name, email: landlord!.email, registrationNo: landlord!.registration_no, vatNo: landlord!.vat_no }),
+    ],
+  );
+  await run(
+    `insert into notification (recipient_sub, recipient_to, channel, category, kind, urgent, subject, body)
+     values ($1, $2, 'email', 'account', 'billing_invoice', false, $3, $4)`,
+    [
+      landlord!.owner ?? `landlord:${input.landlordId}`,
+      landlord!.email,
+      `${supplier.vatNo ? 'Tax invoice' : 'Invoice'} ${invoice!.number} from ${supplier.name}: ${zar(input.amountCents)}`,
+      `Thank you. We received ${zar(input.amountCents)} for ${supplier.name} ${input.plan.name}, ${input.from} to ${input.to}.\n\n` +
+        `The invoice is under Settings, Plan, to download for your records.`,
+    ],
+  );
+}
 
 export interface PaymentNotice {
   provider: string;
@@ -57,7 +97,7 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
 
   const today = sastToday();
   return withTransaction(async (run) => {
-    const inserted = await run(
+    const inserted = await run<{ id: string }>(
       `insert into billing_event (landlord_id, provider, kind, external_id, verified, payload)
        values ($1, $2, $3, $4, true, $5)
        on conflict (provider, external_id) where external_id is not null and verified do nothing
@@ -74,12 +114,18 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
           : current.currentPeriodEnd && current.currentPeriodEnd >= today
             ? current.currentPeriodEnd
             : today;
+      const paidUntil = addMonth(from);
       await run(
         `update subscription set status = 'active', plan = $2, provider = $3,
                 provider_token = coalesce($4, provider_token), current_period_end = $5, updated_at = now()
           where landlord_id = $1`,
-        [landlordId, plan!.id, notice.provider, notice.token, addMonth(from)],
+        [landlordId, plan!.id, notice.provider, notice.token, paidUntil],
       );
+      await issueInvoice(run, {
+        landlordId, eventId: inserted[0]!.id, plan: plan!, amountCents: notice.amountCents!, from,
+        // The last day covered: the next month starts on paidUntil, so periods never overlap.
+        to: addDaysIso(paidUntil, -1), today,
+      });
       if (checkout) await run('update billing_checkout set completed_at = coalesce(completed_at, now()) where id = $1', [checkout.id]);
     } else if (notice.outcome === 'failed') {
       await run(`update subscription set status = 'past_due', updated_at = now() where landlord_id = $1 and status <> 'cancelled'`, [landlordId]);

@@ -25,8 +25,12 @@ export function Login() {
   // Someone who followed a landlord's listings link and has no account yet keeps the link
   // through sign-up, so they land on that landlord's units afterwards.
   const returnTo = (location.state as { from?: string } | null)?.from ?? '';
-  const listing = returnTo.startsWith('/apply') ? new URLSearchParams(returnTo.split('?')[1] ?? '').get('landlord') : null;
-  const registerLink = listing ? `/register?landlord=${encodeURIComponent(listing)}` : '/register';
+  const returnParams = new URLSearchParams(returnTo.startsWith('/apply') ? returnTo.split('?')[1] ?? '' : '');
+  const listing = returnParams.get('landlord');
+  const listedUnit = returnParams.get('unit');
+  const registerLink = listing
+    ? `/register?landlord=${encodeURIComponent(listing)}${listedUnit ? `&unit=${encodeURIComponent(listedUnit)}` : ''}`
+    : '/register';
 
   const signIn = async () => {
     setBusy(true);
@@ -132,6 +136,8 @@ export function Login() {
           </p>
           <p className="text-center text-[12px]">
             <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>
+            {' · '}
+            <Link to="/terms" className="text-ink-muted underline">Terms of service</Link>
           </p>
         </CardBody>
       </Card>

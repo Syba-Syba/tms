@@ -35,6 +35,7 @@ export const handler = route(async (event) => {
       email: account.email,
       phone: account.phone,
       registrationNo: account.registration_no,
+      vatNo: account.vat_no,
       slug: account.slug,
       bank,
     },

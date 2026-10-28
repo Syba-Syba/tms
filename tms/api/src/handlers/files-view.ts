@@ -52,7 +52,17 @@ export const handler = route(async (event) => {
   let entity: 'application' | 'lease' | 'expense';
   let entityId: string;
 
-  if (key.startsWith('expenses/')) {
+  if (key.startsWith('billing-invoices/')) {
+    // Threshold's invoices to a landlord: their team's business, never a tenant's.
+    const person = caller(event);
+    const [invoice] = await query<{ id: string; is_member: boolean }>(
+      `select b.id, exists (select 1 from landlord_member m where m.landlord_id = b.landlord_id and m.sub = $2) as is_member
+         from billing_invoice b where b.pdf_s3_key = $1`,
+      [key, person.sub],
+    );
+    if (!invoice || !invoice.is_member || !person.groups.includes('landlord')) throw notFound('Document');
+    return json(200, { viewUrl: await storage().presignGet(key, 300), expiresInSeconds: 300 });
+  } else if (key.startsWith('expenses/')) {
     // An expense slip belongs to a landlord, not a lease, so no tenant can ever reach one.
     const person = caller(event);
     const [slip] = await query<{ id: string; is_member: boolean }>(

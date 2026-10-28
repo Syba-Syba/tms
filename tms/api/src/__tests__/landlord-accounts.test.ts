@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRIVACY_VERSION } from '../domain/privacy';
+import { TERMS_VERSION } from '../domain/company';
 import { slugify } from '../domain/landlord';
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
@@ -79,7 +80,7 @@ describe('landlord sign-up', () => {
   it('opens a landlord account with the person as its owner', async () => {
     const signed = await call('POST', '/auth/register', null, {
       name: 'Sipho Ndlovu', email: 'sipho.ndlovu@example.co.za', password: 'a-long-password',
-      consentVersion: PRIVACY_VERSION, landlord: { tradingName: 'Ndlovu Homes', phone: '082 555 1234' },
+      consentVersion: PRIVACY_VERSION, termsVersion: TERMS_VERSION, landlord: { tradingName: 'Ndlovu Homes', phone: '082 555 1234' },
     });
     expect(signed.status).toBe(201);
     expect(signed.body.user.role).toBe('landlord');
@@ -97,7 +98,7 @@ describe('landlord sign-up', () => {
   it('gives a second business of the same name its own link', async () => {
     const twin = await call('POST', '/auth/register', null, {
       name: 'Other Ndlovu', email: 'other.ndlovu@example.co.za', password: 'a-long-password',
-      landlord: { tradingName: 'Ndlovu Homes', phone: '0825550000' },
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'Ndlovu Homes', phone: '0825550000' },
     });
     const account = await call('GET', '/landlord', { sub: twin.body.user.sub, groups: 'landlord' });
     expect(account.body.account.slug).toBe('ndlovu-homes-2');
@@ -106,7 +107,7 @@ describe('landlord sign-up', () => {
   it('needs a phone number for the business', async () => {
     const missing = await call('POST', '/auth/register', null, {
       name: 'No Phone', email: 'nophone@example.co.za', password: 'a-long-password',
-      landlord: { tradingName: 'Phoneless' },
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'Phoneless' },
     });
     expect(missing.status).toBe(400);
   });
