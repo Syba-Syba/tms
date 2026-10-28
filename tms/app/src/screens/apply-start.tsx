@@ -38,6 +38,7 @@ export function ApplyStart() {
   const navigate = useNavigate();
   const toast = useToast();
   const [consent, setConsent] = useState(false);
+  const [creditConsent, setCreditConsent] = useState(false);
   const [unitId, setUnitId] = useState(
     () => new URLSearchParams(window.location.search).get('unit') ?? '',
   );
@@ -70,6 +71,7 @@ export function ApplyStart() {
         occupants: Number(values.occupants),
         pets: false,
         consentVersion: PRIVACY_VERSION,
+        creditCheckConsent: creditConsent,
       });
       navigate(`/apply/${created.id}/documents`);
     } catch (error) {
@@ -173,6 +175,16 @@ export function ApplyStart() {
                     decide this application, as the{' '}
                     <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
                     explains.
+                  </span>
+                }
+              />
+              <Checkbox
+                id="application-credit-consent"
+                checked={creditConsent}
+                onChange={(event) => setCreditConsent(event.target.checked)}
+                label={
+                  <span className="text-[13px]">
+                    Optional: the landlord may check my credit record with a registered credit bureau for this application.
                   </span>
                 }
               />

@@ -31,6 +31,15 @@ export const handler = async () => {
       log.error('Could not purge an application document.', { documentId: document.id, error });
     }
   }
-  log.info('Privacy sweep complete.', { found: stale.length, removed });
+  // The recorded credit result goes with the report, on the same clock.
+  const checks = await query<{ id: string }>(
+    `delete from credit_check c using application a
+      where a.id = c.application_id and a.status in ('declined', 'withdrawn')
+        and coalesce(a.decided_at, a.updated_at, a.submitted_at) < now() - make_interval(months => $1)
+        and not exists (select 1 from lease l where l.application_id = a.id)
+      returning c.id`,
+    [DECLINED_RETENTION_MONTHS],
+  );
+  log.info('Privacy sweep complete.', { found: stale.length, removed, creditChecks: checks.length });
   return { found: stale.length, removed };
 };

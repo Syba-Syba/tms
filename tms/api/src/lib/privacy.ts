@@ -11,7 +11,7 @@ type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
 export async function recordConsent(
   run: Run,
   event: APIGatewayProxyEventV2WithJWTAuthorizer,
-  input: { sub: string; kind: 'privacy_notice' | 'application_screening' | 'terms_of_service'; version: string; subjectId?: string },
+  input: { sub: string; kind: 'privacy_notice' | 'application_screening' | 'terms_of_service' | 'credit_check'; version: string; subjectId?: string },
 ): Promise<void> {
   await run(
     `insert into consent (person_sub, kind, version, ip_address, user_agent, subject_id)
@@ -83,6 +83,11 @@ export async function erasePerson(sub: string, actor: { sub: string; role: strin
         ...signatures.map((row) => row.signature_s3_key),
       );
 
+      await run(
+        `delete from credit_check where application_id in
+           (select id from application where applicant_id = $1)`,
+        [applicant.id],
+      );
       await run(
         `delete from application_document where application_id in
            (select id from application where applicant_id = $1)`,

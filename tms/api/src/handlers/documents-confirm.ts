@@ -9,7 +9,7 @@ const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 const schema = z.object({ key: z.string().min(1).max(300) });
 
-const KEY = /^applications\/([0-9a-f-]{36})\/(id_copy|payslip|bank_statement|proof_of_address|other)\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
+const KEY = /^applications\/([0-9a-f-]{36})\/(id_copy|payslip|bank_statement|proof_of_address|other|credit_report)\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
 
 const isPdf = (bytes: Uint8Array) =>
   bytes.length >= 5 && Buffer.from(bytes.subarray(0, 5)).toString('latin1') === '%PDF-';
@@ -21,11 +21,12 @@ export const handler = route(async (event) => {
   if (!applicationId) throw badRequest('An application id is required.');
   const input = parseBody(event, schema);
 
-  await requireApplicationAccess(event, applicationId);
+  const access = await requireApplicationAccess(event, applicationId);
 
   const parts = KEY.exec(input.key);
   if (!parts || parts[1] !== applicationId) throw badRequest('That upload is not for this application.');
   const kind = parts[2]!;
+  if (kind === 'credit_report' && !access.isLandlord) throw badRequest('Only the landlord files a credit report.');
 
   let size: number | null;
   try {

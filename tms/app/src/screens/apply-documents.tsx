@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router';
 import { Alert, Button, Card, CardBody, PageHeader, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { pickPhoto, putFile } from '../lib/photos';
+import { CreditCheckApplicant } from '../components/credit-check';
+import { PRIVACY_VERSION } from '../lib/privacy';
 
 const REQUIRED = [
   { kind: 'id_copy', label: 'ID document' },
@@ -91,6 +93,14 @@ export function ApplyDocuments() {
           </Card>
         ))}
       </div>
+      {applicationId ? (
+        <Card className="mt-3">
+          <CardBody className="space-y-2">
+            <h2 className="text-sm font-medium">Credit check</h2>
+            <CreditCheckApplicant applicationId={applicationId} privacyVersion={PRIVACY_VERSION} />
+          </CardBody>
+        </Card>
+      ) : null}
       <Button block className="mt-5" disabled={!done} onClick={() => navigate('/')}>
         Submit application
       </Button>

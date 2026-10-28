@@ -48,6 +48,10 @@ export const handler = route(async (event) => {
       `select d.kind, d.content_type, d.size_bytes, d.uploaded_at from application_document d
          join application a on a.id = d.application_id where a.applicant_id = $1`,
     ),
+    creditChecks: await byApplicant(
+      `select c.bureau, c.checked_on, c.score, c.outcome, c.judgements, c.defaults, c.notes, c.recorded_at
+         from credit_check c join application a on a.id = c.application_id where a.applicant_id = $1`,
+    ),
     leases: await byApplicant(
       `select l.id, 'LSE-' || lpad(l.ref_no::text, 5, '0') as reference, p.name || ' ' || u.code as unit,
               l.start_date, l.end_date, l.monthly_rent_cents, l.deposit_cents, l.status

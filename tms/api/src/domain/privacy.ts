@@ -4,7 +4,7 @@
  */
 
 /** Bump this whenever the notice's substance changes. Everyone is asked to accept it again. */
-export const PRIVACY_VERSION = '2026-10-27';
+export const PRIVACY_VERSION = '2026-10-28';
 
 /**
  * How long a tenancy's records are kept after it ends. The Tax Administration Act has the

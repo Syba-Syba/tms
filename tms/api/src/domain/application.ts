@@ -47,6 +47,8 @@ export const createApplicationSchema = z.object({
   // POPIA: the applicant agrees, for this application, to their ID, income and documents being
   // used to decide it. The version is the privacy notice they were shown.
   consentVersion: z.string({ error: 'Agree to the privacy notice to apply.' }).max(20),
+  // Optional: the landlord may ask for it later, and may decide without one.
+  creditCheckConsent: z.boolean().optional(),
 });
 
 export type CreateApplication = z.infer<typeof createApplicationSchema>;

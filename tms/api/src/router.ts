@@ -81,6 +81,7 @@ import { handler as privacy_requests_decide } from './handlers/privacy-requests-
 import { handler as photos_confirm } from './handlers/photos-confirm';
 import { handler as unit_photos } from './handlers/unit-photos';
 import { handler as listings } from './handlers/listings';
+import { handler as credit_check } from './handlers/credit-check';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
 import { handler as terminations_comparison } from './handlers/terminations-comparison';
@@ -127,6 +128,8 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/applications/{id}/decision', applications_decide],
   ['POST', '/applications/{id}/documents/presign', documents_presign],
   ['POST', '/applications/{id}/documents/confirm', documents_confirm],
+  ['GET', '/applications/{id}/credit-check', credit_check],
+  ['POST', '/applications/{id}/credit-check', credit_check],
   ['POST', '/applications/{id}/lease', leases_generate],
   ['POST', '/leases/{id}/signature', leases_sign],
   ['POST', '/leases/{id}/render', leases_render],

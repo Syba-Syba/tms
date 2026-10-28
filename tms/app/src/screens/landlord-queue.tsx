@@ -23,6 +23,7 @@ import { api, type ApplicationSummary, humanError } from '../api/client';
 import { formatDate } from '../lib/format';
 import { QueryError } from '../components/query-state';
 import { createAndRender } from '../lib/uploads';
+import { CreditCheckPanel } from '../components/credit-check';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
@@ -40,6 +41,7 @@ const KIND_LABEL: Record<string, string> = {
   bank_statement: 'Bank statement',
   proof_of_address: 'Proof of address',
   other: 'Other',
+  credit_report: 'Credit report',
 };
 
 interface PortfolioUnit {
@@ -123,14 +125,12 @@ export function LandlordQueue() {
     return null;
   };
 
-  const docsFor = (item: ApplicationSummary) =>
-    item.documentCount > 0 ? (
-      <button type="button" className="text-[13px] font-bold text-brand-500" onClick={() => setViewingDocs(item)}>
-        {item.documentCount} on file
-      </button>
-    ) : (
-      <span className="text-[13px] text-ink-muted">no documents</span>
-    );
+  // Always openable: the credit check lives in the same drawer, documents or not.
+  const docsFor = (item: ApplicationSummary) => (
+    <button type="button" className="text-[13px] font-bold text-brand-500" onClick={() => setViewingDocs(item)}>
+      {item.documentCount > 0 ? `${item.documentCount} on file` : 'No documents yet'}
+    </button>
+  );
 
   const openGenerate = (item: ApplicationSummary) => {
     setTerms({ startDate: item.preferredMoveIn, months: '12', escalationPct: '8' });
@@ -387,7 +387,7 @@ function DocumentsDrawer({ application, onClose }: {
     <Drawer
       open={Boolean(application)}
       onOpenChange={(next) => !next && onClose()}
-      title={application ? `${application.applicant} · documents` : 'Documents'}
+      title={application ? `${application.applicant} · documents and credit` : 'Documents'}
     >
       {isLoading ? (
         <div className="p-8 text-center"><Spinner /></div>
@@ -415,6 +415,12 @@ function DocumentsDrawer({ application, onClose }: {
           ) : null}
         </div>
       )}
+      {application ? (
+        <section aria-label="Credit check" className="mt-6 space-y-2 border-t border-line pt-4">
+          <h3 className="text-[14px] font-semibold">Credit check</h3>
+          <CreditCheckPanel applicationId={application.id} />
+        </section>
+      ) : null}
     </Drawer>
   );
 }

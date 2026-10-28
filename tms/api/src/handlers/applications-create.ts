@@ -106,6 +106,14 @@ export const handler = route(async (event) => {
       version: input.consentVersion,
       subjectId: application!.id,
     });
+    if (input.creditCheckConsent) {
+      await recordConsent(run, event, {
+        sub: person.sub,
+        kind: 'credit_check',
+        version: input.consentVersion,
+        subjectId: application!.id,
+      });
+    }
 
     await run('update unit set status = $2 where id = $1 and status = $3', [
       input.unitId,

@@ -268,13 +268,14 @@ Apple developer fee, and the service worker gives them offline reads.
 | GET | /units/available | any signed-in user | vacant units for the application form |
 | GET | /listings?landlord={slug} | public | one landlord's vacant, listed units with photos |
 | POST, DELETE | /units/{id}/photos, /units/{id}/photos/{photoId} | landlord | add a listing photo (then `/photos/confirm`), remove one |
+| GET, POST | /applications/{id}/credit-check | both | the applicant's agreement and the recorded result; the applicant agrees, the landlord records |
 | GET | /applications/{id}/documents | landlord or owner | the uploaded paperwork, each with a signed view link |
 | GET | /contractors | landlord | the directory that builds itself from past assignments |
 | GET | /inspections/{id} | both | full inspection state: findings, photos, signatures, draft |
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and three routes in all; the table lists the shape of each family rather than every verb.
+One hundred and five routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -815,6 +816,25 @@ trial's end starts the monthly charges on that date as intended.
 - Photo links on the page are signed and last an hour; the page refetches before they expire.
 - Apply goes through sign-in or sign-up and keeps the landlord and the unit, so the applicant
   lands on the form for the unit they picked.
+
+## Credit checks
+
+- Threshold does not query a credit bureau. The landlord runs the check with their own
+  TransUnion, Experian, XDS, Compuscan or TPN account and records it on the application: the
+  bureau, the date, the score, judgements, defaults, an outcome (clear, minor issues, adverse)
+  and the bureau's report as a PDF.
+- Nothing is recorded without the applicant's agreement. They can give it on the application
+  form (an optional box) or later from their documents screen. It is a `consent` row of kind
+  `credit_check` tied to the application.
+- The report is filed as an application document of kind `credit_report`, which only the
+  landlord can upload. So it is shown, exported, swept twelve months after a decline, and
+  erased by the same rules as payslips and ID copies; the recorded result goes with it.
+- The applicant sees the recorded result and the report on their application, which POPIA
+  section 23 gives them and which lets them dispute an error with the bureau.
+- The privacy notice changed to say all this (version 2026-10-28), so everyone is asked to agree
+  to it again on their next sign-in.
+- A direct bureau integration needs a subscriber contract with a bureau or TPN, their API
+  credentials, and registration as a user of credit information. It would fill the same record.
 
 ## WhatsApp
 
