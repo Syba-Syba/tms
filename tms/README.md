@@ -352,6 +352,14 @@ outside development those routes answer 404 and identity is Cognito's, checked b
 Gateway authorizer before any handler runs. Switching roles is signing out and back in as
 someone else, the same as it would be in production.
 
+### Checking the data
+
+`npm run db:check -w tms-api` reads the development database (stop `npm run dev` first; PGlite is
+one process) and reports rows that disagree with each other, money that does not add up and files
+missing from storage. `db:check:selfhosted` does the same against `.env.selfhosted`. It changes
+nothing and exits 1 on an error. The rules live in `api/scripts/db-check.mjs`; add one there when
+a new rule joins the app.
+
 ### Tests
 
     npm test
