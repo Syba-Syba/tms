@@ -10,6 +10,7 @@ import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
 import { QueryState } from '../components/query-state';
 import { PAGE } from '../lib/layout';
+import { Appearance } from '../components/appearance';
 
 interface Preference {
   category: string;
@@ -84,6 +85,9 @@ export function NotificationPreferences() {
       <div className="mb-6">
         <TwoStep />
       </div>
+      <div className="mb-6">
+        <Appearance />
+      </div>
 
       <h2 className="label mb-1">Notifications</h2>
       <p className="mb-3 text-xs text-ink-muted">Sent by email to the address on your account.</p>
@@ -96,7 +100,7 @@ export function NotificationPreferences() {
             <Card key={category}>
               <CardBody className="space-y-3">
                 <div>
-                  <p className="text-[15px] font-semibold capitalize">{category}</p>
+                  <p className="text-lead font-semibold capitalize">{category}</p>
                   <p className="text-xs text-ink-muted">{CATEGORY_COPY[category]}</p>
                 </div>
                 {locked ? (
@@ -106,7 +110,7 @@ export function NotificationPreferences() {
                 ) : (
                   <div className="flex flex-wrap gap-5">
                     {channels.map((row) => (
-                      <label key={row.channel} className="flex items-center gap-2 text-[13.5px]">
+                      <label key={row.channel} className="flex items-center gap-2 text-meta">
                         <Switch
                           checked={row.enabled}
                           onCheckedChange={(next: boolean) => toggle(row.category, row.channel, next)}

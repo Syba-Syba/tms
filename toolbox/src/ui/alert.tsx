@@ -24,8 +24,8 @@ export function Alert({
       role="alert"
       className={cn('rounded-md px-4 py-3', tones[tone], className)}
     >
-      <p className="text-sm font-semibold">{title}</p>
-      {children ? <div className="mt-0.5 text-sm text-ink">{children}</div> : null}
+      <p className="text-body font-semibold">{title}</p>
+      {children ? <div className="mt-0.5 text-body text-ink">{children}</div> : null}
     </div>
   );
 }

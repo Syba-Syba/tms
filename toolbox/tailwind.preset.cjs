@@ -24,6 +24,18 @@ module.exports = {
         info: 'var(--tb-info)',
         action: { DEFAULT: 'var(--tb-action)', hover: 'var(--tb-action-hover)' },
       },
+      // The type scale. Nine sizes, named for their job; screens never set a pixel size by hand.
+      fontSize: {
+        '2xs': ['11px', { lineHeight: '14px' }], // tab bar labels
+        xs: ['12px', { lineHeight: '16px' }], // hints, badges, fine print
+        meta: ['13px', { lineHeight: '19px' }], // secondary lines, table cells, links in rows
+        body: ['14px', { lineHeight: '21px' }], // running text, form values
+        lead: ['15px', { lineHeight: '22px' }], // card titles, row titles
+        title: ['20px', { lineHeight: '26px' }], // section and drawer headings, the wordmark
+        figure: ['24px', { lineHeight: '30px' }], // stat figures and prices
+        display: ['30px', { lineHeight: '36px', letterSpacing: '-0.01em' }], // page titles
+        hero: ['42px', { lineHeight: '46px', letterSpacing: '-0.015em' }], // the one big number
+      },
       fontFamily: {
         display: ['var(--tb-font-display)'],
         sans: ['var(--tb-font-body)'],

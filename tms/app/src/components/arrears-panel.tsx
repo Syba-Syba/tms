@@ -6,7 +6,7 @@ import { api, humanError } from '../api/client';
 import { addDays, localToday } from '../lib/dates';
 import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
-import { Ledger } from './money';
+import { Money } from './money';
 
 type Step = 'reminder_1' | 'reminder_3' | 'reminder_7' | 'letter_of_demand';
 
@@ -87,14 +87,14 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
           {data.owing ? (
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>
-                <Ledger cents={data.owing.outstandingCents} className="text-[22px] text-ink" />
-                <p className="text-[13px] text-ink-muted">
+                <Money cents={data.owing.outstandingCents} className="text-figure text-ink" />
+                <p className="text-meta text-ink-muted">
                   Overdue since {formatDate(data.owing.oldestDueOn)}, {data.owing.daysLate}{' '}
                   {data.owing.daysLate === 1 ? 'day' : 'days'} late.
                 </p>
               </div>
               {data.owing.slipPending ? (
-                <p className="text-[13px] text-ink-muted">
+                <p className="text-meta text-ink-muted">
                   {landlord ? 'A slip is waiting for you. Reminders hold until you check it.' : 'Your slip is with the landlord. Reminders hold until they check it.'}
                 </p>
               ) : null}
@@ -121,7 +121,7 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
             {steps.map((step) => (
               <li key={step.step} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
                 <div className="min-w-0">
-                  <p className="text-[14px] font-semibold">{STEP_LABEL[step.step]}</p>
+                  <p className="text-body font-semibold">{STEP_LABEL[step.step]}</p>
                   <p className="text-xs text-ink-muted">
                     {formatDate(step.takenOn)}, day {step.daysLate}, {formatZar(step.outstandingCents / 100)} owing
                   </p>
@@ -129,7 +129,7 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
                 {step.documentKey ? (
                   <button
                     type="button"
-                    className="shrink-0 text-[13px] font-bold text-brand-500"
+                    className="shrink-0 text-meta font-bold text-brand-500"
                     onClick={() => openDocument(step.documentKey!)}
                   >
                     PDF
@@ -141,7 +141,7 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
             ))}
             {data.next ? (
               <li className="flex items-center justify-between gap-3 text-ink-muted">
-                <p className="text-[14px]">{STEP_LABEL[data.next.step]}</p>
+                <p className="text-body">{STEP_LABEL[data.next.step]}</p>
                 <p className="text-xs">{data.next.on <= today ? 'Goes out this morning' : `Due ${formatDate(data.next.on)}`}</p>
               </li>
             ) : null}
@@ -189,7 +189,7 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
           ) : null}
 
           {data.history.length > 0 ? (
-            <details className="text-[13px] text-ink-muted">
+            <details className="text-meta text-ink-muted">
               <summary className="cursor-pointer">Earlier arrears ({data.history.length})</summary>
               <ul className="mt-2 space-y-1">
                 {data.history.map((past) => (
@@ -210,12 +210,12 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
         title="Send the letter of demand"
         description="The tenant gets it by email, and it is filed on this lease."
       >
-        <div className="space-y-3 text-[14px]">
+        <div className="space-y-3 text-body">
           <p>
             It demands {formatZar((data.owing?.outstandingCents ?? 0) / 100)} within 20 business days. That is the notice
             the Consumer Protection Act needs before you can cancel a fixed-term lease for not paying.
           </p>
-          <p className="text-[13px] text-ink-muted">
+          <p className="text-meta text-ink-muted">
             Send it once you have checked the account. A payment that arrived but is not recorded yet makes the
             letter wrong, and it cannot be taken back.
           </p>

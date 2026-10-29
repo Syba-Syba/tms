@@ -19,7 +19,7 @@ export function PlanBanner() {
   if (!show) return null;
   const urgent = data.standing === 'lapsed' || data.standing === 'past_due';
   return (
-    <div role="status" className={`border-b px-4 py-2 text-center text-[13px] ${urgent ? 'border-line bg-[color-mix(in_srgb,var(--tb-danger)_9%,var(--tb-surface))] text-ink' : 'border-line bg-surface-muted text-ink'}`}>
+    <div role="status" className={`border-b px-4 py-2 text-center text-meta ${urgent ? 'border-line bg-[color-mix(in_srgb,var(--tb-danger)_9%,var(--tb-surface))] text-ink' : 'border-line bg-surface-muted text-ink'}`}>
       {standingText(data)}{' '}
       <Link to="/settings/billing" className="font-bold text-brand-500 underline">
         {data.isOwner ? 'Choose a plan' : 'See the plan'}

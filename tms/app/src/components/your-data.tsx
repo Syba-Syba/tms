@@ -75,7 +75,7 @@ export function YourData() {
       <h2 className="label mb-2">Your data</h2>
       <Card>
         <CardBody className="space-y-4">
-          <p className="text-[14px] text-ink-muted">
+          <p className="text-body text-ink-muted">
             {data?.acceptedAt
               ? `You agreed to the privacy notice on ${formatDate(data.acceptedAt)}. `
               : ''}
@@ -101,7 +101,7 @@ export function YourData() {
           ) : null}
           {data?.requests.filter((request) => request.status !== 'pending').map((request) => (
             <div key={request.id} className="space-y-1 border-t border-line-soft pt-3">
-              <p className="flex items-center gap-2 text-[13px]">
+              <p className="flex items-center gap-2 text-meta">
                 Erasure request of {formatDate(request.createdAt)}
                 <Badge tone={REQUEST_LABEL[request.status].tone}>{REQUEST_LABEL[request.status].label}</Badge>
               </p>
@@ -118,7 +118,7 @@ export function YourData() {
               {data.erasureBlockedBecause}
             </Alert>
           ) : (
-            <p className="text-[14px] text-ink-muted">
+            <p className="text-body text-ink-muted">
               Your landlord is asked to erase your name, contact details, ID and income, and to delete your
               documents and your account. You are signed out when it is done, and cannot undo it.
             </p>

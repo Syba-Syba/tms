@@ -11,7 +11,7 @@ import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
 import { pickPhoto, putFile } from '../lib/photos';
 import { listingsUrl, useLandlord } from '../lib/landlord';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { PAGE } from '../lib/layout';
@@ -147,7 +147,7 @@ export function Properties() {
           <div className="flex flex-wrap gap-2">
             {slug ? (
               <a href={listingsUrl(slug)} target="_blank" rel="noreferrer"
-                className="inline-flex h-8 items-center rounded-sm border border-line px-3 text-[13px] font-semibold text-ink hover:bg-surface-muted">
+                className="inline-flex h-8 items-center rounded-sm border border-line px-3 text-meta font-semibold text-ink hover:bg-surface-muted">
                 Listings page
               </a>
             ) : null}
@@ -172,7 +172,7 @@ export function Properties() {
           description="A property holds its units; applications and leases hang off those."
         />
       ) : shown.length === 0 ? (
-        <p className="text-[13px] text-ink-muted">Nothing matches "{search}".</p>
+        <p className="text-meta text-ink-muted">Nothing matches "{search}".</p>
       ) : null}
 
       <div className="space-y-4">
@@ -189,7 +189,7 @@ export function Properties() {
                     aria-expanded={open}
                     onClick={() => toggle(property.id)}
                   >
-                    <p className="flex items-center gap-2 text-[16px] font-semibold">
+                    <p className="flex items-center gap-2 text-lead font-semibold">
                       <ChevronRightIcon className={`shrink-0 text-ink-muted transition-transform ${open ? 'rotate-90' : ''}`} />
                       {property.name}
                     </p>
@@ -212,7 +212,7 @@ export function Properties() {
                 </div>
 
                 {open && property.units.length === 0 ? (
-                  <p className="text-[13.5px] text-ink-muted">No units yet.</p>
+                  <p className="text-meta text-ink-muted">No units yet.</p>
                 ) : null}
 
                 {open ? (
@@ -225,7 +225,7 @@ export function Properties() {
                           className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2 last:border-0 last:pb-0"
                         >
                           <div className="min-w-0">
-                            <p className="text-[14.5px] font-semibold">
+                            <p className="text-body font-semibold">
                               {unit.code}
                               <span className="ml-2 text-xs font-normal text-ink-muted">
                                 {unit.bedrooms} bed · {unit.bathrooms} bath
@@ -245,13 +245,13 @@ export function Properties() {
                             </p>
                           </div>
                           <div className="flex items-center gap-2 sm:gap-3">
-                            <Ledger cents={unit.monthlyRentCents} className="text-[15px]" />
+                            <Money cents={unit.monthlyRentCents} className="text-lead" />
                             <Badge tone={shownStatus.tone}>{shownStatus.label}</Badge>
                             {unit.status === 'occupied' && unit.leaseId ? (
                               <Link
                                 to={`/leases/${unit.leaseId}`}
                                 aria-label={`Lease for ${unit.code}`}
-                                className="inline-flex min-h-11 items-center px-1 text-[13px] font-bold text-brand-500 sm:min-h-0"
+                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 "
                               >
                                 Lease
                               </Link>
@@ -259,16 +259,16 @@ export function Properties() {
                               <button
                                 type="button"
                                 aria-label={`Copy the application link for ${unit.code}`}
-                                className="inline-flex min-h-11 items-center px-1 text-[13px] font-bold text-brand-500 sm:min-h-0"
+                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 "
                                 onClick={() => copyApplicationLink(unit)}
                               >
-                                Copy link
+                                Copy apply link
                               </button>
                             )}
                             <button
                               type="button"
                               aria-label={`Edit ${unit.code}`}
-                              className="inline-flex min-h-11 items-center px-1 text-[13px] font-semibold text-ink-muted hover:text-ink sm:min-h-0"
+                              className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-semibold text-ink-muted hover:text-ink "
                               onClick={() => setEditingUnit(unit)}
                             >
                               Edit
@@ -551,11 +551,11 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
           <TextField control={control} name="bathrooms" label="Bathrooms" inputMode="numeric" required />
         </div>
         <div>
-          <p className="mb-1 text-[13px] font-medium">Monthly rent</p>
+          <p className="mb-1 text-meta font-medium">Monthly rent</p>
           <CurrencyInput cents={rentCents} onCentsChange={(next) => setRentCents(next ?? 0)} />
         </div>
         <div>
-          <p className="mb-1 text-[13px] font-medium">Deposit</p>
+          <p className="mb-1 text-meta font-medium">Deposit</p>
           <CurrencyInput cents={depositCents} onCentsChange={(next) => setDepositCents(next ?? 0)} />
           <p className="mt-1 text-xs text-ink-muted">
             Usually one month. It sits in a ledger and earns the tenant interest.
@@ -569,17 +569,17 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
         {unit ? (
           <section aria-label="Listing" className="space-y-3 border-t border-line pt-4">
             <div>
-              <p className="text-[14px] font-semibold">Listing</p>
+              <p className="text-body font-semibold">Listing</p>
               <p className="text-xs text-ink-muted">What applicants see on your listings page while the unit is vacant.</p>
             </div>
             <div>
-              <p className="mb-1 text-[13px] font-medium">Photos</p>
+              <p className="mb-1 text-meta font-medium">Photos</p>
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((photo) => (
                   <div key={photo.id} className="relative aspect-[4/3] overflow-hidden rounded-sm border border-line bg-surface-muted">
                     <img src={photo.url} alt="" className="h-full w-full object-cover" />
                     <button type="button" aria-label="Remove this photo" disabled={photoBusy !== null}
-                      className="absolute right-1 top-1 rounded-sm bg-black/65 px-1.5 py-0.5 text-[12px] font-semibold text-white"
+                      className="absolute right-1 top-1 rounded-sm bg-black/65 px-1.5 py-0.5 text-xs font-semibold text-white"
                       onClick={() => removePhoto(photo.id)}>
                       {photoBusy === photo.id ? '…' : 'Remove'}
                     </button>
@@ -587,7 +587,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
                 ))}
                 {photos.length < MAX_PHOTOS ? (
                   <button type="button" disabled={photoBusy !== null} onClick={addPhoto}
-                    className="flex aspect-[4/3] items-center justify-center rounded-sm border border-dashed border-line text-[13px] font-semibold text-brand-500">
+                    className="flex aspect-[4/3] items-center justify-center rounded-sm border border-dashed border-line text-meta font-semibold text-brand-500">
                     {photoBusy === 'adding' ? 'Uploading…' : 'Add a photo'}
                   </button>
                 ) : null}
@@ -595,19 +595,19 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
               <p className="mt-1 text-xs text-ink-muted">Up to {MAX_PHOTOS}. The first one leads the listing.</p>
             </div>
             <div>
-              <label htmlFor="unit-description" className="mb-1 block text-[13px] font-medium">Description</label>
+              <label htmlFor="unit-description" className="mb-1 block text-meta font-medium">Description</label>
               <Textarea id="unit-description" rows={4} maxLength={2000} value={listing.description}
                 placeholder="Light, quiet, close to the Gautrain. Prepaid electricity, water included."
                 onChange={(event) => setListing({ ...listing, description: event.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="unit-available" className="mb-1 block text-[13px] font-medium">Available from</label>
+                <label htmlFor="unit-available" className="mb-1 block text-meta font-medium">Available from</label>
                 <Input id="unit-available" type="date" value={listing.availableFrom}
                   onChange={(event) => setListing({ ...listing, availableFrom: event.target.value })} />
               </div>
               <div>
-                <label htmlFor="unit-parking" className="mb-1 block text-[13px] font-medium">Parking bays</label>
+                <label htmlFor="unit-parking" className="mb-1 block text-meta font-medium">Parking bays</label>
                 <Input id="unit-parking" inputMode="numeric" value={listing.parkingBays}
                   onChange={(event) => setListing({ ...listing, parkingBays: event.target.value.replace(/\D/g, '').slice(0, 2) })} />
               </div>

@@ -18,7 +18,7 @@ export function StatusDot({
   className?: string;
 }) {
   return (
-    <span className={cn('inline-flex items-center gap-2 text-sm text-ink', className)}>
+    <span className={cn('inline-flex items-center gap-2 text-body text-ink', className)}>
       <span className="relative flex h-2 w-2">
         {tone === 'live' ? (
           <span className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-60', tones[tone])} />

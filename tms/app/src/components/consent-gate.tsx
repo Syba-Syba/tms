@@ -64,27 +64,27 @@ export function ConsentGate({ children }: { children: ReactNode }) {
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-10">
       <Card>
         <CardBody className="space-y-4">
-          <h1 className="font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">{title}</h1>
+          <h1 className="font-display text-display font-medium leading-tight tracking-[-0.01em]">{title}</h1>
           {needsTerms ? (
-            <p className="text-[14px] text-ink-muted">
+            <p className="text-body text-ink-muted">
               The terms of service of {formatDate(TERMS_VERSION)} set out what Threshold does for your business, what
               it costs, and who is responsible for your tenants' information.
             </p>
           ) : null}
           {needsPrivacy ? (
-            <p className="text-[14px] text-ink-muted">
+            <p className="text-body text-ink-muted">
               The privacy notice of {formatDate(PRIVACY_VERSION)} explains what this app holds about you, why,
               for how long, and how to see or erase it.
             </p>
           ) : null}
-          <p className="text-[14px] text-ink-muted">Read {needsPrivacy && needsTerms ? 'them' : 'it'}, then agree to continue.</p>
+          <p className="text-body text-ink-muted">Read {needsPrivacy && needsTerms ? 'them' : 'it'}, then agree to continue.</p>
           {needsTerms ? (
-            <Link to="/terms" target="_blank" className="block text-[14px] font-bold text-brand-500">
+            <Link to="/terms" target="_blank" className="block text-body font-bold text-brand-500">
               Read the terms of service
             </Link>
           ) : null}
           {needsPrivacy ? (
-            <Link to="/privacy" target="_blank" className="block text-[14px] font-bold text-brand-500">
+            <Link to="/privacy" target="_blank" className="block text-body font-bold text-brand-500">
               Read the privacy notice
             </Link>
           ) : null}

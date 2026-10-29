@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Card, CardBody, EmptyState, PageHeader, SegmentedControl, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { QueryError } from '../components/query-state';
 import { isLandlord } from '../lib/session';
 import { capitalise, formatDateTime, status as statusOf } from '../lib/format';
@@ -76,7 +76,7 @@ export function TicketsList() {
             <CardBody className="space-y-2">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-[15px] font-semibold">{ticket.title}</p>
+                  <p className="text-lead font-semibold">{ticket.title}</p>
                   <p className="text-xs text-ink-muted">
                     {ticket.unit} · {capitalise(ticket.category)}
                     {ticket.contractor ? ` · ${ticket.contractor}` : ''}
@@ -96,7 +96,7 @@ export function TicketsList() {
                 </span>
                 {ticket.quoteCents ? (
                   <span>
-                    Quote <Ledger cents={ticket.quoteCents} />
+                    Quote <Money cents={ticket.quoteCents} />
                   </span>
                 ) : null}
                 {ticket.rating ? <span>Rated {ticket.rating} of 5</span> : null}

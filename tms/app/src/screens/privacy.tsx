@@ -12,11 +12,11 @@ import { PRIVACY_VERSION } from '../lib/privacy';
 export function Privacy() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Privacy notice</h1>
-      <p className="mb-6 text-[13px] text-ink-muted">Version of {formatDate(PRIVACY_VERSION)}</p>
+      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Privacy notice</h1>
+      <p className="mb-6 text-meta text-ink-muted">Version of {formatDate(PRIVACY_VERSION)}</p>
 
       <Card>
-        <CardBody className="space-y-5 text-[14.5px] leading-relaxed text-ink">
+        <CardBody className="space-y-5 text-body leading-relaxed text-ink">
           <Section title="Who is responsible for your information">
             Your landlord is the responsible party under the Protection of Personal Information Act
             (POPIA). They decide what happens to your information. This app is the system they use
@@ -98,7 +98,7 @@ export function Privacy() {
         </CardBody>
       </Card>
 
-      <p className="mt-6 text-center text-[13px] text-ink-muted">
+      <p className="mt-6 text-center text-meta text-ink-muted">
         <Link to="/" className="font-bold text-brand-500">Back to the app</Link>
       </p>
     </main>
@@ -108,7 +108,7 @@ export function Privacy() {
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-1 text-[16px] font-bold">{title}</h2>
+      <h2 className="mb-1 text-lead font-bold">{title}</h2>
       <div className="space-y-2 text-ink-muted">{children}</div>
     </section>
   );

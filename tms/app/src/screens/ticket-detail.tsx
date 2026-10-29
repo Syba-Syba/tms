@@ -5,7 +5,7 @@ import {
   Alert, Badge, Button, Card, CardBody, Combobox, CurrencyInput, Input, PageHeader, Textarea, useToast,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { SignedImage } from '../components/signed-image';
 import { capitalise, formatDateTime, status } from '../lib/format';
@@ -138,7 +138,7 @@ export function TicketDetail() {
 
       <Card className="mb-4">
         <CardBody className="space-y-3">
-          <p className="text-[14px] leading-relaxed">{data.description}</p>
+          <p className="text-body leading-relaxed">{data.description}</p>
           <PhotoRow photos={data.photos} phase="report" label="As reported" />
           <PhotoRow photos={data.photos} phase="completion" label="After the work" />
         </CardBody>
@@ -157,14 +157,14 @@ export function TicketDetail() {
             <div key={index} className="flex gap-3">
               <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" />
               <div className="min-w-0 flex-1">
-                <p className="text-[13.5px] font-semibold capitalize">
+                <p className="text-meta font-semibold capitalize">
                   {entry.kind.replace(/_/g, ' ')}
                   <span className="ml-2 font-normal text-ink-muted">{entry.actor_role}</span>
                 </p>
                 {entry.note ? (
-                  <p className="mt-1 rounded-sm bg-surface-muted px-3 py-2 text-[13px]">{entry.note}</p>
+                  <p className="mt-1 rounded-sm bg-surface-muted px-3 py-2 text-meta">{entry.note}</p>
                 ) : null}
-                <p className="mt-0.5 font-mono text-[10px] text-ink-muted">
+                <p className="mt-0.5 font-mono text-2xs text-ink-muted">
                   {entry.at.slice(0, 16).replace('T', ' ')}
                 </p>
               </div>
@@ -177,7 +177,7 @@ export function TicketDetail() {
         <Card className="mb-4">
           <CardBody className="space-y-3">
             <p className="label text-brand-600">Quote</p>
-            <Ledger cents={data.quoteCents} className="text-[26px]" />
+            <Money cents={data.quoteCents} className="text-figure" />
             <Button loading={busy} onClick={() => act({ action: 'approve_quote' }, 'Quote approved')}>
               Approve and let them start
             </Button>
@@ -188,7 +188,7 @@ export function TicketDetail() {
       {landlord && data.status === 'open' ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[15px] font-semibold">Assign a contractor</p>
+            <p className="text-lead font-semibold">Assign a contractor</p>
             {(directory?.items ?? []).length > 0 ? (
               <div>
                 <p className="mb-1 text-xs text-ink-muted">Someone you have used before</p>
@@ -237,7 +237,7 @@ export function TicketDetail() {
       {landlord && data.status === 'assigned' ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[15px] font-semibold">Add a quote, or start without one</p>
+            <p className="text-lead font-semibold">Add a quote, or start without one</p>
             <CurrencyInput cents={quote} onCentsChange={(next) => setQuote(next ?? 0)} />
             <div className="flex gap-2">
               <Button
@@ -273,7 +273,7 @@ export function TicketDetail() {
       {data.viewer.isTenant && data.status === 'done' ? (
         <Card className="mb-4">
           <CardBody className="space-y-3">
-            <p className="text-[15px] font-semibold">Rate the work to close it</p>
+            <p className="text-lead font-semibold">Rate the work to close it</p>
             <ArchRating value={rating} onChange={setRating} />
             <p className="text-xs text-ink-muted">
               Your rating follows the contractor and decides who gets called next time.
@@ -304,7 +304,7 @@ export function TicketDetail() {
           <CardBody className="space-y-2">
             <p className="label">Rated</p>
             <ArchRating value={data.rating} />
-            {data.ratingNote ? <p className="text-[13.5px]">{data.ratingNote}</p> : null}
+            {data.ratingNote ? <p className="text-meta">{data.ratingNote}</p> : null}
           </CardBody>
         </Card>
       ) : null}

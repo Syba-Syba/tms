@@ -49,7 +49,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   cancelled: { label: 'Cancelled', tone: 'neutral' },
   // Units
   occupied: { label: 'Occupied', tone: 'success' },
-  vacant: { label: 'Vacant', tone: 'warning' },
+  vacant: { label: 'Vacant', tone: 'neutral' },
   held: { label: 'Held for applicant', tone: 'info' },
   // Applications
   submitted: { label: 'Waiting', tone: 'info' },

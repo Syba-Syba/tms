@@ -67,11 +67,11 @@ export function CommandPalette({ commands, placeholder = 'Search actions...' }: 
               if (event.key === 'ArrowUp') setActive((i) => Math.max(i - 1, 0));
               if (event.key === 'Enter') runActive();
             }}
-            className="w-full border-b border-line bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-muted"
+            className="w-full border-b border-line bg-transparent px-4 py-3 text-body text-ink outline-none placeholder:text-ink-muted"
           />
           <ul ref={listRef} className="max-h-72 overflow-auto py-1">
             {matches.length === 0 ? (
-              <li className="px-4 py-6 text-center text-sm text-ink-muted">
+              <li className="px-4 py-6 text-center text-body text-ink-muted">
                 Nothing matches "{query}".
               </li>
             ) : (
@@ -82,13 +82,13 @@ export function CommandPalette({ commands, placeholder = 'Search actions...' }: 
                     onMouseEnter={() => setActive(index)}
                     onClick={runActive}
                     className={cn(
-                      'flex w-full items-center justify-between px-4 py-2.5 text-left text-sm',
+                      'flex w-full items-center justify-between px-4 py-2.5 text-left text-body',
                       index === active ? 'bg-brand-50 text-brand-700' : 'text-ink',
                     )}
                   >
                     <span>
                       {command.group ? (
-                        <span className="mr-2 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
+                        <span className="mr-2 font-mono text-2xs uppercase tracking-wider text-ink-muted">
                           {command.group}
                         </span>
                       ) : null}
@@ -100,7 +100,7 @@ export function CommandPalette({ commands, placeholder = 'Search actions...' }: 
               ))
             )}
           </ul>
-          <div className="flex gap-3 border-t border-line px-4 py-2 text-[11px] text-ink-muted">
+          <div className="flex gap-3 border-t border-line px-4 py-2 text-2xs text-ink-muted">
             <span><Kbd>↑↓</Kbd> move</span>
             <span><Kbd>↵</Kbd> run</span>
             <span><Kbd>esc</Kbd> close</span>
@@ -113,7 +113,7 @@ export function CommandPalette({ commands, placeholder = 'Search actions...' }: 
 
 export function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded-sm border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] text-ink-muted shadow-[inset_0_-1px_0_var(--tb-border)]">
+    <kbd className="rounded-sm border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-2xs text-ink-muted shadow-[inset_0_-1px_0_var(--tb-border)]">
       {children}
     </kbd>
   );

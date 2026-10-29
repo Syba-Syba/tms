@@ -5,7 +5,7 @@ import {
   Alert, Badge, Button, Card, CardBody, CurrencyInput, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
@@ -139,21 +139,21 @@ export function Termination() {
             <p className="label">
               {settled.tenantOwesCents > 0 ? 'Owed by tenant' : 'Refund to tenant'}
             </p>
-            <Ledger
+            <Money
               cents={settled.tenantOwesCents > 0 ? settled.tenantOwesCents : settled.refundCents}
-              className="text-[40px]"
+              className="text-hero"
             />
-            <div className="space-y-1 border-t border-line-soft pt-3 text-[13.5px]">
-              <p>Deposit <Ledger cents={settled.depositCents} /></p>
-              <p>Interest <Ledger cents={settled.interestCents} /></p>
+            <div className="space-y-1 border-t border-line-soft pt-3 text-meta">
+              <p>Deposit <Money cents={settled.depositCents} /></p>
+              <p>Interest <Money cents={settled.interestCents} /></p>
               {settled.deductionsCents > 0 ? (
-                <p className="text-danger">Less repairs <Ledger cents={settled.deductionsCents} /></p>
+                <p className="text-danger">Less repairs <Money cents={settled.deductionsCents} /></p>
               ) : null}
               {settled.arrearsCents > 0 ? (
-                <p className="text-danger">Less arrears <Ledger cents={settled.arrearsCents} /></p>
+                <p className="text-danger">Less arrears <Money cents={settled.arrearsCents} /></p>
               ) : null}
               {settled.penaltyCents > 0 ? (
-                <p className="text-danger">Less cancellation penalty <Ledger cents={settled.penaltyCents} /></p>
+                <p className="text-danger">Less cancellation penalty <Money cents={settled.penaltyCents} /></p>
               ) : null}
             </div>
             <Alert tone="info" title={`Payable by ${formatDate(settled.refundDueBy)}`}>
@@ -181,7 +181,7 @@ export function Termination() {
                 className="flex items-center justify-between border-b border-line-soft pb-2 last:border-0 last:pb-0"
               >
                 <div>
-                  <p className="text-[14px] font-semibold">{deduction.description}</p>
+                  <p className="text-body font-semibold">{deduction.description}</p>
                   {deduction.evidenceKey ? (
                     <button
                       type="button"
@@ -193,11 +193,11 @@ export function Termination() {
                   ) : null}
                 </div>
                 <div className="flex items-center gap-3">
-                  <Ledger cents={deduction.amountCents} className="text-[15px]" />
+                  <Money cents={deduction.amountCents} className="text-lead" />
                   {data.status !== 'settled' ? (
                     <button
                       type="button"
-                      className="text-[13px] font-semibold text-danger disabled:opacity-40"
+                      className="text-meta font-semibold text-danger disabled:opacity-40"
                       disabled={busy}
                       onClick={() => removeDeduction(deduction)}
                     >
@@ -216,7 +216,7 @@ export function Termination() {
           <Card key={`${item.room}-${item.item}`}>
             <CardBody className="space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="text-[15px] font-semibold">
+                <p className="text-lead font-semibold">
                   {item.room} · {item.item}
                 </p>
                 {item.deductible ? (
@@ -232,7 +232,7 @@ export function Termination() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-[13px]">
+              <div className="grid grid-cols-2 gap-3 text-meta">
                 <div className="rounded-sm bg-surface-muted p-2">
                   <p className="label">Move in</p>
                   <p className="font-semibold capitalize">{item.incoming.condition ?? 'not recorded'}</p>

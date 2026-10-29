@@ -57,10 +57,10 @@ export function Join() {
         </Alert>
       ) : (
         <>
-          <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">
+          <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">
             {invite.data.kind === 'tenant' ? `Your lease for ${invite.data.unit}` : `Join ${invite.data.landlord}`}
           </h1>
-          <p className="mb-5 text-[14px] text-ink-muted">
+          <p className="mb-5 text-body text-ink-muted">
             Hi {invite.data.name}.{' '}
             {invite.data.kind === 'tenant'
               ? `${invite.data.landlord} runs your lease on Threshold: your rent, your statement, proof of payment and repairs. `
@@ -95,7 +95,7 @@ export function Join() {
                 {invite.data.kind === 'tenant' ? 'Open my lease' : 'Join'}
               </Button>
               {invite.data.hasAccount ? (
-                <p className="text-center text-[13px] text-ink-muted">
+                <p className="text-center text-meta text-ink-muted">
                   Forgot it? <Link to="/forgot-password" className="font-bold text-brand-500">Reset your password</Link>, then open this link again.
                 </p>
               ) : null}

@@ -108,7 +108,7 @@ export function InspectionRoom() {
           return (
             <Card key={finding.id}>
               <CardBody className="space-y-3">
-                <p className="text-[14.5px] font-semibold">{item}</p>
+                <p className="text-body font-semibold">{item}</p>
                 <SegmentedControl
                   value={condition}
                   onChange={(next) =>

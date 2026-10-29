@@ -9,6 +9,7 @@ import { api, humanError } from '../api/client';
 import { formatDate, formatMonth, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { ArrearsPanel } from '../components/arrears-panel';
+import { Money } from '../components/money';
 
 interface Proof {
   id: string;
@@ -159,7 +160,7 @@ export function TenantRent() {
             </Alert>
           ) : null}
           {data.bank ? (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[14px]">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
               <dt className="text-ink-muted">Bank</dt>
               <dd>{data.bank.name}</dd>
               <dt className="text-ink-muted">Account holder</dt>
@@ -170,7 +171,7 @@ export function TenantRent() {
               <dd className="font-mono tabular-nums">{data.bank.branchCode}</dd>
             </dl>
           ) : (
-            <p className="text-[13px] text-ink-muted">
+            <p className="text-meta text-ink-muted">
               {data.landlord ?? 'Your landlord'} has not added their bank account here yet. Use the one on your lease.
             </p>
           )}
@@ -200,11 +201,11 @@ export function TenantRent() {
             <Card key={invoice.id}>
               <CardBody className="flex items-center justify-between">
                 <div>
-                  <p className="text-[15px] font-semibold text-ink">{formatMonth(invoice.period)}</p>
+                  <p className="text-lead font-semibold text-ink">{formatMonth(invoice.period)}</p>
                   <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="tabular-nums text-sm">{formatZar(invoice.totalCents / 100)}</span>
+                  <Money cents={invoice.totalCents} className="text-body" />
                   <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
                     {proofSent ? 'Proof sent' : status(invoice.status).label}
                   </Badge>
@@ -223,7 +224,7 @@ export function TenantRent() {
               <Card key={proof.id}>
                 <CardBody className="flex items-center justify-between">
                   <div>
-                    <p className="tabular-nums text-sm">{formatZar(proof.amountCents / 100)}</p>
+                    <p className="text-body"><Money cents={proof.amountCents} /></p>
                     <p className="text-xs text-ink-muted">
                       Paid {formatDate(proof.paidOn)}
                       {proof.target === 'deposit' ? ', deposit' : ''}
@@ -281,7 +282,7 @@ export function TenantRent() {
             accept={ACCEPTED_TYPES.join(',')}
             aria-label="Slip file"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-500"
+            className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-500"
           />
           {fileProblem ? <p className="text-xs text-danger">{fileProblem}</p> : null}
           <Button block loading={busy} disabled={!ready} onClick={sendSlip}>

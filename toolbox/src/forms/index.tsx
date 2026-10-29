@@ -25,7 +25,7 @@ export function Field({
 }) {
   return (
     <div className={cn('space-y-1.5', className)}>
-      <label htmlFor={htmlFor} className="block text-sm font-medium text-ink">
+      <label htmlFor={htmlFor} className="block text-body font-medium text-ink">
         {label}
         {required ? <span className="ml-0.5 text-danger">*</span> : null}
       </label>

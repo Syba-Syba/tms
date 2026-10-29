@@ -23,7 +23,7 @@ export function Stepper({
         const active = index === current;
         return (
           <li key={step.title} className="grid grid-cols-[52px_20px_1fr] gap-x-2 pb-5 last:pb-0">
-            <span className="pt-0.5 text-right font-mono text-[11px] text-ink-muted">
+            <span className="pt-0.5 text-right font-mono text-2xs text-ink-muted">
               {step.at ?? '--:--'}
             </span>
             <span className="relative flex justify-center">
@@ -45,7 +45,7 @@ export function Stepper({
               ) : null}
             </span>
             <div>
-              <p className={cn('text-sm font-medium', active ? 'text-ink' : done ? 'text-ink' : 'text-ink-muted')}>
+              <p className={cn('text-body font-medium', active ? 'text-ink' : done ? 'text-ink' : 'text-ink-muted')}>
                 {step.title}
               </p>
               {step.detail ? <p className="text-xs text-ink-muted">{step.detail}</p> : null}

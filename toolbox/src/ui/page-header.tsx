@@ -30,8 +30,8 @@ export function PageHeader({
             ))}
           </nav>
         ) : null}
-        <h1 className="font-display text-[30px] font-medium leading-tight tracking-[-0.01em] text-ink">{title}</h1>
-        {description ? <p className="mt-1 text-sm text-ink-muted">{description}</p> : null}
+        <h1 className="font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">{title}</h1>
+        {description ? <p className="mt-1 text-body text-ink-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex gap-2">{actions}</div> : null}
     </header>

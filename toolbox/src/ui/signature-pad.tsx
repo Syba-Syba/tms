@@ -96,10 +96,10 @@ export const SignaturePad = forwardRef<
         aria-label="Signature area"
       />
       <div className="pointer-events-none absolute inset-x-6 bottom-9 border-b border-dashed border-line" />
-      <span className="pointer-events-none absolute bottom-10 left-6 font-display text-lg text-ink-muted">
+      <span className="pointer-events-none absolute bottom-10 left-6 font-display text-title text-ink-muted">
         x
       </span>
-      <span className="pointer-events-none absolute bottom-3 left-6 text-[11px] text-ink-muted">
+      <span className="pointer-events-none absolute bottom-3 left-6 text-2xs text-ink-muted">
         Sign above the line
       </span>
     </div>

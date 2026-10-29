@@ -27,7 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
-        className="w-full bg-transparent text-[14px] text-ink caret-brand-500 outline-none placeholder:text-ink-muted"
+        className="w-full bg-transparent text-body text-ink caret-brand-500 outline-none placeholder:text-ink-muted"
         {...props}
       />
       {trailing ? <span className="text-ink-muted">{trailing}</span> : null}

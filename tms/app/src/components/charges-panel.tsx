@@ -4,7 +4,7 @@ import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { localToday } from '../lib/dates';
 import { formatMonth } from '../lib/format';
-import { Ledger } from './money';
+import { Money } from './money';
 
 export interface Charge {
   id: string;
@@ -67,7 +67,7 @@ export function ChargesPanel({ leaseId, charges, landlord, onChanged }: {
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="label">Charges on top of rent</p>
         {landlord ? (
-          <button type="button" className="text-[13px] font-bold text-brand-500" onClick={() => { setForm(blank); setAdding(true); }}>
+          <button type="button" className="text-meta font-bold text-brand-500" onClick={() => { setForm(blank); setAdding(true); }}>
             Add a charge
           </button>
         ) : null}
@@ -75,19 +75,19 @@ export function ChargesPanel({ leaseId, charges, landlord, onChanged }: {
       <Card>
         <CardBody className="space-y-2">
           {charges.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">None. Add water, electricity or levies here and they go on the tenant's invoice.</p>
+            <p className="text-meta text-ink-muted">None. Add water, electricity or levies here and they go on the tenant's invoice.</p>
           ) : null}
           {charges.map((charge) => (
             <div key={charge.id} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
               <div className="min-w-0">
-                <p className="truncate text-[14px] font-semibold">{charge.description}</p>
+                <p className="truncate text-body font-semibold">{charge.description}</p>
                 <p className="text-xs text-ink-muted">{formatMonth(charge.period)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                <Ledger cents={charge.amountCents} className="text-[15px]" />
+                <Money cents={charge.amountCents} className="text-lead" />
                 <Badge tone={charge.billed ? 'neutral' : 'info'}>{charge.billed ? 'Invoiced' : 'Next invoice'}</Badge>
                 {landlord ? (
-                  <button type="button" className="text-[13px] font-bold text-danger disabled:opacity-40" disabled={busy}
+                  <button type="button" className="text-meta font-bold text-danger disabled:opacity-40" disabled={busy}
                     aria-label={`Remove ${charge.description} for ${formatMonth(charge.period)}`}
                     onClick={() => act(() => api.delete(`/leases/${leaseId}/charges/${charge.id}`), 'Charge removed')}>
                     Remove

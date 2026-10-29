@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { Alert, Button, Card, CardBody, Checkbox, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { incomeCents } from '../lib/income';
 
@@ -108,15 +108,15 @@ export function ApplyStart() {
               {chosen ? (
                 <div className="flex items-end justify-between">
                   <div>
-                    <p className="text-[14.5px] font-semibold">{chosen.label}</p>
+                    <p className="text-body font-semibold">{chosen.label}</p>
                     <p className="text-xs text-ink-muted">
                       {chosen.suburb}, {chosen.city} · {chosen.bedrooms} bed · {chosen.bathrooms} bath
                     </p>
                   </div>
                   <div className="text-right">
-                    <Ledger cents={chosen.monthlyRentCents} className="text-[19px]" />
+                    <Money cents={chosen.monthlyRentCents} className="text-title" />
                     <p className="text-xs text-ink-muted">
-                      deposit <Ledger cents={chosen.depositCents} className="text-xs" />
+                      deposit <Money cents={chosen.depositCents} className="text-xs" />
                     </p>
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function ApplyStart() {
                 checked={consent}
                 onChange={(event) => setConsent(event.target.checked)}
                 label={
-                  <span className="text-[13px]">
+                  <span className="text-meta">
                     I agree that the landlord may use my ID number, income and the documents I upload to
                     decide this application, as the{' '}
                     <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
@@ -183,7 +183,7 @@ export function ApplyStart() {
                 checked={creditConsent}
                 onChange={(event) => setCreditConsent(event.target.checked)}
                 label={
-                  <span className="text-[13px]">
+                  <span className="text-meta">
                     Optional: the landlord may check my credit record with a registered credit bureau for this application.
                   </span>
                 }

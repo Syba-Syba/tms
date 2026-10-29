@@ -84,5 +84,27 @@ export const handler = route(async (event) => {
   }
   totals.netCents = totals.collectedCents - totals.expensesCents;
 
-  return json(200, { from, to, items, totals });
+  // Month by month, for the trend on the landlord's home screen.
+  const monthly = await query<{ month: string; invoiced: string; collected: string }>(
+    `with months as (
+       select to_char(m, 'YYYY-MM') as month
+         from generate_series(date_trunc('month', $2::date), date_trunc('month', $3::date), interval '1 month') m
+     )
+     select months.month,
+            coalesce((select sum(i.total_cents) from invoice i join lease l on l.id = i.lease_id join unit u on u.id = l.unit_id
+                        join property p on p.id = u.property_id
+                       where p.landlord_id = $1 and i.status <> 'void' and i.period_start between $2 and $3
+                         and to_char(i.period_start, 'YYYY-MM') = months.month), 0)::text as invoiced,
+            coalesce((select sum(pay.amount_cents) from payment pay join lease l on l.id = pay.lease_id join unit u on u.id = l.unit_id
+                        join property p on p.id = u.property_id
+                       where p.landlord_id = $1 and pay.received_on between $2 and $3
+                         and to_char(pay.received_on, 'YYYY-MM') = months.month), 0)::text as collected
+       from months order by months.month`,
+    [landlordId, from, to],
+  );
+  const months = monthly.map((row) => ({
+    month: row.month, invoicedCents: Number(row.invoiced), collectedCents: Number(row.collected),
+  }));
+
+  return json(200, { from, to, items, totals, months });
 });

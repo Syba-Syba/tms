@@ -70,7 +70,7 @@ export function ApplyDocuments() {
                 onRetry={() => capture(item.kind)}
               />
               <div className="flex-1">
-                <p className="text-sm font-medium">{item.label}</p>
+                <p className="text-body font-medium">{item.label}</p>
                 <p className="text-xs text-ink-muted">
                   {state[item.kind] === 'synced'
                     ? 'Received'
@@ -96,7 +96,7 @@ export function ApplyDocuments() {
       {applicationId ? (
         <Card className="mt-3">
           <CardBody className="space-y-2">
-            <h2 className="text-sm font-medium">Credit check</h2>
+            <h2 className="text-body font-medium">Credit check</h2>
             <CreditCheckApplicant applicationId={applicationId} privacyVersion={PRIVACY_VERSION} />
           </CardBody>
         </Card>
