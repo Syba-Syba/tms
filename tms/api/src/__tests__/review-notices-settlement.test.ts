@@ -278,6 +278,48 @@ describe('arrears taken from the deposit', () => {
     expect(statement.body.ageing.d90plus).toBe(0);
   });
 
+  it('net a rent credit against them, and move the credit onto the invoice it pays', async () => {
+    const terminationId = await endedNotice(2);
+    // August unpaid; September cut short by the notice to R4 250 but paid in full at R8 500.
+    const [august] = await db.query<{ id: string }>(
+      `insert into invoice (lease_id, period_start, due_on, total_cents)
+       values ($1, $2::date - 60, $2::date - 60, 850000) returning id`,
+      [LEASE, today()],
+    );
+    const [september] = await db.query<{ id: string }>(
+      `insert into invoice (lease_id, period_start, due_on, total_cents, status)
+       values ($1, $2::date - 30, $2::date - 30, 425000, 'paid') returning id`,
+      [LEASE, today()],
+    );
+    await db.query(
+      `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+       values ($1, $2, 850000, 'eft', 'LSE-00101', $3::date - 31, 'sub-landlord')`,
+      [LEASE, september!.id, today()],
+    );
+
+    const settled = await call('POST', `/terminations/${terminationId}/settle`, { body: {} });
+    expect(settled.status).toBe(200);
+    expect(settled.body.arrearsCents).toBe(425000);
+
+    // August is paid: half by the moved credit, half from the deposit. Nothing is left owing,
+    // so the arrears ladder has nothing to chase. Before, August stayed part paid at R4 250.
+    const rows = await db.query<{ id: string; status: string; paid: string; total: string }>(
+      `select i.id, i.status, i.total_cents::text as total,
+              coalesce((select sum(amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid
+         from invoice i where i.id = any($1::uuid[])`,
+      [[august!.id, september!.id]],
+    );
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    expect(byId[august!.id]).toMatchObject({ status: 'paid', paid: '850000' });
+    expect(byId[september!.id]).toMatchObject({ status: 'paid', paid: '425000' });
+    const [{ total }] = (await db.query<{ total: string }>(
+      'select sum(amount_cents)::text as total from payment where lease_id = $1 and method <> $2', [LEASE, 'deposit'],
+    )) as [{ total: string }];
+    expect(total).toBe('850000');
+    const statement = await call('GET', `/leases/${LEASE}/statement`);
+    expect(statement.body.balanceCents).toBe(0);
+  });
+
   it('part-pay the oldest invoice when the deposit does not cover them all', async () => {
     const terminationId = await endedNotice(2);
     const [older] = await db.query<{ id: string }>(

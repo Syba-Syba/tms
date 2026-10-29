@@ -284,3 +284,27 @@ describe('a slip for a month paid another way meanwhile', () => {
     expect(await paidOn(december)).toEqual({ status: 'paid', paid: 850000 });
   });
 });
+
+describe('a slip accepted before the bank statement arrives', () => {
+  it('links the bank line to the payment already recorded instead of counting the money twice', async () => {
+    const june = await invoice('2026-06-01');
+    const july = await invoice('2026-07-01');
+    const proofId = await sendSlip({ amountCents: 850000, invoiceId: june, paidOn: '2026-06-02' });
+    expect((await call('POST', `/payment-proofs/${proofId}/decision`, LANDLORD, { decision: 'accept' })).status).toBe(200);
+
+    const statement = ['Date,Amount,Balance,Description', '2026/06/03,8500.00,42000.00,"FNB APP PAYMENT FROM N PHIRI LSE-00101"'].join('\n');
+    const imported = await call('POST', '/bank-imports', LANDLORD, { fileName: 'jul.csv', content: statement });
+    const [line] = imported.body.lines;
+    const resolved = await call('POST', `/bank-imports/${imported.body.id}/resolve`, LANDLORD, { lines: [{ lineId: line.id, leaseId: LEASE }] });
+    expect(resolved.body.results[0]).toMatchObject({ ok: true });
+
+    // One payment of R8 500, now tied to both the slip and the bank line. Before, the line was
+    // recorded again and the second R8 500 landed on July.
+    const payments = await db.query<{ proof_id: string | null; bank_line_id: string | null }>(
+      'select proof_id, bank_line_id from payment where lease_id = $1 and (proof_id = $2 or bank_line_id = $3)',
+      [LEASE, proofId, line.id],
+    );
+    expect(payments).toEqual([{ proof_id: proofId, bank_line_id: line.id }]);
+    expect(await paidOn(july)).toEqual({ status: 'issued', paid: 0 });
+  });
+});

@@ -24,10 +24,14 @@ export function payfastConfig(): PayfastConfig {
   const merchantId = process.env.PAYFAST_MERCHANT_ID;
   const merchantKey = process.env.PAYFAST_MERCHANT_KEY;
   if (!merchantId || !merchantKey) throw new Error('PAYFAST_MERCHANT_ID and PAYFAST_MERCHANT_KEY must be set for BILLING_DRIVER=payfast.');
+  // Without a passphrase the signature is a plain MD5 of public fields: anyone with their own
+  // PayFast account could produce a valid-looking notification. It is required.
+  const passphrase = process.env.PAYFAST_PASSPHRASE?.trim();
+  if (!passphrase) throw new Error('PAYFAST_PASSPHRASE must be set for BILLING_DRIVER=payfast (set the same one in the PayFast dashboard).');
   return {
     merchantId,
     merchantKey,
-    passphrase: process.env.PAYFAST_PASSPHRASE?.trim() || null,
+    passphrase,
     sandbox: process.env.PAYFAST_SANDBOX === 'true',
   };
 }
@@ -35,8 +39,14 @@ export function payfastConfig(): PayfastConfig {
 const host = (config: PayfastConfig) => (config.sandbox ? 'sandbox.payfast.co.za' : 'www.payfast.co.za');
 export const processUrl = (config: PayfastConfig) => `https://${host(config)}/eng/process`;
 
-/** PayFast's encoding: encodeURIComponent with spaces as '+'. */
-const encode = (value: string) => encodeURIComponent(value.trim()).replace(/%20/g, '+');
+/**
+ * PayFast signs with PHP's urlencode: spaces as '+', and ! ' ( ) * ~ escaped, which
+ * encodeURIComponent leaves alone. A name like O'Brien broke the signature both ways.
+ */
+const encode = (value: string) =>
+  encodeURIComponent(value.trim())
+    .replace(/[!'()*~]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%20/g, '+');
 
 const md5 = (text: string) => createHash('md5').update(text).digest('hex');
 

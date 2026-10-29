@@ -96,11 +96,17 @@ describe('turning two-step on', () => {
 
   it('needs a code from the scanned secret, and hands out ten recovery codes once', async () => {
     expect((await call('GET', '/auth/two-step', OWNER)).body).toEqual({ enabled: false, recoveryCodesLeft: 0 });
-    const setup = await call('POST', '/auth/two-step', OWNER, { action: 'setup' });
+    // A session alone cannot turn it on: that path let a stolen session change the bank account.
+    expect((await call('POST', '/auth/two-step', OWNER, { action: 'setup' })).status).toBe(400);
+    const wrongPassword = await call('POST', '/auth/two-step', OWNER, { action: 'setup', password: 'not-it' });
+    expect([wrongPassword.status, wrongPassword.body.error.code]).toEqual([403, 'password_wrong']);
+    const setup = await call('POST', '/auth/two-step', OWNER, { action: 'setup', password: 'dev' });
     secret = setup.body.secret;
     expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\/Threshold%3Alandlord%40example\.co\.za\?secret=/);
-    expect((await call('POST', '/auth/two-step', OWNER, { action: 'enable', code: '000000' })).status).toBe(400);
-    const on = await call('POST', '/auth/two-step', OWNER, { action: 'enable', code: nextCode() });
+    expect((await call('POST', '/auth/two-step', OWNER, { action: 'enable', password: 'dev', code: '000000' })).status).toBe(400);
+    expect((await call('POST', '/auth/two-step', OWNER, { action: 'enable', code: nextCode() })).status).toBe(400);
+    expect((await call('POST', '/auth/two-step', OWNER, { action: 'enable', password: 'not-it', code: nextCode() })).status).toBe(403);
+    const on = await call('POST', '/auth/two-step', OWNER, { action: 'enable', password: 'dev', code: nextCode() });
     expect(on.status).toBe(200);
     recovery = on.body.recoveryCodes;
     expect(recovery).toHaveLength(10);
@@ -138,7 +144,9 @@ describe('changing the bank account', () => {
     const without = await call('PUT', '/landlord', OWNER, bank('1234567890'));
     expect(without.body.error.code).toBe('code_required');
     const wrong = await call('PUT', '/landlord', OWNER, { ...bank('1234567890'), code: '000000' });
-    expect(wrong.body.error.code).toBe('code_wrong');
+    // A 403, not a 401: the session is fine, and a 401 signed the person out in the app.
+    expect([wrong.status, wrong.body.error.code]).toEqual([403, 'code_wrong']);
+    expect(without.status).toBe(403);
     expect((await call('PUT', '/landlord', OWNER, { ...bank('1234567890'), code: nextCode() })).status).toBe(200);
     // Saving the same details again changes nothing, so it needs no code.
     expect((await call('PUT', '/landlord', OWNER, bank('1234567890'))).status).toBe(200);
@@ -173,9 +181,21 @@ describe('changing the bank account', () => {
   });
 });
 
+describe('guessing codes', () => {
+  it('stops after five wrong codes on a bank change, so a stolen session cannot guess its way in', async () => {
+    const { secondStepsByAccount } = await import('../lib/ratelimit');
+    for (let i = 0; i < 5; i += 1) {
+      expect((await call('PUT', '/landlord', OWNER, { ...bank('3333333333'), code: '000000' })).status).toBe(403);
+    }
+    const blocked = await call('PUT', '/landlord', OWNER, { ...bank('3333333333'), code: nextCode() });
+    expect(blocked.status).toBe(429);
+    secondStepsByAccount.clear('sub-landlord');
+  });
+});
+
 describe('turning two-step off', () => {
   it('needs the password and a code', async () => {
-    expect((await call('POST', '/auth/two-step', OWNER, { action: 'disable', password: 'wrong', code: nextCode() })).status).toBe(401);
+    expect((await call('POST', '/auth/two-step', OWNER, { action: 'disable', password: 'wrong', code: nextCode() })).status).toBe(403);
     expect((await call('POST', '/auth/two-step', OWNER, { action: 'disable', password: 'dev', code: nextCode() })).body).toEqual({ enabled: false });
     expect((await login()).status).toBe(200);
   });

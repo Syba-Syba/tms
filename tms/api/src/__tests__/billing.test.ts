@@ -29,6 +29,11 @@ describe('plans and standing', () => {
     expect(standing({ ...base, status: 'past_due' }, '2026-10-25')).toBe('past_due');
     expect(standing({ ...base, status: 'cancelled' }, '2026-10-20')).toBe('cancelling');
     expect(standing({ ...base, status: 'cancelled' }, '2026-10-21')).toBe('lapsed');
+    // A first payment that failed before any paid period: the trial and its grace still count.
+    // It returned 'lapsed' on the spot, locking an account with weeks of trial left.
+    const trial = { trialEndsOn: '2026-11-20', currentPeriodEnd: null };
+    expect(standing({ ...trial, status: 'past_due' }, '2026-10-29')).toBe('past_due');
+    expect(standing({ ...trial, status: 'past_due' }, '2026-11-28')).toBe('lapsed');
   });
 
   it('adds a month without running past the end of a short one', () => {
@@ -53,6 +58,8 @@ describe('PayFast signing', () => {
     expect(Object.fromEntries(fields)).toMatchObject({ amount: '199.00', recurring_amount: '199.00', frequency: '3', subscription_type: '1' });
     // Spaces are sent as '+', as PayFast encodes them.
     expect(itnParamString([['item_name', 'Threshold Starter, monthly']])).toBe('item_name=Threshold+Starter%2C+monthly');
+    // As PHP's urlencode does: an apostrophe or brackets broke the signature for O'Brien (Pty).
+    expect(itnParamString([['name_first', "O'Brien (Pty) *~!"]])).toBe('name_first=O%27Brien+%28Pty%29+%2A%7E%21');
   });
 
   it('checks a notification against the order it arrived in, and catches a changed amount', () => {
@@ -201,6 +208,27 @@ describe('paying during the trial', () => {
   });
 });
 
+describe('a declined card during the trial', () => {
+  it('leaves the trial running', async () => {
+    const signed = await call('POST', '/auth/register', { sub: 'anonymous', groups: 'tenant' }, {
+      name: 'Declined Card', email: 'declined@example.co.za', password: 'a-long-password', consentVersion: PRIVACY_VERSION,
+      termsVersion: TERMS_VERSION, landlord: { tradingName: 'Declined Rentals', phone: '0825550303' },
+    });
+    const owner = { sub: signed.body.user.sub, groups: 'landlord' };
+    const checkout = await call('POST', '/billing/checkout', owner, { plan: 'starter' });
+    const { applyPaymentNotice } = await import('../lib/billing-events');
+    await applyPaymentNotice({
+      provider: 'local', externalId: 'declined-1', checkoutId: checkout.body.checkoutId, token: null,
+      outcome: 'failed', amountCents: null, payload: {},
+    });
+    const billing = (await call('GET', '/billing', owner)).body;
+    expect(billing.standing).toBe('trial');
+    expect((await call('POST', `/properties`, owner, {
+      name: 'Still Writable', addressLine1: '1 Trial Road', suburb: 'Linden', city: 'Johannesburg', province: 'Gauteng', postalCode: '2195',
+    })).status).toBe(201);
+  });
+});
+
 describe('with PayFast', () => {
   it('hands back a signed form for the sandbox, and answers notifications only in that mode', async () => {
     expect((await call('POST', '/billing/notify', { sub: 'anonymous', groups: 'tenant' }, undefined, 'a=b')).status).toBe(404);
@@ -225,5 +253,24 @@ describe('with PayFast', () => {
     expect(forged.status).toBe(200);
     const [kept] = await db.query<{ problem: string }>(`select problem from billing_event where provider = 'payfast'`);
     expect(kept!.problem).toBe('Signature does not match.');
+
+    // Correctly signed, but paid to a different PayFast merchant: refused before anything else.
+    const otherMerchant: [string, string][] = [
+      ['merchant_id', '99999999'], ['m_payment_id', checkout.body.fields.m_payment_id], ['payment_status', 'COMPLETE'], ['amount_gross', '999.00'],
+    ];
+    const elsewhere = [...otherMerchant, ['signature', signFields(otherMerchant, 'jt7NOE43FZPn')]]
+      .map(([key, value]) => `${key}=${encodeURIComponent(value!)}`).join('&');
+    expect((await call('POST', '/billing/notify', { sub: 'anonymous', groups: 'tenant' }, undefined, elsewhere)).status).toBe(200);
+    const [refused] = await db.query<{ problem: string }>(`select problem from billing_event where provider = 'payfast' order by created_at desc limit 1`);
+    expect(refused!.problem).toBe('Paid to merchant 99999999, not ours.');
+    expect((await call('GET', '/billing', { sub: signed.body.user.sub, groups: 'landlord' })).body.standing).toBe('trial');
+  });
+
+  it('refuses to run without a passphrase', async () => {
+    const { payfastConfig } = await import('../lib/payfast');
+    const saved = process.env.PAYFAST_PASSPHRASE;
+    delete process.env.PAYFAST_PASSPHRASE;
+    expect(() => payfastConfig()).toThrow(/PAYFAST_PASSPHRASE/);
+    process.env.PAYFAST_PASSPHRASE = saved;
   });
 });

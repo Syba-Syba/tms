@@ -4,7 +4,7 @@ import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
 import { ApiError, conflict, json, parseBody, route } from '../lib/http';
 import { notify } from '../lib/notify';
-import { checkSecondStep, twoStepEnabled } from '../lib/two-step';
+import { requireSecondStep, twoStepEnabled } from '../lib/two-step';
 import { updateAccountSchema } from '../domain/landlord';
 
 /**
@@ -33,9 +33,7 @@ export const handler = route(async (event) => {
     if (!(await twoStepEnabled(person.sub))) {
       throw new ApiError(403, 'two_step_required', 'Turn on two-step sign-in under Settings, You, before changing the bank account.');
     }
-    if (!(await checkSecondStep(person.sub, typeof code === 'string' ? code : undefined))) {
-      throw new ApiError(401, typeof code === 'string' ? 'code_wrong' : 'code_required', 'Enter the current code from your authenticator app.');
-    }
+    await requireSecondStep(person.sub, code);
   }
 
   const sets: string[] = [];

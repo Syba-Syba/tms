@@ -99,6 +99,20 @@ describe('password reset', () => {
     expect((await call('/auth/reset/confirm', { token: second, newPassword: 'pass-from-second' }, '10.9.3.4')).status).toBe(200);
   });
 
+  it('signs in with a token the server accepts, even for someone who has signed out before', async () => {
+    const email = 'epoch@example.co.za';
+    await call('/auth/register', { name: 'Signed Out Before', email, password: 'epoch-pass-1' }, '10.9.9.6');
+    await db.query(`update local_credential set session_epoch = 2 where email = $1`, [email]);
+    await call('/auth/reset/request', { email }, '10.9.5.1');
+    const done = await call('/auth/reset/confirm', { token: await linkFor(email), newPassword: 'epoch-pass-2' }, '10.9.5.2');
+    const { verifyToken, credentialVersion } = await import('../lib/authtoken');
+    const [row] = await db.query<{ password_hash: string; session_epoch: number }>(
+      'select password_hash, session_epoch from local_credential where email = $1', [email],
+    );
+    // The check the self-hosted server makes on every request.
+    expect(verifyToken(done.body.token)!.pv).toBe(credentialVersion(row!.password_hash, row!.session_epoch));
+  });
+
   it('refuses an expired link', async () => {
     const email = 'late@example.co.za';
     await call('/auth/register', { name: 'Late Opener', email, password: 'late-pass-1' }, '10.9.9.4');

@@ -74,6 +74,28 @@ export const handler = route(async (event) => {
         if (!lease) throw notFound('Lease');
 
         const amountCents = Number(line.amount_cents);
+        // The slip for this money may already be accepted, and its payment recorded. Recording
+        // the bank line as well counted the same rent twice and spilled it onto next month.
+        // Link the line to that payment instead.
+        const [recorded] = await run<{ id: string }>(
+          `select pp.id from payment_proof pp
+            where pp.lease_id = $1 and pp.status = 'accepted' and pp.target = 'invoice' and pp.amount_cents = $2
+              and pp.paid_on between $3::date - 14 and $3::date + 3
+              and exists (select 1 from payment p where p.proof_id = pp.id)
+              and not exists (select 1 from payment p where p.proof_id = pp.id and p.bank_line_id is not null)
+            order by abs(pp.paid_on - $3::date) limit 1
+            for update`,
+          [lease.id, amountCents, line.posted_on],
+        );
+        if (recorded) {
+          await run('update payment set bank_line_id = $2 where proof_id = $1', [recorded.id, line.id]);
+          await run(
+            `update bank_line set status = 'matched', lease_id = $2, resolved_by = $3, resolved_at = now() where id = $1`,
+            [line.id, lease.id, person.sub],
+          );
+          // The tenant was told when the slip was accepted; nothing new to say.
+          return null;
+        }
         const [proof] = await run<{ id: string; target: string; invoice_id: string | null }>(
           `select id, target, invoice_id from payment_proof
             where lease_id = $1 and status = 'pending' and amount_cents = $2

@@ -42,7 +42,11 @@ export function standing(state: SubscriptionState, today: string): Standing {
   if (state.status === 'trialing') return today <= state.trialEndsOn ? 'trial' : 'lapsed';
   const end = state.currentPeriodEnd;
   if (state.status === 'active') return !end || today <= addDays(end, GRACE_DAYS) ? 'active' : 'lapsed';
-  if (state.status === 'past_due') return end && today <= addDays(end, GRACE_DAYS) ? 'past_due' : 'lapsed';
+  // Past due before any paid period (a first payment that failed): the trial still counts.
+  if (state.status === 'past_due') {
+    const until = end ?? state.trialEndsOn;
+    return today <= addDays(until, GRACE_DAYS) ? 'past_due' : 'lapsed';
+  }
   return end && today <= end ? 'cancelling' : 'lapsed';
 }
 

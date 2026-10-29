@@ -68,5 +68,11 @@ export const passwordChangesByAccount = new AttemptLimiter(10, 15 * MINUTE);
 export const resetRequestsByAddress = new AttemptLimiter(10, 60 * MINUTE);
 export const resetRequestsByAccount = new AttemptLimiter(3, 60 * MINUTE);
 
+/**
+ * Wrong two-step codes inside the app (changing the bank account, turning two-step off). Sign-in
+ * has its own limits; without these, a stolen session could guess six digits until one landed.
+ */
+export const secondStepsByAccount = new AttemptLimiter(5, 15 * MINUTE);
+
 /** Guesses at a reset token. 256 bits cannot be guessed, but each attempt still costs scrypt. */
 export const resetConfirmsByAddress = new AttemptLimiter(20, 15 * MINUTE);
