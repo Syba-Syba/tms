@@ -9,6 +9,7 @@ import { PrivacyRequests } from '../components/privacy-requests';
 import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
 import { QueryState } from '../components/query-state';
+import { PAGE } from '../lib/layout';
 
 interface Preference {
   category: string;
@@ -73,7 +74,7 @@ export function NotificationPreferences() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader title="Settings" description="Your password, what reaches you, and your data." />
       <SettingsNav />
 

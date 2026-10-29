@@ -891,6 +891,17 @@ tinted panel for their own money, plain friendly copy).
 - One accent, bottle green, for links, focus and selection. Primary buttons are ink black, so each
   screen has one obvious next step.
 - Labels are small and in sentence case. Use the `label` class rather than spaced-out capitals.
+- Every signed-in page starts under the logo: use `PAGE` from `app/src/lib/layout.ts` for the
+  `<main>`. `wide` for tables, `reading` or `narrow` for forms and text, which caps each block's
+  line length without moving the left edge.
+- Status badges use the `--tb-*-ink` tokens for their text, so a 12px badge clears WCAG's 4.5:1
+  on its own tint. A state colour alone (`text-warning`) is fine on white, not on a tint.
+- On a phone every control is at least 44px tall. Small text actions such as Edit or Lease get
+  `min-h-11 sm:min-h-0`, and an `aria-label` naming what they act on ("Edit A1").
+- Headline figures (stat cards) drop ",00" on whole rands with `headlineZar`. Rows, invoices and
+  reports keep the cents.
+- An axe scan of the main screens reports no WCAG 2.1 AA violations; keep it that way when adding
+  a screen.
 
 The values live in `toolbox/src/tokens/tokens.css`; components read them, screens never hardcode a
 colour.

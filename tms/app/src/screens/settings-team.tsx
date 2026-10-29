@@ -6,6 +6,7 @@ import { QueryState } from '../components/query-state';
 import { SettingsNav } from '../components/settings-nav';
 import { useLandlord } from '../lib/landlord';
 import { formatDate } from '../lib/format';
+import { PAGE } from '../lib/layout';
 
 interface Team {
   members: { sub: string; role: 'owner' | 'agent'; name: string; email: string; since: string; isYou: boolean }[];
@@ -52,7 +53,7 @@ export function SettingsTeam() {
   };
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader title="Settings" description="The people who work on your rentals." />
       <SettingsNav />
 

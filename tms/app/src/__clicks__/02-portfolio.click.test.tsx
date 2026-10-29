@@ -56,18 +56,18 @@ describe('the portfolio screen', () => {
 
     // Re-price via Edit, scoped to the new unit's row.
     const unitRow = () => screen.getByText('C1').closest('div.flex') as HTMLElement;
-    fireEvent.click(within(unitRow()).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(within(unitRow()).getByRole('button', { name: /^Edit / }));
     await screen.findByText('Edit C1');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await screen.findByText('Unit updated');
 
     // Copy the application link.
-    fireEvent.click(within(unitRow()).getByRole('button', { name: 'Copy link' }));
+    fireEvent.click(within(unitRow()).getByRole('button', { name: /^Copy the application link/ }));
     await screen.findByText('Application link copied');
     expect(copied.at(-1)).toContain('/apply?unit=');
 
     // Remove the unit: Edit -> Remove this unit -> the dialog's own Remove.
-    fireEvent.click(within(unitRow()).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(within(unitRow()).getByRole('button', { name: /^Edit / }));
     await screen.findByText('Edit C1');
     fireEvent.click(screen.getByRole('button', { name: 'Remove this unit' }));
     await screen.findByText(/no lease history and no applications/);

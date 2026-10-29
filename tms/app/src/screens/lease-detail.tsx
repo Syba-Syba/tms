@@ -14,6 +14,7 @@ import { addDays, localToday } from '../lib/dates';
 import { formatDate, status } from '../lib/format';
 import { randomId } from '../lib/ids';
 import { useOpenDocument } from '../lib/open-document';
+import { PAGE } from '../lib/layout';
 
 interface Lease {
   id: string; ref: string; status: string; unit: string; tenant: string; tenantEmail: string;
@@ -129,7 +130,7 @@ export function LeaseDetail() {
   const rules = noticeRules(data, notice.reason, today);
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-6">
+    <main className={PAGE.reading}>
       <PageHeader title={data.unit} description={`${data.ref} · ${data.tenant}`} />
 
       {landlord && !['terminated', 'cancelled', 'scheduled'].includes(data.status) ? (

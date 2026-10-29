@@ -1,3 +1,4 @@
+import { formatZar } from '@hlonie/toolbox/utils';
 /**
  * How the app writes dates and statuses for people. The API speaks ISO dates and database
  * statuses; nobody in Johannesburg reads "2026-10-07" or "part_paid" as words.
@@ -88,3 +89,6 @@ export function formatDateTime(value: string | null | undefined): string {
 }
 
 export const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A headline figure: whole rands drop the ",00", anything with cents keeps it exact. */
+export const headlineZar = (cents: number) => formatZar(cents / 100, cents % 100 !== 0);

@@ -8,6 +8,7 @@ import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
 import { SettingsNav } from '../components/settings-nav';
 import { listingsUrl, useLandlord, type Bank } from '../lib/landlord';
+import { PAGE } from '../lib/layout';
 
 /** Universal branch codes: picking the bank fills the code, the field people most often get wrong. */
 export const BANKS: { name: string; branchCode: string }[] = [
@@ -88,7 +89,7 @@ export function SettingsAccount() {
   const knownBank = BANKS.some((entry) => entry.name === bank.name);
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-6">
+    <main className={PAGE.narrow}>
       <PageHeader title="Settings" description="Your business, where rent is paid, and how applicants find you." />
       <SettingsNav />
 

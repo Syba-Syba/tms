@@ -14,16 +14,15 @@ import {
   Select,
   SegmentedControl,
   Spinner,
-  StatCard,
   Textarea,
   useToast,
 } from '@hlonie/toolbox/ui';
-import { formatZar } from '@hlonie/toolbox/utils';
 import { api, type ApplicationSummary, humanError } from '../api/client';
 import { formatDate } from '../lib/format';
 import { QueryError } from '../components/query-state';
 import { createAndRender } from '../lib/uploads';
 import { CreditCheckPanel } from '../components/credit-check';
+import { PAGE } from '../lib/layout';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
@@ -127,7 +126,10 @@ export function LandlordQueue() {
 
   // Always openable: the credit check lives in the same drawer, documents or not.
   const docsFor = (item: ApplicationSummary) => (
-    <button type="button" className="text-[13px] font-bold text-brand-500" onClick={() => setViewingDocs(item)}>
+    <button type="button" onClick={() => setViewingDocs(item)}
+      className={`inline-flex min-h-11 items-center text-[13px] sm:min-h-0 ${
+        item.documentCount > 0 ? 'font-bold text-brand-500' : 'font-medium text-ink-muted underline decoration-dotted underline-offset-2'
+      }`}>
       {item.documentCount > 0 ? `${item.documentCount} on file` : 'No documents yet'}
     </button>
   );
@@ -173,24 +175,19 @@ export function LandlordQueue() {
   const items = data?.items ?? [];
   const units = (portfolio?.items ?? []).flatMap((property) => property.units);
   const vacant = units.filter((unit) => unit.status === 'vacant');
-  const rentRoll = units
-    .filter((unit) => unit.status === 'occupied')
-    .reduce((sum, unit) => sum + unit.monthlyRentCents, 0);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
-      <PageHeader title="Applications" description="Approve, read the paperwork, generate the lease." />
-
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Waiting on you" value={String(status === 'submitted' ? items.length : '—')} />
-        <StatCard
-          label="Vacant units"
-          value={String(vacant.length)}
-          delta={vacant.map((unit) => unit.code).join(', ') || 'fully let'}
-        />
-        <StatCard label="Occupied" value={String(units.length - vacant.length)} deltaTone="neutral" />
-        <StatCard label="Monthly rent roll" value={formatZar(rentRoll / 100, false)} />
-      </div>
+    <main className={PAGE.wide}>
+      <PageHeader
+        title="Applications"
+        description={
+          units.length === 0
+            ? 'Approve, read the paperwork, generate the lease.'
+            : vacant.length === 0
+              ? 'Every unit is let.'
+              : `${vacant.length} vacant: ${vacant.map((unit) => unit.code).join(', ')}.`
+        }
+      />
 
       <SegmentedControl
         className="mb-4"

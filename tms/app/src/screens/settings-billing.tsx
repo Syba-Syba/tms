@@ -9,6 +9,7 @@ import { SettingsNav } from '../components/settings-nav';
 import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
 import { standingText, useBilling, type PlanId } from '../lib/billing';
+import { PAGE } from '../lib/layout';
 
 /** Posts the signed PayFast form from the browser: the card details never touch this server. */
 function postToPayfast(action: string, fields: Record<string, string>) {
@@ -149,7 +150,7 @@ export function SettingsBilling() {
   const tone = data.standing === 'lapsed' ? 'danger' : data.standing === 'past_due' ? 'warning' : 'info';
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-6">
+    <main className={PAGE.reading}>
       <PageHeader title="Settings" description="What you pay for Threshold." />
       <SettingsNav />
 

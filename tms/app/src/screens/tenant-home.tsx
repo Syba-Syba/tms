@@ -7,6 +7,7 @@ import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate } from '../lib/format';
 import { currentUser } from '../lib/session';
 import { QueryState } from '../components/query-state';
+import { PAGE } from '../lib/layout';
 
 interface LeaseRow {
   id: string; ref: string; status: string; unit: string; startDate: string; endDate: string;
@@ -37,7 +38,7 @@ export function TenantHome() {
   const upcoming = data.items.find((item) => item.status === 'scheduled' && item.id !== lease?.id);
   if (!lease) {
     return (
-      <main className="mx-auto max-w-2xl px-5 py-6">
+      <main className={PAGE.narrow}>
         <EmptyState
           title="No active lease"
           description="When your landlord issues a lease it appears here, along with everything attached to it."
@@ -62,7 +63,7 @@ export function TenantHome() {
   ];
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-5">
+    <main className={PAGE.narrow}>
       <p className="text-[15px] text-ink-muted">{firstName ? `Hi ${firstName}` : 'Hi'}</p>
       <h1 className="mb-5 font-display text-[30px] font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
 
