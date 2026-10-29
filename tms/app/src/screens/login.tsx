@@ -143,7 +143,7 @@ export function Login() {
       </Card>
       {import.meta.env.DEV ? (
         <Alert tone="info" title="Development sign-ins" className="mt-4">
-          landlord@example.co.za, naledi@example.co.za or sipho@example.co.za — password: dev
+          landlord@example.co.za, kgee@example.co.za, naledi@example.co.za, lerato@example.co.za or sipho@example.co.za. Password: dev
         </Alert>
       ) : null}
     </main>

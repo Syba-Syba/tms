@@ -22,7 +22,7 @@ try {
     console.log('Demo data is already there. Run `npm run reset` first for a clean copy.');
   } else {
     await db.exec(readFileSync(join(here, 'demo.sql'), 'utf8'));
-    console.log('Demo data added: Melville Gardens, two more tenants, rent history, expenses and a repair.');
+    console.log('Demo data added: Melville Gardens, two more tenants, rent history, expenses, a repair, and a second landlord, KGEE Consulting (kgee@example.co.za).');
   }
 } finally {
   await db.close();

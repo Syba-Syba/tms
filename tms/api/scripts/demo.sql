@@ -97,3 +97,69 @@ select '11111111-1111-1111-1111-111111111111', p, c, d, a, current_date - o, 'su
 
 insert into expense (landlord_id, category, description, amount_cents, incurred_on, created_by)
 values ('11111111-1111-1111-1111-111111111111', 'bank_charges', 'Business account fees', 18500, current_date - 3, 'sub-landlord');
+
+-- A second landlord account, KGEE Consulting, so the demo shows two businesses that never see
+-- each other's data. Sign in as kgee@example.co.za (owner) or lerato@example.co.za (tenant),
+-- password dev. Its public page is /l/kgeeconsulting-properties.
+insert into landlord (id, trading_name, email, phone, cognito_sub, slug, registration_no,
+                      bank_name, bank_account_holder, bank_account_number, bank_branch_code)
+values ('e0000000-0000-0000-0000-000000000001', 'KGEE Consulting', 'kgee@example.co.za', '+27115550199',
+        'sub-kgee', 'kgeeconsulting-properties', '2019/412345/07',
+        'Capitec', 'KGEE Consulting', '1452367890', '470010');
+
+insert into local_credential (sub, email, name, role, password_hash)
+values
+  ('sub-kgee',   'kgee@example.co.za',   'KGEE Consulting', 'landlord', 'plain:dev'),
+  ('sub-lerato', 'lerato@example.co.za', 'Lerato Khumalo',  'tenant',   'plain:dev');
+
+insert into property (id, landlord_id, name, address_line1, suburb, city, province, postal_code)
+values ('e0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-000000000001',
+        'Rivonia Place', '21 Rivonia Road', 'Sunninghill', 'Sandton', 'Gauteng', '2191');
+
+insert into unit (id, property_id, code, bedrooms, bathrooms, monthly_rent_cents, deposit_cents, status,
+                  description, available_from, furnished, pets_allowed, parking_bays)
+values
+  ('e0000000-0000-0000-0000-000000000011', 'e0000000-0000-0000-0000-000000000002', '101', 2, 2, 1150000, 1150000,
+   'occupied', null, null, false, false, 1),
+  ('e0000000-0000-0000-0000-000000000012', 'e0000000-0000-0000-0000-000000000002', '102', 1, 1, 820000, 820000,
+   'vacant', 'Ground-floor one-bedroom with its own patio. Fibre ready, prepaid electricity, water included. Five minutes from Sunninghill Hospital and the N1.',
+   current_date, false, true, 1),
+  ('e0000000-0000-0000-0000-000000000013', 'e0000000-0000-0000-0000-000000000002', '201', 3, 2, 1580000, 1580000,
+   'vacant', 'Top-floor three-bedroom, open-plan kitchen and a balcony facing north. Backup water tank and inverter for load-shedding. Two covered bays.',
+   current_date + 30, true, false, 2);
+
+insert into applicant (id, cognito_sub, first_name, last_name, id_number_enc, id_number_last4, email, phone,
+                       employment_status, employer, monthly_income_cents)
+values ('e0000000-0000-0000-0000-000000000021', 'sub-lerato', 'Lerato', 'Khumalo', '\x00', '5108',
+        'lerato@example.co.za', '+27825550133', 'employed', 'Discovery', 4200000);
+
+insert into application (id, unit_id, applicant_id, status, preferred_move_in)
+values ('e0000000-0000-0000-0000-000000000031', 'e0000000-0000-0000-0000-000000000011',
+        'e0000000-0000-0000-0000-000000000021', 'approved', current_date - 150);
+
+insert into lease (id, application_id, unit_id, applicant_id, start_date, end_date,
+                   monthly_rent_cents, escalation_pct, deposit_cents, status, activated_at)
+values ('e0000000-0000-0000-0000-000000000041', 'e0000000-0000-0000-0000-000000000031',
+        'e0000000-0000-0000-0000-000000000011', 'e0000000-0000-0000-0000-000000000021',
+        current_date - 150, current_date + 215, 1150000, 8, 1150000, 'active', now() - interval '150 days');
+
+insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
+values ('e0000000-0000-0000-0000-000000000041', 'received', 1150000, current_date - 150, 'Paid before move in');
+
+-- Three months of rent, all paid.
+insert into invoice (lease_id, period_start, due_on, total_cents, status)
+select 'e0000000-0000-0000-0000-000000000041', m, m + 6, 1150000, 'paid'
+  from generate_series(date_trunc('month', current_date) - interval '2 months',
+                       date_trunc('month', current_date), interval '1 month') as g(m0),
+       lateral (select m0::date as m) as d;
+
+insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+select i.lease_id, i.id, i.total_cents, 'eft', 'LSE-' || lpad(l.ref_no::text, 5, '0'), i.due_on - 3, 'sub-kgee'
+  from invoice i join lease l on l.id = i.lease_id
+ where i.lease_id = 'e0000000-0000-0000-0000-000000000041';
+
+insert into expense (landlord_id, property_id, category, description, amount_cents, incurred_on, created_by)
+values
+  ('e0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000002', 'levies', 'Body corporate levy', 265000, current_date - 32, 'sub-kgee'),
+  ('e0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000002', 'levies', 'Body corporate levy', 265000, current_date - 2, 'sub-kgee'),
+  ('e0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000002', 'repairs', 'Serviced the 201 inverter', 120000, current_date - 12, 'sub-kgee');
