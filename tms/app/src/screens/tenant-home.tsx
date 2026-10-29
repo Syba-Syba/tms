@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { Alert, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate } from '../lib/format';
 import { currentUser } from '../lib/session';
@@ -63,34 +63,37 @@ export function TenantHome() {
   ];
 
   return (
-    <main className={PAGE.narrow}>
-      <p className="text-[15px] text-ink-muted">{firstName ? `Hi ${firstName}` : 'Hi'}</p>
-      <h1 className="mb-5 font-display text-[30px] font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
+    <main className={PAGE.wide}>
+      <p className="text-lead text-ink-muted">{firstName ? `Hi ${firstName}` : 'Hi'}</p>
+      <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
 
+      {/* On a laptop: their money and any notices on the left, what they can do on the right. */}
+      <div className="grid grid-cols-1 items-start gap-x-6 lg:grid-cols-2">
+      <div>
       {/* The one warm panel in the app: the tenant's own money, said plainly. */}
       <section
         className={`mb-4 rounded-md px-5 py-6 ${
           settled ? 'bg-brand-50' : 'bg-[color-mix(in_srgb,var(--tb-danger)_7%,var(--tb-surface))]'
         }`}
       >
-        <p className="text-[14px] text-ink-muted">{settled ? 'You owe nothing' : 'You owe'}</p>
-        <Ledger cents={lease.outstandingCents} className={`block text-[44px] leading-tight ${settled ? '' : 'text-danger'}`} />
+        <p className="text-body text-ink-muted">{settled ? 'You owe nothing' : 'You owe'}</p>
+        <Money cents={lease.outstandingCents} className={`block text-hero leading-tight ${settled ? '' : 'text-danger'}`} />
         {settled ? (
-          <p className="mt-1 text-[14px] text-brand-600">Fully paid up. Thank you.</p>
+          <p className="mt-1 text-body text-brand-600">Fully paid up. Thank you.</p>
         ) : (
-          <p className="mt-1 text-[14px] text-ink">
+          <p className="mt-1 text-body text-ink">
             Pay by EFT with the reference <b className="font-mono font-medium">{lease.ref}</b> exactly, so the bank
             can match it to your unit.
           </p>
         )}
-        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-black/10 pt-4">
+        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-line pt-4">
           <div>
-            <p className="text-[13px] text-ink-muted">Rent a month</p>
-            <Ledger cents={lease.monthlyRentCents} className="text-[20px]" />
+            <p className="text-meta text-ink-muted">Rent a month</p>
+            <Money cents={lease.monthlyRentCents} className="text-title" />
           </div>
           <div>
-            <p className="text-[13px] text-ink-muted">Your deposit, with interest</p>
-            <Ledger cents={lease.depositBalanceCents} className="text-[20px]" />
+            <p className="text-meta text-ink-muted">Your deposit, with interest</p>
+            <Money cents={lease.depositBalanceCents} className="text-title" />
           </div>
         </div>
       </section>
@@ -120,6 +123,8 @@ export function TenantHome() {
         </Alert>
       ) : null}
 
+      </div>
+      <div>
       <Button block size="lg" className="mb-4" onClick={() => navigate(`/leases/${lease.id}/tickets/new`)}>
         Report a problem
       </Button>
@@ -128,10 +133,10 @@ export function TenantHome() {
         <ul className="divide-y divide-line-soft">
           {actions.map((action) => (
             <li key={action.label}>
-              <Link to={action.to} className="flex items-center gap-3 px-4 py-3.5 hover:bg-neutral-50">
+              <Link to={action.to} className="flex items-center gap-3 px-4 py-3.5 hover:bg-surface-muted">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-medium text-ink">{action.label}</span>
-                  <span className="block truncate text-[13px] text-ink-muted">{action.hint}</span>
+                  <span className="block text-lead font-medium text-ink">{action.label}</span>
+                  <span className="block truncate text-meta text-ink-muted">{action.hint}</span>
                 </span>
                 <ChevronRightIcon className="shrink-0 text-ink-muted" />
               </Link>
@@ -139,6 +144,8 @@ export function TenantHome() {
           ))}
         </ul>
       </Card>
+      </div>
+      </div>
     </main>
   );
 }

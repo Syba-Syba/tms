@@ -37,7 +37,7 @@ export function UploadTile({
       ) : null}
       <figcaption
         className={cn(
-          'absolute right-1 top-1 rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-medium',
+          'absolute right-1 top-1 rounded-sm px-1.5 py-0.5 font-mono text-2xs font-medium',
           tick.cls,
         )}
       >
@@ -52,7 +52,7 @@ export function UploadTile({
         <button
           type="button"
           onClick={onRetry}
-          className="absolute inset-x-0 bottom-0 bg-danger py-1 text-[11px] font-medium text-white"
+          className="absolute inset-x-0 bottom-0 bg-danger py-1 text-2xs font-medium text-white"
         >
           Tap to retry
         </button>

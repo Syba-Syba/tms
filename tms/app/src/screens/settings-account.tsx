@@ -173,7 +173,7 @@ export function SettingsAccount() {
         <Card>
           <CardBody className="space-y-3">
             {!data.account.bank ? (
-              <p className="text-[13.5px] text-ink">
+              <p className="text-meta text-ink">
                 {owner
                   ? "Add the account rent goes into. It prints on every invoice and shows on each tenant's rent screen."
                   : 'The owner has not added the bank account yet. Until they do, invoices ask tenants to use the account on their lease.'}
@@ -269,12 +269,12 @@ export function SettingsAccount() {
         <h2 className="label mb-2">Your listings link</h2>
         <Card>
           <CardBody className="space-y-3">
-            <p className="text-[13.5px] text-ink">
+            <p className="text-meta text-ink">
               Share it on a listing site, WhatsApp or your own website. It shows your vacant units with their photos, and nobody else's. Add photos and a description from each unit on Properties.
             </p>
             {link ? (
               <div className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-sm border border-line bg-surface-muted px-3 py-2 font-mono text-[13px]">
+                <code className="min-w-0 flex-1 truncate rounded-sm border border-line bg-surface-muted px-3 py-2 font-mono text-meta">
                   {link}
                 </code>
                 <Button

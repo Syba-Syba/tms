@@ -24,8 +24,8 @@ export function ForgotPassword() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Forgot your password?</h1>
-      <p className="mb-5 text-[14px] text-ink-muted">
+      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Forgot your password?</h1>
+      <p className="mb-5 text-body text-ink-muted">
         Enter the email you signed up with. We send a link to choose a new password.
       </p>
       {sent ? (
@@ -47,7 +47,7 @@ export function ForgotPassword() {
           <Button block loading={busy} disabled={!email.includes('@')} onClick={send}>
             {sent ? 'Send another link' : 'Send reset link'}
           </Button>
-          <p className="text-center text-[13px] text-ink-muted">
+          <p className="text-center text-meta text-ink-muted">
             Remembered it? <Link to="/login" className="font-bold text-brand-500">Sign in</Link>
           </p>
         </CardBody>

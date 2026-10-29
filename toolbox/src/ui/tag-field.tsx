@@ -14,9 +14,9 @@ export function TagField({ label, value, className }: { label: string; value: st
         className,
       )}
     >
-      <span className="text-[12px] text-ink-muted">{copied ? 'Copied' : failed ? 'Select to copy' : label}</span>
+      <span className="text-xs text-ink-muted">{copied ? 'Copied' : failed ? 'Select to copy' : label}</span>
       {/* select-all so a failed copy still leaves the value one long-press from the clipboard. */}
-      <span className="select-all font-mono text-[15px] font-medium text-ink">{value}</span>
+      <span className="select-all font-mono text-lead font-medium text-ink">{value}</span>
     </button>
   );
 }

@@ -24,7 +24,7 @@ export function Tabs({
             key={item.value}
             value={item.value}
             className={cn(
-              '-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5 pt-1 text-[14px] text-ink-muted transition-colors hover:text-ink',
+              '-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5 pt-1 text-body text-ink-muted transition-colors hover:text-ink',
               'data-[state=active]:border-ink data-[state=active]:font-medium data-[state=active]:text-ink',
             )}
           >

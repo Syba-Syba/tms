@@ -10,6 +10,7 @@ import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
 import { standingText, useBilling, type PlanId } from '../lib/billing';
 import { PAGE } from '../lib/layout';
+import { Money } from '../components/money';
 
 /** Posts the signed PayFast form from the browser: the card details never touch this server. */
 function postToPayfast(action: string, fields: Record<string, string>) {
@@ -54,13 +55,13 @@ function Invoices() {
           {data.items.map((invoice) => (
             <li key={invoice.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-semibold">Invoice {invoice.number}</p>
+                <p className="text-body font-semibold">Invoice {invoice.number}</p>
                 <p className="text-xs text-ink-muted">
                   {formatDate(invoice.periodFrom)} to {formatDate(invoice.periodTo)}
                   {invoice.vatCents > 0 ? `, VAT ${formatZar(invoice.vatCents / 100)}` : ''}
                 </p>
               </div>
-              <p className="font-mono text-[14px] tabular-nums">{formatZar(invoice.amountCents / 100)}</p>
+              <Money cents={invoice.amountCents} className="text-body" />
               <Button size="sm" variant="outline"
                 onClick={() => open(async () => (await api.post<{ key: string }>(`/billing/invoices/${invoice.id}/render`, {})).key)}>
                 PDF
@@ -178,14 +179,14 @@ export function SettingsBilling() {
                 <Card key={plan.id} className={current ? 'border-ink' : ''}>
                   <CardBody className="flex h-full flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[15px] font-semibold">{plan.name}</p>
+                      <p className="text-lead font-semibold">{plan.name}</p>
                       {current ? <Badge tone="success">Current</Badge> : data.recommended === plan.id ? <Badge tone="info">Fits you</Badge> : null}
                     </div>
-                    <p className="font-display text-[26px] font-medium tabular-nums">
-                      {formatZar(plan.priceCents / 100)}
-                      <span className="ml-1 text-[13px] font-normal text-ink-muted">a month</span>
+                    <p className="font-display text-figure font-medium tabular-nums">
+                      <Money whole cents={plan.priceCents} />
+                      <span className="ml-1 text-meta font-normal text-ink-muted">a month</span>
                     </p>
-                    <p className="text-[13px] text-ink-muted">Up to {plan.maxUnits} units. Everything included.</p>
+                    <p className="text-meta text-ink-muted">Up to {plan.maxUnits} units. Everything included.</p>
                     {data.isOwner ? (
                       <Button className="mt-auto" variant={current ? 'outline' : 'primary'} loading={busy === plan.id}
                         disabled={current || tooSmall || busy !== null} onClick={() => choose(plan.id)}>
@@ -201,10 +202,10 @@ export function SettingsBilling() {
             Prices include VAT. Paid monthly by card or instant EFT through PayFast; cancel any time and keep the month you paid for.
             More than 60 units? Get in touch.
           </p>
-          {!data.isOwner ? <p className="mt-3 text-[13px] text-ink-muted">Only the account owner changes the plan.</p> : null}
+          {!data.isOwner ? <p className="mt-3 text-meta text-ink-muted">Only the account owner changes the plan.</p> : null}
 
           {data.isOwner && data.hasRecurring && data.status !== 'cancelled' ? (
-            <button type="button" className="mt-5 text-[13px] font-bold text-danger" onClick={() => setCancelling(true)}>
+            <button type="button" className="mt-5 text-meta font-bold text-danger" onClick={() => setCancelling(true)}>
               Cancel the plan
             </button>
           ) : null}
@@ -213,7 +214,7 @@ export function SettingsBilling() {
 
           {data.driver === 'local' && data.isOwner ? (
             <section aria-label="Simulated payments" className="mt-8 rounded-md border border-dashed border-line p-4">
-              <p className="mb-1 text-[13px] font-semibold">Development: simulated PayFast</p>
+              <p className="mb-1 text-meta font-semibold">Development: simulated PayFast</p>
               <p className="mb-3 text-xs text-ink-muted">No money moves. These take the same path a real PayFast notification does.</p>
               <div className="flex flex-wrap gap-2">
                 {simulating ? (

@@ -8,7 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { ChargesPanel, type Charge } from '../components/charges-panel';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
 import { formatDate, status } from '../lib/format';
@@ -149,7 +149,7 @@ export function LeaseDetail() {
           {data.termination ? (
             <Link
               to={`/terminations/${data.termination.id}`}
-              className="rounded-sm border border-line bg-surface px-4 py-2 text-[14px] font-medium text-ink"
+              className="rounded-sm border border-line bg-surface px-4 py-2 text-body font-medium text-ink"
             >
               Settle the deposit
             </Link>
@@ -214,10 +214,10 @@ export function LeaseDetail() {
       <Card className="mb-4">
         <CardBody className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
-            ['Rent', <Ledger key="r" cents={data.monthlyRentCents} className="text-[19px]" />],
-            ['Deposit', <Ledger key="d" cents={data.depositCents} className="text-[19px]" />],
-            ['Escalation', <span key="e" className="font-display text-[20px] font-medium">{data.escalationPct}%</span>],
-            ['Ends', <span key="x" className="text-[15px] font-semibold">{formatDate(data.endDate)}</span>],
+            ['Rent', <Money key="r" cents={data.monthlyRentCents} className="text-title" />],
+            ['Deposit', <Money key="d" cents={data.depositCents} className="text-title" />],
+            ['Escalation', <span key="e" className="font-display text-title font-medium">{data.escalationPct}%</span>],
+            ['Ends', <span key="x" className="text-lead font-semibold">{formatDate(data.endDate)}</span>],
           ].map(([label, value]) => (
             <div key={String(label)}>
               <p className="label">{label}</p>
@@ -230,8 +230,8 @@ export function LeaseDetail() {
       {data.source === 'import' && landlord ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line p-4">
           <div className="min-w-0">
-            <p className="text-[14px] font-semibold text-ink">Brought in from before Threshold</p>
-            <p className="text-[13px] text-ink-muted">
+            <p className="text-body font-semibold text-ink">Brought in from before Threshold</p>
+            <p className="text-meta text-ink-muted">
               The signed lease stays on paper.{' '}
               {data.tenantHasAccount
                 ? `${data.tenant} uses the app.`
@@ -256,7 +256,7 @@ export function LeaseDetail() {
       {data.pdfKey ? (
         <button
           type="button"
-          className="mb-4 text-[13.5px] font-bold text-brand-500"
+          className="mb-4 text-meta font-bold text-brand-500"
           onClick={() => openDocument(data.pdfKey!)}
         >
           Open the lease agreement
@@ -269,13 +269,13 @@ export function LeaseDetail() {
             <p className="label text-brand-600">
               Renewal offered · answer by {formatDate(data.renewal.respondBy)}
             </p>
-            <p className="text-[15px]">
+            <p className="text-lead">
               {formatDate(data.renewal.newStartDate)} to {formatDate(data.renewal.newEndDate)} at{' '}
-              <Ledger cents={data.renewal.newRentCents} /> a month.
+              <Money cents={data.renewal.newRentCents} /> a month.
             </p>
             {data.renewal.depositTopUpCents > 0 ? (
-              <p className="text-[13px] text-ink-muted">
-                Deposit top-up of <Ledger cents={data.renewal.depositTopUpCents} />. Your existing
+              <p className="text-meta text-ink-muted">
+                Deposit top-up of <Money cents={data.renewal.depositTopUpCents} />. Your existing
                 deposit and its interest carry across.
               </p>
             ) : null}
@@ -313,7 +313,7 @@ export function LeaseDetail() {
                 </Button>
               </div>
             ) : (
-              <p className="text-[13px] text-ink-muted">Waiting on the tenant.</p>
+              <p className="text-meta text-ink-muted">Waiting on the tenant.</p>
             )}
           </CardBody>
         </Card>
@@ -334,22 +334,22 @@ export function LeaseDetail() {
       <Card className="mb-4">
         <CardBody className="space-y-2">
           {data.invoices.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">
+            <p className="text-meta text-ink-muted">
               None yet. The run issues next month's rent on the 25th.
             </p>
           ) : null}
           {data.invoices.map((invoice) => (
             <div key={invoice.id} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
               <div className="min-w-0">
-                <p className="text-[14px] font-semibold">{invoice.period}</p>
+                <p className="text-body font-semibold">{invoice.period}</p>
                 <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                <Ledger cents={invoice.totalCents} className="text-[15px]" />
+                <Money cents={invoice.totalCents} className="text-lead" />
                 <Badge tone={status(invoice.status).tone}>{status(invoice.status).label}</Badge>
                 <button
                   type="button"
-                  className="text-[13px] font-bold text-brand-500 disabled:opacity-40"
+                  className="text-meta font-bold text-brand-500 disabled:opacity-40"
                   disabled={busy}
                   onClick={() =>
                     openDocument(
@@ -384,12 +384,12 @@ export function LeaseDetail() {
       <Card className="mb-4">
         <CardBody className="space-y-2">
           {data.inspections.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">None booked.</p>
+            <p className="text-meta text-ink-muted">None booked.</p>
           ) : null}
           {data.inspections.map((inspection) => (
             <div key={inspection.id} className="flex items-center justify-between">
               <div>
-                <p className="text-[14px] font-semibold">
+                <p className="text-body font-semibold">
                   {inspection.kind === 'incoming' ? 'Move-in' : inspection.kind === 'outgoing' ? 'Move-out' : 'Routine'} ·{' '}
                   {formatDate(inspection.scheduledFor)}
                 </p>
@@ -401,13 +401,13 @@ export function LeaseDetail() {
                 {inspection.reportKey ? (
                   <button
                     type="button"
-                    className="text-[13px] font-bold text-brand-500"
+                    className="text-meta font-bold text-brand-500"
                     onClick={() => openDocument(inspection.reportKey!)}
                   >
                     Report
                   </button>
                 ) : null}
-                <Link to={`/inspections/${inspection.id}`} className="text-[13px] font-bold text-brand-500">
+                <Link to={`/inspections/${inspection.id}`} className="text-meta font-bold text-brand-500">
                   Open
                 </Link>
               </span>
@@ -453,8 +453,8 @@ export function LeaseDetail() {
 
       {!data.termination && rules.canServe && (landlord || data.viewer.isTenant) ? (
         <section className="mt-8 rounded-md border border-line p-4">
-          <p className="text-[14px] font-semibold text-ink">End this lease</p>
-          <p className="mb-3 text-[13px] text-ink-muted">
+          <p className="text-body font-semibold text-ink">End this lease</p>
+          <p className="mb-3 text-meta text-ink-muted">
             {landlord
               ? 'Record notice when the lease is not being renewed, or when the tenant has cancelled in writing. It starts the end of the tenancy and tells the tenant.'
               : 'Give notice if you want to leave. Your landlord is told straight away, and the earliest lawful end date is worked out for you.'}
@@ -519,7 +519,7 @@ export function LeaseDetail() {
 
       <Modal open={showRenewal} onOpenChange={(next) => setShowRenewal(next)} title="Offer a renewal">
         <div className="space-y-3">
-          <p className="text-[13.5px] text-ink-muted">
+          <p className="text-meta text-ink-muted">
             Twelve months from the day after this lease ends, at the agreed escalation. The
             deposit tops up to match the new rent rather than being refunded and recollected.
           </p>

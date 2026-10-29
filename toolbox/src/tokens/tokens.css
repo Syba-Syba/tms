@@ -43,6 +43,8 @@
   --tb-warning-ink: #8b4d05;
   --tb-danger-ink: #991e14;
   --tb-info-ink: #284f75;
+  /* Charts: the grey a highlighted series sits in (invoiced behind collected). */
+  --tb-chart-context: #dcdcd7;
   --tb-marker: #f2d675;
 
   --tb-bg: var(--tb-neutral-50);
@@ -101,6 +103,7 @@
   --tb-warning-ink: #e0a050;
   --tb-danger-ink: #f07a6e;
   --tb-info-ink: #7fa9d6;
+  --tb-chart-context: #3d3d38;
   --tb-ring: #6fc2a1;
   --tb-action: #f1f1ee;
   --tb-action-hover: #ffffff;

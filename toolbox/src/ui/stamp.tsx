@@ -24,7 +24,7 @@ export function Stamp({
     <span
       style={{ transform: `rotate(${tilt}deg)` }}
       className={cn(
-        'inline-block select-none border-2 px-2 py-0.5 font-display text-[11px] uppercase tracking-[0.12em]',
+        'inline-block select-none border-2 px-2 py-0.5 font-display text-2xs uppercase tracking-[0.12em]',
         'shadow-[inset_0_0_0_1.5px_var(--tb-surface)] outline outline-1 outline-offset-[-4px] outline-current/0',
         tones[tone],
         className,

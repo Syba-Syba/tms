@@ -11,6 +11,8 @@ import { SetupChecklist } from '../components/setup-checklist';
 import { isLandlord } from '../lib/session';
 import { TenantHome } from './tenant-home';
 import { PAGE } from '../lib/layout';
+import { Money } from '../components/money';
+import { CollectionsChart, type MonthTotal } from '../components/collections-chart';
 
 interface LeaseRow {
   id: string;
@@ -62,13 +64,18 @@ function LandlordHome() {
     queryKey: ['leases'],
     queryFn: () => api.get<{ items: LeaseRow[] }>('/leases'),
   });
-  const month = useQuery({
-    queryKey: ['report-income', monthStart, today()],
-    queryFn: () =>
-      api.get<{ totals: { invoicedCents: number; collectedCents: number } }>(
-        `/reports/income-expense?from=${monthStart}&to=${today()}`,
-      ),
+  // Six months, for the trend; this month's figures are the last of them.
+  const sixMonthsAgo = (() => {
+    const date = new Date(`${monthStart}T00:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() - 5);
+    return date.toISOString().slice(0, 10);
+  })();
+  const trend = useQuery({
+    queryKey: ['report-income', sixMonthsAgo, today()],
+    queryFn: () => api.get<{ months: MonthTotal[] }>(`/reports/income-expense?from=${sixMonthsAgo}&to=${today()}`),
   });
+  const thisMonth = trend.data?.months.at(-1);
+  const month = { data: thisMonth ? { totals: thisMonth } : undefined };
   const slips = useQuery({
     queryKey: ['payment-proofs'],
     queryFn: () => api.get<{ items: { id: string }[] }>('/payment-proofs'),
@@ -205,9 +212,9 @@ function LandlordHome() {
       <SetupChecklist />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Collected this month" value={month.data ? headlineZar(month.data.totals.collectedCents) : '...'}
+        <Stat label="Collected this month" value={month.data ? <Money whole cents={month.data.totals.collectedCents} /> : '...'}
           hint={month.data ? `of ${headlineZar(month.data.totals.invoicedCents)} invoiced` : undefined} />
-        <Stat label="Arrears" value={headlineZar(arrears)} danger={arrears > 0}
+        <Stat label="Arrears" value={<Money whole cents={arrears} />} danger={arrears > 0}
           hint={owing > 0 ? `${owing} tenant${owing === 1 ? '' : 's'} owing` : 'Nobody owes anything'} to="/reports" />
         <Stat label="Slips to check" value={String(slipCount)} to="/payments" />
         <Stat label="Open maintenance" value={String(openTickets.length)}
@@ -215,13 +222,14 @@ function LandlordHome() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="space-y-6">
         <section>
           <h2 className="label mb-2">Needs you</h2>
           {tasks.length === 0 ? (
             <Card>
               <CardBody>
-                <p className="text-[15px] font-semibold text-ink">All clear</p>
-                <p className="text-[13px] text-ink-muted">No payments to check, no arrears, nothing overdue.</p>
+                <p className="text-lead font-semibold text-ink">All clear</p>
+                <p className="text-meta text-ink-muted">No payments to check, no arrears, nothing overdue.</p>
               </CardBody>
             </Card>
           ) : (
@@ -237,7 +245,7 @@ function LandlordHome() {
                         aria-hidden
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[14px] font-semibold text-ink">{task.title}</span>
+                        <span className="block text-body font-semibold text-ink">{task.title}</span>
                         <span className="block text-xs text-ink-muted">{task.detail}</span>
                       </span>
                       <ChevronRightIcon className="shrink-0 text-ink-muted" />
@@ -248,6 +256,8 @@ function LandlordHome() {
             </Card>
           )}
         </section>
+        {trend.data && trend.data.months.some((m) => m.invoicedCents > 0) ? <CollectionsChart months={trend.data.months} /> : null}
+        </div>
 
         <LeaseList rows={rows} />
       </div>
@@ -255,12 +265,12 @@ function LandlordHome() {
   );
 }
 
-function Stat({ label, value, hint, danger, to }: { label: string; value: string; hint?: string; danger?: boolean; to?: string }) {
+function Stat({ label, value, hint, danger, to }: { label: string; value: React.ReactNode; hint?: string; danger?: boolean; to?: string }) {
   const body = (
     <Card className="h-full">
       <CardBody>
         <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`font-display text-[24px] font-medium leading-tight ${danger ? 'text-danger' : 'text-ink'}`}>{value}</p>
+        <p className={`font-display text-figure font-medium leading-tight ${danger ? 'text-danger' : 'text-ink'}`}>{value}</p>
         {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
       </CardBody>
     </Card>
@@ -282,8 +292,8 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
       <div className="mb-2 flex items-center justify-between gap-3">
         <h2 className="label">Leases</h2>
         <span className="flex gap-4">
-          <Link to="/tenants/import" className="text-xs font-bold text-brand-500">Add current tenants</Link>
-          <Link to="/properties" className="text-xs font-bold text-brand-500">Properties</Link>
+          <Link to="/tenants/import" className="inline-flex min-h-6 items-center text-xs font-bold text-brand-500">Add current tenants</Link>
+          <Link to="/properties" className="inline-flex min-h-6 items-center text-xs font-bold text-brand-500">Properties</Link>
         </span>
       </div>
       {rows.length > 6 ? (
@@ -301,7 +311,7 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
           description="A lease appears here once it is signed, or as soon as you add a tenant who is renting already."
         />
       ) : shown.length === 0 ? (
-        <p className="text-[13px] text-ink-muted">No lease matches "{search}".</p>
+        <p className="text-meta text-ink-muted">No lease matches "{search}".</p>
       ) : (
         <Card>
           {/* Phone: one tappable row per lease. */}
@@ -309,11 +319,17 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
             {shown.map((lease) => (
               <li key={lease.id}>
                 <Link to={`/leases/${lease.id}`} className="flex items-center gap-3 px-4 py-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] font-semibold text-ink">{lease.unit}</span>
-                    <span className="block truncate text-xs text-ink-muted">{lease.tenant}, {zar(lease.monthlyRentCents)} a month</span>
+                  {/* Two lines that never cut the rent off: unit and rent, then tenant and state. */}
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-body font-semibold text-ink">{lease.unit}</span>
+                      <Money cents={lease.monthlyRentCents} className="shrink-0 text-body" />
+                    </span>
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="truncate text-xs text-ink-muted">{lease.tenant}</span>
+                      <LeaseFlag lease={lease} />
+                    </span>
                   </span>
-                  <LeaseFlag lease={lease} />
                   <ChevronRightIcon className="shrink-0 text-ink-muted" />
                 </Link>
               </li>
@@ -321,7 +337,7 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
           </ul>
           {/* Laptop: everything on one line, sortable by eye. */}
           <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-[13px]">
+          <table className="w-full text-left text-meta">
             <thead>
               <tr className="border-b border-line-soft text-xs text-ink-muted">
                 <th className="px-4 py-2 font-semibold">Unit</th>
@@ -339,11 +355,11 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
                   onClick={() => navigate(`/leases/${lease.id}`)}
                 >
                   <td className="px-4 py-2.5">
-                    <Link to={`/leases/${lease.id}`} className="whitespace-nowrap font-semibold text-ink">{lease.unit}</Link>
+                    <Link to={`/leases/${lease.id}`} className="inline-flex min-h-6 items-center whitespace-nowrap font-semibold text-ink">{lease.unit}</Link>
                     <span className="block whitespace-nowrap text-xs text-ink-muted">{lease.ref}</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">{lease.tenant}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{zar(lease.monthlyRentCents)}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right"><Money cents={lease.monthlyRentCents} /></td>
                   <td className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${lease.outstandingCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
                     {lease.outstandingCents > 0 ? zar(lease.outstandingCents) : '-'}
                   </td>

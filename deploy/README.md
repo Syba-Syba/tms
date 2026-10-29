@@ -57,6 +57,17 @@ database is unreadable without it.
 This restores the newest dump into a scratch database, compares row counts with the live one,
 and drops it. A backup that has never been restored is a hope, not a backup.
 
+## Checking the data
+
+    docker compose --env-file .env.production exec app node --import tsx scripts/db-check.mjs
+
+Reads the database and reports anything that breaks the app's rules: a unit marked occupied with
+no lease, an invoice marked paid that is short, a payment against another lease's invoice, a
+landlord with no owner, a credit check with no consent, a document the database points at that is
+missing from storage. It changes nothing. Run it monthly with the backup check, after a restore,
+and before and after any manual SQL. It exits with an error when it finds one, so it can gate a
+script.
+
 ## Putting a backup back
 
     rclone copy offsite:threshold-backups/db-2026-10-28T0030Z.dump backups/       # if needed

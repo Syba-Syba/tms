@@ -90,7 +90,7 @@ export function TwoStep() {
       <Card>
         <CardBody className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[13.5px] text-ink">
+            <p className="text-meta text-ink">
               After your password, a six-digit code from an app on your phone: Google Authenticator, Microsoft
               Authenticator or similar. Someone who learns your password still cannot sign in.
             </p>
@@ -114,7 +114,7 @@ export function TwoStep() {
             <div className="flex justify-center"><QrCode value={setup.otpauthUrl} /></div>
             <p className="text-center text-xs text-ink-muted">
               Cannot scan? Enter this key in the app instead:
-              <span className="mt-1 block break-all font-mono text-[13px] text-ink">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</span>
+              <span className="mt-1 block break-all font-mono text-meta text-ink">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</span>
             </p>
             <Input aria-label="Code from the app" inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
               value={code} onChange={(event) => setCode(event.target.value)} />
@@ -127,7 +127,7 @@ export function TwoStep() {
         description="If you lose your phone, each one signs you in once. They are shown only now.">
         {recovery ? (
           <div className="space-y-3">
-            <ol className="grid grid-cols-2 gap-2 rounded-sm border border-line bg-surface-muted p-3 font-mono text-[14px]">
+            <ol className="grid grid-cols-2 gap-2 rounded-sm border border-line bg-surface-muted p-3 font-mono text-body">
               {recovery.map((item) => <li key={item}>{item}</li>)}
             </ol>
             <Alert tone="warning" title="Store them away from your phone">

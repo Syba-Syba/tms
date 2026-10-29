@@ -127,7 +127,7 @@ export function LandlordQueue() {
   // Always openable: the credit check lives in the same drawer, documents or not.
   const docsFor = (item: ApplicationSummary) => (
     <button type="button" onClick={() => setViewingDocs(item)}
-      className={`inline-flex min-h-11 items-center text-[13px] sm:min-h-0 ${
+      className={`inline-flex min-h-11 items-center text-meta sm:min-h-6 ${
         item.documentCount > 0 ? 'font-bold text-brand-500' : 'font-medium text-ink-muted underline decoration-dotted underline-offset-2'
       }`}>
       {item.documentCount > 0 ? `${item.documentCount} on file` : 'No documents yet'}
@@ -212,13 +212,13 @@ export function LandlordQueue() {
 
       {/* Phone: one card per applicant, every column readable without scrolling sideways. */}
       <div className="space-y-3 md:hidden">
-        {items.length === 0 ? <p className="py-6 text-center text-[13px] text-ink-muted">No applications here.</p> : null}
+        {items.length === 0 ? <p className="py-6 text-center text-meta text-ink-muted">No applications here.</p> : null}
         {items.map((item) => (
           <Card key={item.id}>
             <CardBody className="space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[15px] font-semibold text-ink">{item.applicant}</p>
+                  <p className="text-lead font-semibold text-ink">{item.applicant}</p>
                   <p className="text-xs text-ink-muted">
                     {item.unit}, moves in {formatDate(item.preferredMoveIn)}
                   </p>
@@ -288,7 +288,7 @@ export function LandlordQueue() {
       >
         <div className="space-y-3">
           <label className="block space-y-1">
-            <span className="text-[13px] font-medium">Reason</span>
+            <span className="text-meta font-medium">Reason</span>
             <Textarea
               rows={3}
               placeholder="e.g. The rent is more than a third of the income shown on the payslips."
@@ -319,7 +319,7 @@ export function LandlordQueue() {
       >
         <div className="space-y-3">
           <div>
-            <p className="mb-1 text-[13px] font-medium">Start date</p>
+            <p className="mb-1 text-meta font-medium">Start date</p>
             <Input
               type="date"
               value={terms.startDate}
@@ -329,7 +329,7 @@ export function LandlordQueue() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="mb-1 text-[13px] font-medium">Term</p>
+              <p className="mb-1 text-meta font-medium">Term</p>
               <Select
                 value={terms.months}
                 onChange={(event) => setTerms({ ...terms, months: event.target.value })}
@@ -342,7 +342,7 @@ export function LandlordQueue() {
               />
             </div>
             <div>
-              <p className="mb-1 text-[13px] font-medium">Escalation % a year</p>
+              <p className="mb-1 text-meta font-medium">Escalation % a year</p>
               <Input
                 type="number"
                 min={0}
@@ -399,22 +399,22 @@ function DocumentsDrawer({ application, onClose }: {
               className="flex items-center justify-between rounded-sm border border-line-soft px-3 py-2.5 hover:border-brand-500"
             >
               <div>
-                <p className="text-[14px] font-semibold">{KIND_LABEL[document.kind] ?? document.kind}</p>
+                <p className="text-body font-semibold">{KIND_LABEL[document.kind] ?? document.kind}</p>
                 <p className="text-xs text-ink-muted">
                   {(document.sizeBytes / 1024).toFixed(0)} KB · {formatDate(document.uploadedAt)}
                 </p>
               </div>
-              <span className="text-[13px] font-bold text-brand-500">Open</span>
+              <span className="text-meta font-bold text-brand-500">Open</span>
             </a>
           ))}
           {data && data.items.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">Nothing uploaded yet.</p>
+            <p className="text-meta text-ink-muted">Nothing uploaded yet.</p>
           ) : null}
         </div>
       )}
       {application ? (
         <section aria-label="Credit check" className="mt-6 space-y-2 border-t border-line pt-4">
-          <h3 className="text-[14px] font-semibold">Credit check</h3>
+          <h3 className="text-body font-semibold">Credit check</h3>
           <CreditCheckPanel applicationId={application.id} />
         </section>
       ) : null}

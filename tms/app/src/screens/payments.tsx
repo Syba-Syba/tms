@@ -9,6 +9,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
 import { PAGE } from '../lib/layout';
+import { Money } from '../components/money';
 
 interface ProofRow {
   id: string;
@@ -109,13 +110,13 @@ function Slips() {
           <CardBody className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="text-[15px] font-semibold text-ink">{proof.tenant}</p>
+                <p className="text-lead font-semibold text-ink">{proof.tenant}</p>
                 <p className="text-xs text-ink-muted">
                   <Link to={`/leases/${proof.leaseId}`} className="underline">{proof.unit}</Link>, {proof.leaseRef}
                 </p>
               </div>
               <div className="text-right">
-                <p className="font-display text-[20px] font-medium">{zar(proof.amountCents)}</p>
+                <p className="text-title"><Money cents={proof.amountCents} /></p>
                 <p className="text-xs text-ink-muted">paid {formatDate(proof.paidOn)}</p>
               </div>
             </div>
@@ -242,7 +243,7 @@ function BankImport() {
     <div className="space-y-4">
       <Card>
         <CardBody className="space-y-3">
-          <p className="text-[14px] text-ink">
+          <p className="text-body text-ink">
             Download your statement from internet banking as <b>OFX</b> (best) or <b>CSV</b>, then upload it here.
             Only money coming in is read. Lines you already imported are skipped.
           </p>
@@ -256,7 +257,7 @@ function BankImport() {
                 void upload(event.target.files?.[0]);
                 event.target.value = '';
               }}
-              className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-500"
+              className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-500"
             />
           </label>
           {uploading ? <Spinner /> : null}
@@ -270,7 +271,7 @@ function BankImport() {
             <Card key={item.id}>
               <CardBody className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[14px] font-semibold">{item.fileName}</p>
+                  <p className="text-body font-semibold">{item.fileName}</p>
                   <p className="text-xs text-ink-muted">
                     {formatDate(item.importedAt)}, {item.lines} credits, {item.matched} matched
                   </p>
@@ -359,7 +360,7 @@ function ImportReview({
         <EmptyState title="Nothing left to match" description="Every credit in this statement is recorded or set aside." />
       ) : (
         <>
-          <p className="text-[13px] text-ink-muted">
+          <p className="text-meta text-ink-muted">
             Check each suggestion before you confirm. Confirming records the payment and tells the tenant.
           </p>
           {unmatched.map((line) => (
@@ -367,10 +368,10 @@ function ImportReview({
               <CardBody className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="break-words text-[14px] font-semibold text-ink">{line.description}</p>
+                    <p className="break-words text-body font-semibold text-ink">{line.description}</p>
                     <p className="text-xs text-ink-muted">{formatDate(line.postedOn)}</p>
                   </div>
-                  <p className="whitespace-nowrap tabular-nums text-[15px] font-semibold">{zar(line.amountCents)}</p>
+                  <p className="whitespace-nowrap text-lead"><Money cents={line.amountCents} /></p>
                 </div>
                 {line.suggestion ? (
                   <p className="flex items-center gap-2 text-xs text-ink-muted">

@@ -52,7 +52,7 @@ export function PrivacyRequests() {
       {items.length === 0 ? (
         <Card>
           <CardBody>
-            <p className="text-[14px] text-ink-muted">
+            <p className="text-body text-ink-muted">
               None. When a tenant or applicant asks for their information to be erased, it appears here.
             </p>
           </CardBody>
@@ -64,14 +64,14 @@ export function PrivacyRequests() {
               <CardBody className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold">{request.name}</p>
+                    <p className="text-lead font-semibold">{request.name}</p>
                     <p className="truncate text-xs text-ink-muted">{request.email}, asked {formatDate(request.createdAt)}</p>
                   </div>
                   <Badge tone={request.status === 'pending' ? 'warning' : request.status === 'completed' ? 'success' : 'neutral'}>
                     {request.status === 'pending' ? 'To answer' : request.status === 'completed' ? 'Erased' : 'Refused'}
                   </Badge>
                 </div>
-                {request.note ? <p className="text-[13px] text-ink">"{request.note}"</p> : null}
+                {request.note ? <p className="text-meta text-ink">"{request.note}"</p> : null}
                 {request.status === 'pending' ? (
                   <>
                     {request.blockedBecause ? (

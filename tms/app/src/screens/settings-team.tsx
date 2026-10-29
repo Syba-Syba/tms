@@ -71,7 +71,7 @@ export function SettingsTeam() {
           {data.members.map((member) => (
             <div key={member.sub} className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
               <div className="min-w-0">
-                <p className="truncate text-[14px] font-semibold">
+                <p className="truncate text-body font-semibold">
                   {member.name}{member.isYou ? <span className="font-normal text-ink-muted"> (you)</span> : null}
                 </p>
                 <p className="truncate text-xs text-ink-muted">{member.email}</p>
@@ -81,7 +81,7 @@ export function SettingsTeam() {
                   {member.role === 'owner' ? 'Owner' : 'Agent'}
                 </Badge>
                 {owner && member.role === 'agent' ? (
-                  <button type="button" className="text-[13px] font-bold text-danger disabled:opacity-40"
+                  <button type="button" className="text-meta font-bold text-danger disabled:opacity-40"
                     disabled={busy} onClick={() => setRemoving(member)}>
                     Remove
                   </button>
@@ -100,18 +100,18 @@ export function SettingsTeam() {
               {data.invites.map((pending) => (
                 <div key={pending.id} className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
                   <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold">{pending.name}</p>
+                    <p className="truncate text-body font-semibold">{pending.name}</p>
                     <p className="truncate text-xs text-ink-muted">
                       {pending.email}, link works until {formatDate(pending.expiresAt.slice(0, 10))}
                     </p>
                   </div>
                   {owner ? (
                     <span className="flex shrink-0 gap-3">
-                      <button type="button" className="text-[13px] font-bold text-brand-500 disabled:opacity-40" disabled={busy}
+                      <button type="button" className="text-meta font-bold text-brand-500 disabled:opacity-40" disabled={busy}
                         onClick={() => act(() => api.post('/landlord/invites', { name: pending.name, email: pending.email }), 'Sent again')}>
                         Resend
                       </button>
-                      <button type="button" className="text-[13px] font-bold text-danger disabled:opacity-40" disabled={busy}
+                      <button type="button" className="text-meta font-bold text-danger disabled:opacity-40" disabled={busy}
                         onClick={() => act(() => api.post(`/landlord/invites/${pending.id}/revoke`, {}), 'Invitation cancelled')}>
                         Cancel
                       </button>
@@ -124,7 +124,7 @@ export function SettingsTeam() {
         </section>
       ) : null}
 
-      <div className="rounded-md border border-line p-4 text-[13px] text-ink-muted">
+      <div className="rounded-md border border-line p-4 text-meta text-ink-muted">
         <p className="mb-1 font-semibold text-ink">What an agent can do</p>
         <p>
           Everything on the leases, rent, maintenance, inspections and applications. Their actions show under their own

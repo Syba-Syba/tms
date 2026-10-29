@@ -352,6 +352,14 @@ outside development those routes answer 404 and identity is Cognito's, checked b
 Gateway authorizer before any handler runs. Switching roles is signing out and back in as
 someone else, the same as it would be in production.
 
+### Checking the data
+
+`npm run db:check -w tms-api` reads the development database (stop `npm run dev` first; PGlite is
+one process) and reports rows that disagree with each other, money that does not add up and files
+missing from storage. `db:check:selfhosted` does the same against `.env.selfhosted`. It changes
+nothing and exits 1 on an error. The rules live in `api/scripts/db-check.mjs`; add one there when
+a new rule joins the app.
+
 ### Tests
 
     npm test
@@ -898,10 +906,24 @@ tinted panel for their own money, plain friendly copy).
   on its own tint. A state colour alone (`text-warning`) is fine on white, not on a tint.
 - On a phone every control is at least 44px tall. Small text actions such as Edit or Lease get
   `min-h-11 sm:min-h-0`, and an `aria-label` naming what they act on ("Edit A1").
-- Headline figures (stat cards) drop ",00" on whole rands with `headlineZar`. Rows, invoices and
-  reports keep the cents.
-- An axe scan of the main screens reports no WCAG 2.1 AA violations; keep it that way when adding
-  a screen.
+- Type comes from a fixed scale in the Tailwind preset: `text-2xs` 11, `xs` 12, `meta` 13,
+  `body` 14, `lead` 15, `title` 20, `figure` 24, `display` 30, `hero` 42. No screen sets a
+  pixel size by hand. `cn()` knows these names, so a size never knocks out a text colour.
+- Every standalone money figure is `<Money cents={…} />`: serif figures with a quiet R, the way a
+  statement prints them. `whole` drops ",00" on whole rands for headline figures. Money inside a
+  sentence stays plain text.
+- Vacant is a neutral badge, not a warning: an empty unit is normal. Warning and danger are kept
+  for things that need doing.
+- Light and dark follow the device, live, unless the person picks one under Settings, You. Only
+  an explicit pick is stored. Colours come from tokens, so dark mode needs no screen changes;
+  never use `bg-white`, `text-white` or `bg-ink` for a surface or a button.
+- Every signed-in page has a "Skip to content" link, and the page keeps focused controls clear
+  of the sticky top bar and the phone tab bar (`scroll-padding` in `index.css`). Controls are at
+  least 24px, 44px on phones.
+- Charts follow the emphasis form: the series that matters in the accent, its context in
+  `--tb-chart-context`, a tooltip on every mark and a screen-reader table with the same figures.
+- An axe scan of the main screens, light and dark, phone and laptop, reports no WCAG 2.2 AA
+  violations; keep it that way when adding a screen.
 
 The values live in `toolbox/src/tokens/tokens.css`; components read them, screens never hardcode a
 colour.

@@ -143,7 +143,7 @@ export function InspectionRooms() {
               }
             >
               <div>
-                <p className="text-[15px] font-semibold text-ink">{room.room}</p>
+                <p className="text-lead font-semibold text-ink">{room.room}</p>
                 <p className="text-xs text-ink-muted">
                   {room.total} items{room.noted ? ` · ${room.noted} recorded` : ''}
                 </p>
@@ -176,7 +176,7 @@ export function InspectionRooms() {
                 Review and sign
               </p>
               {walkthroughOpen && !reviewable ? (
-                <p className="text-[13.5px] text-ink-muted">
+                <p className="text-meta text-ink-muted">
                   When the walkthrough is done, prepare the report. Signing locks the findings.
                 </p>
               ) : null}

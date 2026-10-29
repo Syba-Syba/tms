@@ -8,6 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
 import { PAGE } from '../lib/layout';
+import { Money } from '../components/money';
 
 const CATEGORIES: Record<string, string> = {
   rates: 'Rates',
@@ -195,9 +196,9 @@ function IncomeExpense() {
             <Card key={row.propertyId ?? 'none'}>
               <CardBody className="space-y-2">
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-[15px] font-semibold text-ink">{row.property}</p>
-                  <p className={`tabular-nums text-[15px] font-semibold ${row.netCents < 0 ? 'text-danger' : ''}`}>
-                    {zar(row.netCents)}
+                  <p className="text-lead font-semibold text-ink">{row.property}</p>
+                  <p className={`text-lead ${row.netCents < 0 ? 'text-danger' : ''}`}>
+                    <Money cents={row.netCents} className="font-semibold" />
                   </p>
                 </div>
                 <Line label="Collected" cents={row.collectedCents} hint={`of ${zar(row.invoicedCents)} invoiced`} />
@@ -233,8 +234,8 @@ function Stat({ label, cents, strong }: { label: string; cents: number; strong?:
     <Card>
       <CardBody>
         <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`font-display text-[22px] ${strong ? 'font-semibold' : 'font-medium'} ${cents < 0 ? 'text-danger' : ''}`}>
-          {zar(cents)}
+        <p className={`text-figure ${cents < 0 ? 'text-danger' : ''}`}>
+          <Money cents={cents} whole className={strong ? 'font-semibold' : ''} />
         </p>
       </CardBody>
     </Card>
@@ -243,12 +244,12 @@ function Stat({ label, cents, strong }: { label: string; cents: number; strong?:
 
 function Line({ label, cents, hint }: { label: string; cents: number; hint?: string }) {
   return (
-    <p className="flex justify-between gap-3 text-[13px] text-ink-muted">
+    <p className="flex justify-between gap-3 text-meta text-ink-muted">
       <span>
         {label}
         {hint ? <span className="ml-1 text-xs">({hint})</span> : null}
       </span>
-      <span className="tabular-nums">{zar(cents)}</span>
+      <Money cents={cents} className="text-ink" />
     </p>
   );
 }
@@ -288,7 +289,7 @@ function Arrears() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[14px] text-ink">
+        <p className="text-body text-ink">
           {data.totals.totalCents > 0 ? <>{zar(data.totals.totalCents)} owed across {data.items.length} {data.items.length === 1 ? 'lease' : 'leases'}.</> : 'Nobody owes anything.'}
         </p>
         <Button variant="outline" disabled={data.items.length === 0} onClick={exportCsv}>Download CSV</Button>
@@ -306,7 +307,7 @@ function Arrears() {
             <CardBody className="space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <Link to={`/leases/${item.leaseId}`} className="text-[15px] font-semibold text-ink underline">
+                  <Link to={`/leases/${item.leaseId}`} className="text-lead font-semibold text-ink underline">
                     {item.unit}
                   </Link>
                   <p className="text-xs text-ink-muted">
@@ -319,7 +320,7 @@ function Arrears() {
                   ) : null}
                 </div>
                 <div className="text-right">
-                  <p className="tabular-nums text-[15px] font-semibold">{zar(item.totalCents)}</p>
+                  <p className="text-lead"><Money cents={item.totalCents} className="font-semibold" /></p>
                   {item.proofPending ? <Badge tone="info">slip waiting</Badge> : null}
                 </div>
               </div>
@@ -439,19 +440,19 @@ function Expenses() {
         <EmptyState title="No expenses in this period" description="Add rates, levies, insurance and repairs as you pay them." />
       ) : (
         <>
-          <p className="text-[13px] text-ink-muted">{list.data.items.length} expenses, {zar(total)} in all.</p>
+          <p className="text-meta text-ink-muted">{list.data.items.length} expenses, {zar(total)} in all.</p>
           {list.data.items.map((expense) => (
             <Card key={expense.id}>
               <CardBody className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-ink">{expense.description}</p>
+                  <p className="text-body font-semibold text-ink">{expense.description}</p>
                   <p className="text-xs text-ink-muted">
                     {formatDate(expense.incurredOn)}, {CATEGORIES[expense.category] ?? expense.category}
                     {expense.property ? `, ${expense.property}${expense.unit ? ` ${expense.unit}` : ''}` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="tabular-nums text-sm">{zar(expense.amountCents)}</span>
+                  <Money cents={expense.amountCents} className="text-body" />
                   {expense.slipKey ? (
                     <Button variant="ghost" onClick={() => openDocument(expense.slipKey!)}>Slip</Button>
                   ) : null}
@@ -545,7 +546,7 @@ function Expenses() {
                 accept="image/jpeg,image/png,application/pdf"
                 aria-label="Slip file"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-500"
+                className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-500"
               />
             ) : null}
             <Button block loading={busy} disabled={!ready} onClick={save}>

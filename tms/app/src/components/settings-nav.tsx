@@ -18,7 +18,7 @@ export function SettingsNav() {
           key={link.to}
           to={link.to}
           className={({ isActive }) =>
-            `-mb-px border-b-2 pb-2 text-[14px] ${
+            `-mb-px border-b-2 pb-2 text-body ${
               isActive ? 'border-ink font-semibold text-ink' : 'border-transparent text-ink-muted hover:text-ink'
             }`
           }

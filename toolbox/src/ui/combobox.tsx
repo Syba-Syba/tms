@@ -63,12 +63,12 @@ export function Combobox({
           if (event.key === 'Enter' && matches[active]) pick(matches[active]);
           if (event.key === 'Escape') setOpen(false);
         }}
-        className="h-10 w-full rounded-md border border-line bg-surface px-3 text-sm text-ink outline-none placeholder:text-ink-muted focus:ring-2 focus:ring-[var(--tb-ring)]"
+        className="h-10 w-full rounded-md border border-line bg-surface px-3 text-body text-ink outline-none placeholder:text-ink-muted focus:ring-2 focus:ring-[var(--tb-ring)]"
       />
       {open ? (
         <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-line bg-surface py-1 shadow-md">
           {matches.length === 0 ? (
-            <li className="px-3 py-3 text-center text-sm text-ink-muted">{emptyText}</li>
+            <li className="px-3 py-3 text-center text-body text-ink-muted">{emptyText}</li>
           ) : (
             matches.map((option, index) => (
               <li key={option.value}>
@@ -77,13 +77,13 @@ export function Combobox({
                   onMouseEnter={() => setActive(index)}
                   onClick={() => pick(option)}
                   className={cn(
-                    'flex w-full items-center justify-between px-3 py-2 text-left text-sm',
+                    'flex w-full items-center justify-between px-3 py-2 text-left text-body',
                     index === active ? 'bg-brand-50 text-brand-700' : 'text-ink',
                   )}
                 >
                   {option.label}
                   {option.meta ? (
-                    <span className="font-mono text-[11px] text-ink-muted">{option.meta}</span>
+                    <span className="font-mono text-2xs text-ink-muted">{option.meta}</span>
                   ) : null}
                 </button>
               </li>

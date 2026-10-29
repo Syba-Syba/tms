@@ -254,18 +254,18 @@ export function ImportTenants() {
         <div className="space-y-4">
           <Card>
             <CardBody className="space-y-3">
-              <p className="text-[13.5px] text-ink">
+              <p className="text-meta text-ink">
                 One row per tenancy. Properties must exist already; a unit that does not is added if you give its bedrooms and bathrooms.
                 Dates as 2025-03-01 or 01/03/2025, amounts in rand.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" onClick={downloadTemplate}>Download the template</Button>
-                <label className="cursor-pointer rounded-sm bg-action px-4 py-2 text-[14px] font-medium text-ink-inverse">
+                <label className="cursor-pointer rounded-sm bg-action px-4 py-2 text-body font-medium text-ink-inverse">
                   Choose the spreadsheet
                   <input type="file" accept=".csv,text/csv" className="sr-only" aria-label="Spreadsheet"
                     onChange={(event) => { const file = event.target.files?.[0]; if (file) void check(file); event.target.value = ''; }} />
                 </label>
-                {sheet ? <span className="text-[13px] text-ink-muted">{sheet.name}</span> : null}
+                {sheet ? <span className="text-meta text-ink-muted">{sheet.name}</span> : null}
               </div>
               <p className="text-xs text-ink-muted">Save it from Excel or Google Sheets as CSV.</p>
             </CardBody>
@@ -283,7 +283,7 @@ export function ImportTenants() {
                   {preview.results.map((row) => (
                     <div key={row.line} className="flex items-start justify-between gap-3 border-b border-line-soft py-2 last:border-0">
                       <div className="min-w-0">
-                        <p className="text-[14px] font-semibold">
+                        <p className="text-body font-semibold">
                           <span className="font-mono text-xs text-ink-muted">Row {row.line}</span> {row.tenant || 'No name'}
                         </p>
                         <p className="text-xs text-ink-muted">{row.unit}</p>
@@ -304,7 +304,7 @@ export function ImportTenants() {
                   </Button>
                 </div>
               ) : (
-                <p className="mt-3 text-[13px] text-ink-muted">Fix the rows in your spreadsheet and choose it again.</p>
+                <p className="mt-3 text-meta text-ink-muted">Fix the rows in your spreadsheet and choose it again.</p>
               )}
             </section>
           ) : null}

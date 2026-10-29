@@ -58,7 +58,7 @@ export function ChangePassword() {
     <Card>
       <CardBody className="space-y-3">
         <div>
-          <p className="text-[15px] font-semibold">Password</p>
+          <p className="text-lead font-semibold">Password</p>
           <p className="text-xs text-ink-muted">Changing it signs you out everywhere else.</p>
         </div>
         <FieldInput
@@ -104,7 +104,7 @@ function FieldInput(props: {
 }) {
   return (
     <label className="block space-y-1">
-      <span className="text-[13px] font-medium">{props.label}</span>
+      <span className="text-meta font-medium">{props.label}</span>
       <Input
         type="password"
         autoComplete={props.autoComplete}

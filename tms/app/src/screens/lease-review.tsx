@@ -14,7 +14,7 @@ import {
   type SignaturePadHandle,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
@@ -116,11 +116,11 @@ export function LeaseReview() {
             <TagField label="Lease" value={data.ref} />
             <TagField label="Unit" value={data.unit} />
           </div>
-          <dl className="grid grid-cols-2 gap-y-2 text-sm">
+          <dl className="grid grid-cols-2 gap-y-2 text-body">
             <dt className="text-ink-muted">Monthly rent</dt>
-            <dd className="text-right tabular-nums"><Ledger cents={data.monthlyRentCents} /></dd>
+            <dd className="text-right tabular-nums"><Money cents={data.monthlyRentCents} /></dd>
             <dt className="text-ink-muted">Deposit</dt>
-            <dd className="text-right tabular-nums"><Ledger cents={data.depositCents} /></dd>
+            <dd className="text-right tabular-nums"><Money cents={data.depositCents} /></dd>
             <dt className="text-ink-muted">Term</dt>
             <dd className="text-right">{formatDate(data.startDate)} to {formatDate(data.endDate)}</dd>
             <dt className="text-ink-muted">Escalation</dt>

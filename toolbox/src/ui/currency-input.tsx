@@ -75,7 +75,7 @@ export const CurrencyInput = forwardRef<
         className,
       )}
     >
-      <span className="border-r border-line px-3 text-[14px] text-ink-muted">{currency}</span>
+      <span className="border-r border-line px-3 text-body text-ink-muted">{currency}</span>
       <input
         ref={ref}
         inputMode="decimal"
@@ -87,7 +87,7 @@ export const CurrencyInput = forwardRef<
           onCentsChange(parsed);
         }}
         aria-invalid={invalid || undefined}
-        className="w-full bg-transparent px-3 text-right text-[14px] tabular-nums text-ink outline-none"
+        className="w-full bg-transparent px-3 text-right text-body tabular-nums text-ink outline-none"
         placeholder="0.00"
         {...props}
       />

@@ -30,7 +30,7 @@ export function ConfirmDialog({
     <Modal open={open} onOpenChange={onOpenChange} title={title} description={description} size="sm">
       {requireText ? (
         <div className="space-y-2">
-          <p className="text-sm text-ink-muted">
+          <p className="text-body text-ink-muted">
             Type <span className="font-mono font-medium text-ink">{requireText}</span> to continue.
           </p>
           <Input value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />

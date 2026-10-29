@@ -6,7 +6,7 @@ export const Checkbox = forwardRef<
   React.InputHTMLAttributes<HTMLInputElement> & { label?: React.ReactNode }
 >(function Checkbox({ className, label, id, ...props }, ref) {
   return (
-    <label className="inline-flex items-center gap-2 text-sm text-ink" htmlFor={id}>
+    <label className="inline-flex items-center gap-2 text-body text-ink" htmlFor={id}>
       <input
         ref={ref}
         id={id}

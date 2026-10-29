@@ -20,6 +20,13 @@
   src: url('@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2') format('woff2-variations');
 }
 
+/* WCAG 2.4.11: a focused control scrolled into view never lands under the sticky top bar or,
+   on a phone, the bottom tab bar. */
+html {
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
 body {
   font-family: var(--tb-font-body);
   background: var(--tb-bg);
@@ -38,6 +45,6 @@ td,
 @layer components {
   /* A section or field label: small, sentence case, muted. Replaces spaced-out capitals. */
   .label {
-    @apply text-[12.5px] font-medium tracking-normal text-ink-muted;
+    @apply text-xs font-medium tracking-normal text-ink-muted;
   }
 }

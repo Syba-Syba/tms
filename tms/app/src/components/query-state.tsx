@@ -64,8 +64,8 @@ export function QueryError({
         : humanError(error);
   return (
     <div className="space-y-3">
-      <p className="text-[15px] font-semibold">{title}</p>
-      <p className="text-[13.5px] text-ink-muted">{detail}</p>
+      <p className="text-lead font-semibold">{title}</p>
+      <p className="text-meta text-ink-muted">{detail}</p>
       {onRetry && status !== 404 && status !== 403 ? (
         <Button size="sm" variant="outline" onClick={onRetry}>
           Try again

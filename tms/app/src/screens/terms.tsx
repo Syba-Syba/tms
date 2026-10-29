@@ -30,11 +30,11 @@ export function Terms() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Terms of service</h1>
-      <p className="mb-6 text-[13px] text-ink-muted">Version of {formatDate(TERMS_VERSION)}</p>
+      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Terms of service</h1>
+      <p className="mb-6 text-meta text-ink-muted">Version of {formatDate(TERMS_VERSION)}</p>
 
       <Card>
-        <CardBody className="space-y-5 text-[14.5px] leading-relaxed text-ink">
+        <CardBody className="space-y-5 text-body leading-relaxed text-ink">
           <Section title="Who we are">
             <p>
               {name} is provided by {legal}

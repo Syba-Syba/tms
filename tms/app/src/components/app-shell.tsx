@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router';
 import { Drawer } from '@hlonie/toolbox/ui';
 import { currentUser, endSession, isLandlord } from '../lib/session';
 import { PlanBanner } from './plan-banner';
+import { Wordmark } from './wordmark';
 import {
   ActivityIcon, BuildingIcon, ChartIcon, FileIcon, HomeIcon, InboxIcon, LogOutIcon, MoreIcon, SettingsIcon, WalletIcon,
   WrenchIcon,
@@ -39,16 +40,6 @@ const TENANT: Item[] = [
 
 const BAR_SIZE = 4;
 
-/** A doorway, drawn once, and the name set in the statement serif. */
-function Mark() {
-  return (
-    <span className="flex items-center gap-2">
-      <span className="h-[18px] w-[14px] rounded-t-full border-[1.5px] border-b-0 border-ink" aria-hidden />
-      <b className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">Threshold</b>
-    </span>
-  );
-}
-
 const isActive = (item: Item, pathname: string) =>
   item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`);
 
@@ -63,9 +54,14 @@ export function AppShell() {
 
   return (
     <div className="min-h-dvh bg-bg text-ink">
+      {/* WCAG 2.4.1: past the navigation in one keystroke. Hidden until it has focus. */}
+      <a href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:rounded-sm focus:bg-action focus:px-4 focus:py-2.5 focus:text-body focus:font-semibold focus:text-ink-inverse">
+        Skip to content
+      </a>
       <header className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-5">
-          <Mark />
+          <Wordmark />
           <nav className="hidden h-full flex-1 gap-6 md:flex" aria-label="Main">
             {items.map((item) => (
               <NavLink
@@ -73,7 +69,7 @@ export function AppShell() {
                 to={item.to}
                 end={item.end}
                 className={({ isActive: active }) =>
-                  `-mb-px flex items-center whitespace-nowrap border-b-2 text-[14px] ${
+                  `-mb-px flex items-center whitespace-nowrap border-b-2 text-body ${
                     active ? 'border-ink font-medium text-ink' : 'border-transparent text-ink-muted hover:text-ink'
                   }`
                 }
@@ -82,11 +78,11 @@ export function AppShell() {
               </NavLink>
             ))}
           </nav>
-          <span className="ml-auto truncate text-[13px] text-ink-muted md:ml-0">{currentUser()?.name}</span>
+          <span className="ml-auto truncate text-meta text-ink-muted md:ml-0">{currentUser()?.name}</span>
           <button
             type="button"
             onClick={() => endSession()}
-            className="hidden text-[13px] text-ink-muted underline-offset-4 hover:text-ink hover:underline md:block"
+            className="hidden min-h-6 px-1 text-meta text-ink-muted underline-offset-4 hover:text-ink hover:underline md:block"
           >
             Log out
           </button>
@@ -95,7 +91,7 @@ export function AppShell() {
       <PlanBanner />
 
       {/* Room for the bottom bar on phones, so the last card is never hidden behind it. */}
-      <div className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <div id="content" tabIndex={-1} className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] outline-none md:pb-0">
         <Outlet />
       </div>
 
@@ -130,19 +126,19 @@ export function AppShell() {
               end={item.end}
               onClick={() => setMoreOpen(false)}
               className={({ isActive: active }) =>
-                `flex items-center gap-3 rounded-sm px-3 py-3 text-[15px] ${
+                `flex items-center gap-3 rounded-sm px-3 py-3 text-lead ${
                   active ? 'bg-surface-muted font-medium text-ink' : 'text-ink hover:bg-surface-muted'
                 }`
               }
             >
-              <item.icon className="text-[20px]" />
+              <item.icon className="text-title" />
               {item.label}
             </NavLink>
           ))}
           <button
             type="button"
             onClick={() => endSession()}
-            className="flex w-full items-center gap-3 rounded-sm px-3 py-3 text-[15px] text-ink-muted hover:bg-surface-muted"
+            className="flex w-full items-center gap-3 rounded-sm px-3 py-3 text-lead text-ink-muted hover:bg-surface-muted"
           >
             <LogOutIcon className="text-[20px]" />
             Log out
@@ -164,7 +160,7 @@ function Tab({
 }) {
   return (
     <span
-      className={`flex flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] ${
+      className={`flex flex-col items-center gap-1 pb-2 pt-2.5 text-2xs ${
         active ? 'font-semibold text-ink' : 'text-ink-muted'
       }`}
     >

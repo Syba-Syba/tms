@@ -45,7 +45,7 @@ export function OtpInput({
             const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
             if (pasted) onChange(pasted);
           }}
-          className="h-12 w-10 rounded-md border border-line bg-surface text-center font-mono text-lg text-ink outline-none focus:ring-2 focus:ring-[var(--tb-ring)]"
+          className="h-12 w-10 rounded-md border border-line bg-surface text-center font-mono text-title text-ink outline-none focus:ring-2 focus:ring-[var(--tb-ring)]"
         />
       ))}
     </div>

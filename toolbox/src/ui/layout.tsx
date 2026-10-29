@@ -33,7 +33,7 @@ export function AppShell({
           >
             =
           </button>
-          <div className="font-display text-sm font-semibold">{brand}</div>
+          <div className="font-display text-body font-semibold">{brand}</div>
         </div>
         {headerRight}
       </header>
@@ -51,7 +51,7 @@ export function AppShell({
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
                 className={cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-muted hover:bg-surface-muted hover:text-ink',
+                  'flex items-center gap-2 rounded-md px-3 py-2 text-body text-ink-muted hover:bg-surface-muted hover:text-ink',
                   item.active && 'bg-brand-50 text-brand-700',
                 )}
               >

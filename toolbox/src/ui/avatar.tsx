@@ -1,7 +1,7 @@
 import { initials } from '../utils/format';
 import { cn } from '../lib/cn';
 
-const sizes = { sm: 'h-7 w-7 text-[11px]', md: 'h-9 w-9 text-xs', lg: 'h-12 w-12 text-sm' };
+const sizes = { sm: 'h-7 w-7 text-2xs', md: 'h-9 w-9 text-xs', lg: 'h-12 w-12 text-body' };
 
 /** Colour is derived from the name, so the same person always gets the same tint. */
 const tintFor = (name: string) => {

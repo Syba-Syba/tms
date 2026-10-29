@@ -4,6 +4,7 @@ import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/
 import { api, baseUrl, errorCode, humanError } from '../api/client';
 import { safeReturnPath } from '../lib/safe-path';
 import { startSession, type SessionUser } from '../lib/session';
+import { Wordmark } from '../components/wordmark';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -69,12 +70,11 @@ export function Login() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <span className="mb-8 flex items-center gap-2" aria-hidden>
-        <span className="h-[18px] w-[14px] rounded-t-full border-[1.5px] border-b-0 border-ink" />
-        <b className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">Threshold</b>
+      <span className="mb-8" aria-hidden>
+        <Wordmark />
       </span>
-      <h1 className="mb-1 font-display text-[30px] font-medium leading-tight tracking-[-0.01em]">Sign in</h1>
-      <p className="mb-5 text-[14px] text-ink-muted">
+      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Sign in</h1>
+      <p className="mb-5 text-body text-ink-muted">
         Your lease, rent, inspections and maintenance, in one place.
       </p>
       {apiDown ? (
@@ -110,7 +110,7 @@ export function Login() {
           />
           {code !== null ? (
             <div className="space-y-1.5">
-              <label htmlFor="login-code" className="block text-sm font-medium text-ink">Code from your authenticator app</label>
+              <label htmlFor="login-code" className="block text-body font-medium text-ink">Code from your authenticator app</label>
               <Input
                 id="login-code"
                 inputMode="numeric"
@@ -127,17 +127,17 @@ export function Login() {
           <Button block loading={busy} disabled={!email || !password || (code !== null && code.trim().length < 6)} onClick={signIn}>
             {code !== null ? 'Continue' : 'Sign in'}
           </Button>
-          <p className="text-center text-[13px]">
-            <Link to="/forgot-password" className="font-bold text-brand-500">Forgot your password?</Link>
+          <p className="text-center text-meta">
+            <Link to="/forgot-password" className="inline-flex min-h-6 items-center font-bold text-brand-500">Forgot your password?</Link>
           </p>
-          <p className="text-center text-[13px] text-ink-muted">
+          <p className="text-center text-meta text-ink-muted">
             Applying for a place?{' '}
-            <Link to={registerLink} className="font-bold text-brand-500">Create an account</Link>
+            <Link to={registerLink} className="inline-flex min-h-6 items-center font-bold text-brand-500">Create an account</Link>
           </p>
-          <p className="text-center text-[12px]">
-            <Link to="/privacy" className="text-ink-muted underline">Privacy notice</Link>
+          <p className="text-center text-xs">
+            <Link to="/privacy" className="inline-flex min-h-6 items-center text-ink-muted underline">Privacy notice</Link>
             {' · '}
-            <Link to="/terms" className="text-ink-muted underline">Terms of service</Link>
+            <Link to="/terms" className="inline-flex min-h-6 items-center text-ink-muted underline">Terms of service</Link>
           </p>
         </CardBody>
       </Card>

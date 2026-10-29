@@ -69,7 +69,7 @@ export function Activity() {
             <li key={entry.id}>
               <CardBody className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                 <div>
-                  <p className="text-[14px] font-semibold text-ink">{describeAction(entry.action)}</p>
+                  <p className="text-body font-semibold text-ink">{describeAction(entry.action)}</p>
                   <p className="text-xs text-ink-muted">
                     {entry.actor.name}
                     {entry.leaseId ? (

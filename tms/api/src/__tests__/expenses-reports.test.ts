@@ -135,6 +135,12 @@ describe('income against expenses', () => {
     const loose = report.body.items.find((item: { propertyId: string | null }) => item.propertyId === null);
     expect(loose.expenseCents.bank_charges).toBe(9500);
     expect(report.body.totals).toMatchObject({ collectedCents: 850000, expensesCents: 134500, netCents: 715500 });
+    // Month by month, adding up to the same totals, with an empty month still listed.
+    expect(report.body.months.map((m: { month: string }) => m.month)).toEqual(['2026-09', '2026-10']);
+    const sum = (key: 'invoicedCents' | 'collectedCents') =>
+      report.body.months.reduce((total: number, m: Record<string, number>) => total + m[key]!, 0);
+    expect(sum('collectedCents')).toBe(850000);
+    expect(sum('invoicedCents')).toBe(report.body.totals.invoicedCents);
   });
 
   it('defaults to the current tax year and refuses a backwards range', async () => {
@@ -146,6 +152,7 @@ describe('income against expenses', () => {
   it('shows another landlord nothing of this one', async () => {
     const report = await call('GET', '/reports/income-expense?from=2026-09-01&to=2026-10-31', OTHER);
     expect(report.body.totals).toMatchObject({ invoicedCents: 0, collectedCents: 0, expensesCents: 0 });
+    expect(report.body.months.every((m: { collectedCents: number }) => m.collectedCents === 0)).toBe(true);
   });
 });
 

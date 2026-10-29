@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
-import { Ledger } from '../components/money';
+import { Money } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { currentLease } from '../lib/leases';
@@ -64,7 +64,7 @@ export function Documents() {
       <Card className="mb-5">
         <CardBody className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[15px] font-semibold">{data.ref}</p>
+            <p className="text-lead font-semibold">{data.ref}</p>
             <p className="text-xs text-ink-muted">
               {data.unit} · {formatDate(data.startDate)} to {formatDate(data.endDate)}
             </p>
@@ -88,14 +88,14 @@ export function Documents() {
       <Card className="mb-5">
         <CardBody className="space-y-3">
           {data.inspections.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">
+            <p className="text-meta text-ink-muted">
               None yet. The move-in inspection and its defects list become part of your lease.
             </p>
           ) : null}
           {data.inspections.map((inspection) => (
             <div key={inspection.id} className="flex items-center justify-between">
               <div>
-                <p className="text-[14px] font-semibold capitalize">
+                <p className="text-body font-semibold capitalize">
                   {inspection.kind === 'incoming' ? 'Move in' : 'Move out'} · {formatDate(inspection.scheduledFor)}
                 </p>
                 <p className="text-xs text-ink-muted">
@@ -124,7 +124,7 @@ export function Documents() {
           </p>
           <Card className="mb-5">
             <CardBody className="flex items-center justify-between">
-              <p className="text-[14px]">
+              <p className="text-body">
                 The final reconciliation of your deposit, its interest and every deduction.
               </p>
               <Button size="sm" variant="outline" onClick={() => openDocument(data.termination!.statementKey!)}>
@@ -139,7 +139,7 @@ export function Documents() {
       <Card>
         <CardBody className="space-y-2">
           {data.invoices.length === 0 ? (
-            <p className="text-[13.5px] text-ink-muted">None issued yet.</p>
+            <p className="text-meta text-ink-muted">None issued yet.</p>
           ) : null}
           {data.invoices.map((invoice) => (
             <div
@@ -147,15 +147,15 @@ export function Documents() {
               className="flex items-center justify-between border-b border-line-soft pb-2 last:border-0"
             >
               <div>
-                <p className="text-[14px] font-semibold">{invoice.period}</p>
+                <p className="text-body font-semibold">{invoice.period}</p>
                 <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
               </div>
               <div className="flex items-center gap-3">
-                <Ledger cents={invoice.totalCents} className="text-[15px]" />
+                <Money cents={invoice.totalCents} className="text-lead" />
                 <Badge tone={status(invoice.status).tone}>{status(invoice.status).label}</Badge>
                 <button
                   type="button"
-                  className="text-[13px] font-bold text-brand-500"
+                  className="text-meta font-bold text-brand-500"
                   onClick={() =>
                     openDocument(
                       invoice.pdfKey ??

@@ -31,11 +31,11 @@ export function Modal({
           )}
         >
           <div className="border-b border-line px-5 py-4">
-            <Dialog.Title className="text-[16px] font-semibold text-ink">
+            <Dialog.Title className="text-lead font-semibold text-ink">
               {title}
             </Dialog.Title>
             {description ? (
-              <Dialog.Description className="mt-1 text-sm text-ink-muted">
+              <Dialog.Description className="mt-1 text-body text-ink-muted">
                 {description}
               </Dialog.Description>
             ) : null}
