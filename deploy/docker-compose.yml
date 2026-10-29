@@ -36,7 +36,11 @@ services:
       DB_DRIVER: postgres
       DB_HOST: /var/run/postgresql
       DB_NAME: tms
+      # The owner, for migrations and setting up the roles. The server itself then runs as
+      # tms_server with DB_SERVER_PASSWORD (entrypoint.sh).
       DB_USER: tms_app
+      DB_SERVER_PASSWORD: ${DB_SERVER_PASSWORD:?set DB_SERVER_PASSWORD in .env.production (see README, Updating)}
+      DB_BACKUP_PASSWORD: ${DB_BACKUP_PASSWORD:?set DB_BACKUP_PASSWORD in .env.production (see README, Updating)}
       DB_SSL: "off"
       TRUST_PROXY: "true"
       STORAGE_DRIVER: local
@@ -71,14 +75,19 @@ services:
     image: mirror.gcr.io/library/postgres:16-alpine
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/backup.sh"]
-    # Still the whole file, for BACKUP_* and the RCLONE_CONFIG_* variables of whatever remote is
-    # configured, so this container also holds the app's secrets. See README, "Hardening still to do".
-    env_file: .env.production
+    # Its own file, BACKUP_* and RCLONE_CONFIG_*, never the app's secrets. Optional: without it
+    # backups stay on this server only.
+    env_file:
+      - path: backup.env
+        required: false
     environment:
       PGHOST: /var/run/postgresql
-      PGPASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.production}
       PGDATABASE: tms
-      PGUSER: tms_app
+      # Reads everything, writes nothing (see tms/api/scripts/db-roles.mjs).
+      PGUSER: tms_backup
+      PGPASSWORD: ${DB_BACKUP_PASSWORD:?set DB_BACKUP_PASSWORD in .env.production (see README, Updating)}
+      # Only to refuse to run while a remote is still configured in the old place.
+      LEGACY_BACKUP_REMOTE: ${BACKUP_REMOTE:-}
     volumes:
       - ./backup.sh:/backup.sh:ro
       - ./backups:/backups
@@ -87,6 +96,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # The app creates the tms_backup role on start; backup.sh waits for it.
+      app:
+        condition: service_started
 
 volumes:
   db:

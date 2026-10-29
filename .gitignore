@@ -85,4 +85,5 @@ tms/api/certs/*.pem
 
 # Hosted kit: secrets and backups stay on the server.
 deploy/.env.production
+deploy/backup.env
 deploy/backups/

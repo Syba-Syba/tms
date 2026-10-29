@@ -30,6 +30,13 @@ offsite() {
 }
 
 backup() {
+  # BACKUP_* and RCLONE_CONFIG_* moved to backup.env. Left in .env.production they no longer
+  # reach this container, and a server that had a remote would quietly keep its backups only
+  # here. So no backup counts until they are moved.
+  if [ -n "${LEGACY_BACKUP_REMOTE:-}" ] && [ -z "${BACKUP_REMOTE:-}" ]; then
+    log "FAILED: BACKUP_REMOTE is set in .env.production, which this container no longer reads. Move BACKUP_* and RCLONE_CONFIG_* to deploy/backup.env (see README, Updating)."
+    return 1
+  fi
   stamp="$(date -u +%Y-%m-%dT%H%MZ)" || return 1
   db="$DIR/db-$stamp.dump"
   files="$DIR/storage-$stamp.tar.gz"
@@ -61,7 +68,8 @@ check() {
   log "restoring $newest into tms_restore_check"
   dropdb --if-exists tms_restore_check
   createdb tms_restore_check
-  pg_restore --no-owner --dbname=tms_restore_check "$newest"
+  # --no-acl: the grants name the owner's roles, which this read-only role may not hand out.
+  pg_restore --no-owner --no-acl --exit-on-error --dbname=tms_restore_check "$newest"
   failed=0
   for table in landlord property unit lease invoice payment deposit_ledger audit_log; do
     live="$(psql -At -c "select count(*) from $table")"
@@ -74,6 +82,15 @@ check() {
   dropdb tms_restore_check
   if [ "$failed" -eq 0 ]; then log "restore check passed"; else log "restore check FAILED"; exit 1; fi
 }
+
+# The app creates this role when it starts, which may be after this container does.
+waited=0
+until psql -Atc 'select 1' >/dev/null 2>&1; do
+  [ "$waited" -eq 0 ] && log "waiting for the database and the $PGUSER role (the app creates it on start)"
+  waited=$((waited + 5))
+  [ "$waited" -lt 900 ] || { log "FAILED: cannot connect as $PGUSER after 15 minutes"; exit 1; }
+  sleep 5
+done
 
 case "${1:-loop}" in
   now) backup || { log "backup FAILED"; exit 1; }; exit 0 ;;

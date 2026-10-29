@@ -12,11 +12,15 @@ cd "$(dirname "$0")"
 DUMP="${1:?which database dump?}"
 FILES="${2:?which storage archive?}"
 compose() { docker compose --env-file .env.production "$@"; }
-# A one-off container of the backup service: it has psql, the database socket and /backups,
-# and works while the service itself is stopped.
-pgsh() { compose run --rm --no-deps -T --entrypoint sh backup -c "$1"; }
+# A one-off container of the database image, as the owner (the backup service only reads):
+# psql and pg_restore, the database socket, and backups/ at /backups, read-only.
+pgsh() {
+  compose run --rm --no-deps -T -v "$(pwd)/backups:/backups:ro" --entrypoint sh db -c \
+    "export PGHOST=/var/run/postgresql PGUSER=\"\$POSTGRES_USER\" PGPASSWORD=\"\$POSTGRES_PASSWORD\"; $1" </dev/null
+}
 # A one-off container of the app, as root, with the documents volume at /data/storage.
-appsh() { compose run --rm --no-deps -T --user root --entrypoint sh app -c "$1"; }
+# Both read nothing from stdin, which is where the RESTORE confirmation comes from.
+appsh() { compose run --rm --no-deps -T --user root --entrypoint sh app -c "$1" </dev/null; }
 
 # The containers see deploy/backups/ as /backups, so both files must be directly in it.
 backups="$(realpath -e backups 2>/dev/null)" || { echo "There is no deploy/backups/ directory."; exit 1; }
@@ -60,8 +64,8 @@ rollback() {
       echo "  Database: the original is back as tms."
     else
       echo "  Database: COULD NOT PUT IT BACK. The original is tms_previous; once the cause is fixed:"
-      echo "    docker compose --env-file .env.production run --rm --no-deps -T --entrypoint sh backup -c \\"
-      echo "      \"dropdb --if-exists tms && psql -d postgres -c 'alter database tms_previous rename to tms'\""
+      echo "    docker compose --env-file .env.production exec db sh -c \\"
+      echo "      'PGPASSWORD=\$POSTGRES_PASSWORD dropdb -U \$POSTGRES_USER --if-exists tms && PGPASSWORD=\$POSTGRES_PASSWORD psql -U \$POSTGRES_USER -d postgres -c \"alter database tms_previous rename to tms\"'"
     fi
   fi
   # Only touches files when a swap began (.restore-state); otherwise just removes the extract.
@@ -110,6 +114,6 @@ storage_done=1
 compose start app backup
 finished=1
 echo "Restored. What was there before is kept until you are sure all is well:"
-echo "  database:  tms_previous     drop it with: docker compose --env-file .env.production exec backup dropdb tms_previous"
+echo "  database:  tms_previous     drop it with: docker compose --env-file .env.production exec db sh -c 'PGPASSWORD=\$POSTGRES_PASSWORD dropdb -U \$POSTGRES_USER tms_previous'"
 echo "  documents: .restore-prev    remove it with: docker compose --env-file .env.production run --rm --no-deps --user root --entrypoint rm app -rf /data/storage/.restore-prev"
 echo "Until .restore-prev is removed, nightly backups include it (twice the size)."
