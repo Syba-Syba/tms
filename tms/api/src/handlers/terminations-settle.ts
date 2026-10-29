@@ -257,6 +257,10 @@ export const handler = route(async (event) => {
       return posted;
     };
     for (const deduction of deductions) await post(Number(deduction.amount_cents), deduction.description);
+    // Rent paid above a re-rated month's total is the tenant's credit, and the statement nets it
+    // against arrears. The money has to move with it: left on the overpaid invoice, the unpaid
+    // ones stayed open and the arrears ladder went on chasing rent the tenant did not owe.
+    if (rentCredit > 0 && grossArrears > 0) await moveCreditToOpenInvoices(run, context.lease_id);
     if (summary.arrearsCents > 0) {
       // What came off the deposit for arrears pays the open invoices, oldest first. Left open,
       // the statement still showed the tenant owing rent the deposit had already covered.
@@ -371,3 +375,57 @@ export const handler = route(async (event) => {
     statementSha256: rendered.sha256,
   });
 });
+
+type SettleRun = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/**
+ * Moves payments sitting above an invoice's total onto the lease's open invoices, oldest first.
+ * A payment is split rather than deleted, so every rand stays on record with its original date,
+ * method and reference.
+ */
+async function moveCreditToOpenInvoices(run: SettleRun, leaseId: string): Promise<void> {
+  const balances = await run<{ id: string; total: string; paid: string; status: string }>(
+    `select i.id, i.total_cents::text as total, i.status,
+            coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid
+       from invoice i
+      where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
+      order by i.due_on, i.period_start
+      for update`,
+    [leaseId],
+  );
+  const open = balances
+    .filter((row) => row.status !== 'paid' && Number(row.total) > Number(row.paid))
+    .map((row) => ({ id: row.id, owing: Number(row.total) - Number(row.paid), total: Number(row.total) }));
+  for (const source of balances.filter((row) => Number(row.paid) > Number(row.total))) {
+    let excess = Number(source.paid) - Number(source.total);
+    const payments = await run<{ id: string; amount_cents: string }>(
+      'select id, amount_cents::text from payment where invoice_id = $1 order by received_on desc, created_at desc',
+      [source.id],
+    );
+    for (const target of open) {
+      while (excess > 0 && target.owing > 0 && payments.length > 0) {
+        const payment = payments[0]!;
+        const available = Math.min(Number(payment.amount_cents), excess);
+        const move = Math.min(available, target.owing);
+        if (move === Number(payment.amount_cents)) {
+          await run('update payment set invoice_id = $2 where id = $1', [payment.id, target.id]);
+          payments.shift();
+        } else {
+          await run('update payment set amount_cents = amount_cents - $2 where id = $1', [payment.id, move]);
+          await run(
+            `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+             select lease_id, $2, $3, method, coalesce(reference, '') || ' (credit moved at settlement)', received_on, recorded_by
+               from payment where id = $1`,
+            [payment.id, target.id, move],
+          );
+          payment.amount_cents = String(Number(payment.amount_cents) - move);
+          if (Number(payment.amount_cents) === 0) payments.shift();
+        }
+        excess -= move;
+        target.owing -= move;
+        await run('update invoice set status = $2 where id = $1', [target.id, target.owing === 0 ? 'paid' : 'part_paid']);
+      }
+      if (excess === 0) break;
+    }
+  }
+}

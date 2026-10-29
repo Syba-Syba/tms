@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route } from 'react-router';
 import { API, mount } from './harness';
 import { NotificationPreferences } from '../screens/notification-preferences';
@@ -52,6 +52,11 @@ describe('two-step sign-in', () => {
     mount('/settings/notifications', <Route path="/settings/notifications" element={<NotificationPreferences />} />);
     const section = await screen.findByRole('region', { name: 'Two-step sign-in' });
     fireEvent.click(within(section).getByRole('button', { name: 'Turn on' }));
+    // The password first: a signed-in session alone cannot turn two-step on.
+    const confirm = await screen.findByRole('dialog');
+    type(within(confirm).getByLabelText('Your password'), 'a-long-password');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'QR code to scan' })).toBeTruthy());
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('img', { name: 'QR code to scan' })).toBeTruthy();
     secret = within(dialog).getByText(/^[A-Z2-7 ]{32,}$/).textContent!.replace(/\s/g, '');

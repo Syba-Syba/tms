@@ -9,6 +9,7 @@ import { daysUntil, formatDate, headlineZar, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { SetupChecklist } from '../components/setup-checklist';
 import { isLandlord } from '../lib/session';
+import { localToday } from '../lib/dates';
 import { TenantHome } from './tenant-home';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
@@ -46,7 +47,8 @@ const STAGE: Record<string, string> = {
   reminder_7: 'final reminder sent',
   letter_of_demand: 'letter of demand sent',
 };
-const today = () => new Date().toISOString().slice(0, 10);
+// The device's calendar (SAST for our users), not UTC: before 02:00 UTC was still yesterday.
+const today = localToday;
 
 export function Home() {
   // A tenant has one home, not a portfolio, so they get a different screen entirely.

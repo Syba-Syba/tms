@@ -60,12 +60,13 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
     end_date: string;
     monthly_rent_cents: string;
     escalation_pct: string;
+    escalates_from: string | null;
     renewal_starts_on: string | null;
   }>(
     `select i.id, i.period_start::text, i.covers_from::text, i.covers_to::text, i.total_cents,
             coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid,
             l.start_date::text, l.end_date::text, l.monthly_rent_cents, l.escalation_pct,
-            ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on
+            l.escalates_from::text, ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on
        from invoice i
        join lease l on l.id = i.lease_id
       where i.lease_id = $1
@@ -99,7 +100,9 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
       ? rentForWindow({
           baseRentCents: Number(invoice.monthly_rent_cents),
           escalationPct: Number(invoice.escalation_pct),
-          leaseStart: dateFromIso(invoice.start_date),
+          // Same anchor as the invoice run. An imported lease's rent already includes the years
+          // before it joined, so counting escalation from the original start compounded them again.
+          leaseStart: dateFromIso(invoice.escalates_from ?? invoice.start_date),
           window,
         })
       : 0;

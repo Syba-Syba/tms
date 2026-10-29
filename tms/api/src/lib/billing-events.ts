@@ -128,7 +128,13 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
       });
       if (checkout) await run('update billing_checkout set completed_at = coalesce(completed_at, now()) where id = $1', [checkout.id]);
     } else if (notice.outcome === 'failed') {
-      await run(`update subscription set status = 'past_due', updated_at = now() where landlord_id = $1 and status <> 'cancelled'`, [landlordId]);
+      // A declined card during the trial is not a missed payment: nothing was due yet. Marking it
+      // past due locked the account at once, with weeks of trial left.
+      await run(
+        `update subscription set status = 'past_due', updated_at = now()
+          where landlord_id = $1 and status not in ('cancelled', 'trialing')`,
+        [landlordId],
+      );
     } else {
       await run(`update subscription set status = 'cancelled', updated_at = now() where landlord_id = $1`, [landlordId]);
     }

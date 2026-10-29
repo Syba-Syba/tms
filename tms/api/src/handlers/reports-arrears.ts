@@ -3,7 +3,7 @@ import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, route } from '../lib/http';
 import { ageBucket, type AgeBucket } from '../domain/money';
-import { sastToday } from '../domain/dates';
+import { dateFromIso, sastToday } from '../domain/dates';
 
 const BUCKETS: AgeBucket[] = ['current', 'd30', 'd60', 'd90', 'd90plus'];
 const empty = () => Object.fromEntries(BUCKETS.map((bucket) => [bucket, 0])) as Record<AgeBucket, number>;
@@ -34,7 +34,8 @@ export const handler = route(async (event) => {
     [landlordId],
   );
 
-  const today = new Date();
+  // Today in South Africa, as a date: the UTC instant still said yesterday until 02:00.
+  const today = dateFromIso(sastToday());
   const byLease = new Map<string, {
     leaseId: string; leaseRef: string; tenant: string; unit: string; oldestDueOn: string;
     proofPending: boolean; ageing: Record<AgeBucket, number>; totalCents: number;
@@ -43,7 +44,7 @@ export const handler = route(async (event) => {
   for (const row of open) {
     const amount = Number(row.outstanding);
     if (amount <= 0) continue;
-    const bucket = ageBucket(new Date(row.due_on), today);
+    const bucket = ageBucket(dateFromIso(row.due_on), today);
     const lease = byLease.get(row.lease_id) ?? {
       leaseId: row.lease_id, leaseRef: row.lease_ref, tenant: row.tenant, unit: row.unit,
       oldestDueOn: row.due_on, proofPending: row.proof_pending, ageing: empty(), totalCents: 0,

@@ -9,8 +9,13 @@ import { cn } from '../lib/cn';
  * - With both separators present, the last one is the decimal point.
  * - A lone comma followed by one or two digits at the end is a decimal comma.
  * - Any other comma groups thousands. Several points ('1.234.567') group thousands too.
+ * - A lone point with one to three digits before it and exactly three after ('8.500') groups
+ *   thousands as well: nobody types a rand amount to a tenth of a cent, so it is R8 500.
+ * - Letters other than a leading currency mark ('R', 'ZAR') make it not an amount: '1e5'
+ *   used to have its 'e' stripped and become R15.
  */
 export function parseCurrencyInput(raw: string): number | null {
+  if (/[a-z]/i.test(raw.replace(/^\s*-?\s*(ZAR|R)/i, ''))) return null;
   const cleaned = raw.replace(/[^\d.,-]/g, '');
   if (!/\d/.test(cleaned)) return null;
   const negative = cleaned.trim().startsWith('-');
@@ -28,7 +33,8 @@ export function parseCurrencyInput(raw: string): number | null {
   if (lastComma >= 0 && lastPoint >= 0) {
     splitAt(Math.max(lastComma, lastPoint));
   } else if (lastPoint >= 0) {
-    if ((digits.match(/\./g) ?? []).length === 1) splitAt(lastPoint);
+    if (/^\d{1,3}\.\d{3}$/.test(digits)) [integer, fraction] = [digits.replace('.', ''), ''];
+    else if ((digits.match(/\./g) ?? []).length === 1) splitAt(lastPoint);
     else [integer, fraction] = [digits.replace(/\./g, ''), ''];
   } else if (lastComma >= 0) {
     const after = digits.length - lastComma - 1;
@@ -63,8 +69,11 @@ export const CurrencyInput = forwardRef<
 
   // Controlled from the outside: a reset to 0, or a drawer reopened for a different unit,
   // used to leave the previous figure in the box because the input only read its default once.
+  // Typing now reports every keystroke, so cents also changes because of what is in the box;
+  // the text is only replaced when it no longer says the same amount, or '8' would become
+  // '8.00' under the cursor before the second digit.
   useEffect(() => {
-    setText(display(cents));
+    setText((current) => (parseCurrencyInput(current) === cents ? current : display(cents)));
   }, [cents]);
 
   return (
@@ -80,8 +89,15 @@ export const CurrencyInput = forwardRef<
         ref={ref}
         inputMode="decimal"
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          // Reported on every change, not only on blur: a Save button enabled by this value
+          // stayed disabled while the field had focus, and on iOS tapping a disabled button
+          // does not blur the field, so the form could not be submitted at all.
+          setText(event.target.value);
+          onCentsChange(parseCurrencyInput(event.target.value));
+        }}
         onBlur={() => {
+          // Tidy the text into 0.00 form once they are done typing.
           const parsed = parseCurrencyInput(text);
           setText(display(parsed));
           onCentsChange(parsed);

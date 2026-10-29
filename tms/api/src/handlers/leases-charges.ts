@@ -5,7 +5,8 @@ import { badRequest, conflict, forbidden, json, notFound, parseBody, route } fro
 import { leaseParties } from '../lib/lease-parties';
 import { notify } from '../lib/notify';
 import { chargeSchema, invoiceStatus, MONTHS_AHEAD, monthsBetween } from '../domain/charge';
-import { nextMonthStart, sastToday } from '../domain/dates';
+import { isoDate, nextMonthStart, sastToday } from '../domain/dates';
+import { billableUntil, RENEWAL_STARTS_SQL } from '../lib/billing';
 import { zar } from '../domain/money';
 
 type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
@@ -73,8 +74,11 @@ export const handler = route(async (event) => {
   const input = parseBody(event, chargeSchema);
   const today = sastToday();
   const result = await withTransaction(async (run) => {
-    const [lease] = await run<{ status: string; start_date: string }>(
-      'select status, start_date::text from lease where id = $1 for update',
+    const [lease] = await run<{ status: string; start_date: string; end_date: string; effective_on: string | null; renewal_starts_on: string | null }>(
+      `select l.status, l.start_date::text, l.end_date::text,
+              (select t.effective_on::text from termination t where t.lease_id = l.id and t.status <> 'withdrawn' limit 1) as effective_on,
+              ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on
+         from lease l where l.id = $1 for update`,
       [leaseId],
     );
     if (!lease || !['active', 'terminated'].includes(lease.status)) throw conflict('Charges go on a running lease.');
@@ -98,6 +102,26 @@ export const handler = route(async (event) => {
       const current = await openInvoice(currentMonth);
       target = current && current.due_on >= today ? currentMonth : nextMonthStart(`${currentMonth}-01`).slice(0, 7);
       invoice = await openInvoice(target);
+    }
+    // A lease that is ending has no invoice after its last month, and the run will never make
+    // one. A charge headed past that month used to wait in pending_charge for ever, billed to
+    // nobody and missing from the deposit settlement. It goes on the last invoice instead.
+    // Notice ends billing on its effective day (the run stops there too); a signed renewal hands
+    // over to the new lease the day before it starts.
+    const lastDay = lease.effective_on
+      ?? (lease.renewal_starts_on
+        ? isoDate(billableUntil({ endDate: lease.end_date, terminationEffectiveOn: null, renewalStartsOn: lease.renewal_starts_on }))
+        : null);
+    const lastMonth = lastDay ? lastDay.slice(0, 7) : null;
+    if (!invoice && lastMonth && target > lastMonth) {
+      const [last] = await run<{ id: string; due_on: string; period_start: string }>(
+        `select id, due_on::text, period_start::text from invoice
+          where lease_id = $1 and status <> 'void' order by period_start desc limit 1 for update`,
+        [leaseId],
+      );
+      if (!last) throw conflict('This lease has no invoice left to add a charge to.');
+      target = last.period_start.slice(0, 7);
+      invoice = last;
     }
     const description = target === input.period ? input.description : `${input.description} (${monthLabel(input.period)})`;
 

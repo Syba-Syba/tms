@@ -33,6 +33,8 @@ export function TwoStep() {
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [disabling, setDisabling] = useState(false);
+  // Turning two-step on asks for the password first, as turning it off does.
+  const [confirming, setConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -52,14 +54,16 @@ export function TwoStep() {
 
   const start = () =>
     act(async () => {
-      setSetup(await api.post<{ secret: string; otpauthUrl: string }>('/auth/two-step', { action: 'setup' }));
+      setSetup(await api.post<{ secret: string; otpauthUrl: string }>('/auth/two-step', { action: 'setup', password }));
+      setConfirming(false);
       setCode('');
     });
 
   const enable = () =>
     act(async () => {
-      const result = await api.post<{ recoveryCodes: string[] }>('/auth/two-step', { action: 'enable', code });
+      const result = await api.post<{ recoveryCodes: string[] }>('/auth/two-step', { action: 'enable', password, code });
       setSetup(null);
+      setPassword('');
       setRecovery(result.recoveryCodes);
       await queryClient.invalidateQueries({ queryKey: ['two-step'] });
     });
@@ -102,12 +106,21 @@ export function TwoStep() {
               <Button size="sm" variant="outline" onClick={() => { setDisabling(true); setCode(''); }}>Turn off</Button>
             </div>
           ) : (
-            <Button size="sm" loading={busy} onClick={start}>Turn on</Button>
+            <Button size="sm" loading={busy} onClick={() => { setPassword(''); setConfirming(true); }}>Turn on</Button>
           )}
         </CardBody>
       </Card>
 
-      <Modal open={setup !== null} onOpenChange={(open) => { if (!open) setSetup(null); }} title="Turn on two-step sign-in"
+      <Modal open={confirming} onOpenChange={(open) => { if (!open) { setConfirming(false); setPassword(''); } }} title="Turn on two-step sign-in"
+        description="First, your password. It keeps anyone using an unlocked device from turning this on for you.">
+        <div className="space-y-3">
+          <Input type="password" aria-label="Your password" placeholder="Your password" autoComplete="current-password"
+            value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Button block loading={busy} disabled={!password} onClick={start}>Continue</Button>
+        </div>
+      </Modal>
+
+      <Modal open={setup !== null} onOpenChange={(open) => { if (!open) { setSetup(null); setPassword(''); } }} title="Turn on two-step sign-in"
         description="Scan this with your authenticator app, then type the code it shows.">
         {setup ? (
           <div className="space-y-3">

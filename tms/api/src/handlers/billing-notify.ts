@@ -28,6 +28,11 @@ export const handler = async (event: APIGatewayProxyEventV2WithJWTAuthorizer): P
       await recordRejected(base, 'Signature does not match.');
       return ok();
     }
+    // A valid notification for someone else's PayFast account must not pay for ours.
+    if (data.merchant_id !== config.merchantId) {
+      await recordRejected(base, `Paid to merchant ${data.merchant_id ?? 'unknown'}, not ours.`);
+      return ok();
+    }
     if (!(await fromPayfast(ip))) {
       await recordRejected(base, `Sent from ${ip}, not a PayFast server.`);
       return ok();

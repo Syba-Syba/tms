@@ -39,9 +39,10 @@ export const handler = route(async (event) => {
         [person.sub],
       )
     : [];
-  const requests = await query<{ id: string; status: string; created_at: string; response: string | null }>(
-    `select id, status, created_at::text, response from privacy_request
-      where person_sub = $1 order by created_at desc limit 10`,
+  const requests = await query<{ id: string; status: string; created_at: string; response: string | null; landlord: string | null }>(
+    `select r.id, r.status, r.created_at::text, r.response, l.trading_name as landlord
+       from privacy_request r left join landlord l on l.id = r.landlord_id
+      where r.person_sub = $1 order by r.created_at desc limit 10`,
     [person.sub],
   );
   return json(200, {
@@ -52,7 +53,7 @@ export const handler = route(async (event) => {
     // Said up front, so nobody asks for erasure without knowing what will happen.
     erasureBlockedBecause: person.groups.includes('landlord') ? null : await erasureBlockFor(person.sub),
     requests: requests.map((row) => ({
-      id: row.id, status: row.status, createdAt: row.created_at, response: row.response,
+      id: row.id, status: row.status, createdAt: row.created_at, response: row.response, landlord: row.landlord,
     })),
   });
 });

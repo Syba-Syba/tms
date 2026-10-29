@@ -43,7 +43,8 @@ export const handler = route(async (event) => {
       where t.status = any($3::text[])
         -- A landlord sees the tickets on their own properties, not every ticket in the
         -- system; group membership alone used to be the whole filter.
-        and (($2 and ll.cognito_sub = $1) or a.cognito_sub = $1)
+        -- Any member of the landlord's team, not only the owner: agents saw an empty list.
+        and (($2 and exists (select 1 from landlord_member m where m.landlord_id = ll.id and m.sub = $1)) or a.cognito_sub = $1)
       order by t.target_by asc`,
     [person.sub, isLandlord, statuses],
   );

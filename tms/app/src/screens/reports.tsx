@@ -8,6 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
 import { PAGE } from '../lib/layout';
+import { addDays, localToday } from '../lib/dates';
 import { Money } from '../components/money';
 
 const CATEGORIES: Record<string, string> = {
@@ -93,7 +94,9 @@ function taxYear(endingIn: number) {
   const lastDay = new Date(Date.UTC(endingIn, 2, 0)).getUTCDate();
   return { from: `${endingIn - 1}-03-01`, to: `${endingIn}-02-${String(lastDay).padStart(2, '0')}` };
 }
-const today = () => new Date().toISOString().slice(0, 10);
+// The device's calendar (SAST for our users), not UTC: before 02:00 UTC was still yesterday,
+// and on the 1st that put 'this month' in last month.
+const today = localToday;
 const currentTaxYear = () => {
   const [year, month] = today().split('-').map(Number) as [number, number];
   return month >= 3 ? year + 1 : year;
@@ -101,9 +104,9 @@ const currentTaxYear = () => {
 
 function periods() {
   const now = currentTaxYear();
-  const date = new Date();
   const monthStart = `${today().slice(0, 7)}-01`;
-  const lastMonthEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 0)).toISOString().slice(0, 10);
+  // The day before this month began, on the same local calendar as monthStart.
+  const lastMonthEnd = addDays(monthStart, -1);
   return [
     { value: 'this-tax-year', label: `This tax year (${now - 1}/${String(now).slice(2)})`, ...taxYear(now) },
     { value: 'last-tax-year', label: `Last tax year (${now - 2}/${String(now - 1).slice(2)})`, ...taxYear(now - 1) },
@@ -390,13 +393,21 @@ function Expenses() {
       if (editing.id) {
         await api.put(`/expenses/${editing.id}`, body);
       } else {
-        const created = await api.post<{ uploadUrl: string | null }>('/expenses', {
+        const created = await api.post<{ id: string; uploadUrl: string | null }>('/expenses', {
           ...body,
           slip: file ? { contentType: file.type, sizeBytes: file.size } : undefined,
         });
         if (file && created.uploadUrl) {
           const uploaded = await fetch(created.uploadUrl, { method: 'PUT', body: file, headers: { 'content-type': file.type } });
-          if (!uploaded.ok) toast.show({ title: 'Expense saved, slip not uploaded', tone: 'warning' });
+          if (!uploaded.ok) {
+            toast.show({ title: 'Expense saved, slip not uploaded', tone: 'warning' });
+          } else {
+            // The server checks the bytes and keeps its own copy. A refused slip is detached,
+            // and the expense stays.
+            await api.post(`/expenses/${created.id}/slip/confirm`, {}).catch((error) =>
+              toast.show({ title: 'Expense saved, slip refused', description: humanError(error), tone: 'warning' }),
+            );
+          }
         }
       }
       await refresh();

@@ -39,9 +39,9 @@ export const handler = route(async (event) => {
     );
     if (!reset) throw invalid();
 
-    const [credential] = await run<{ email: string; name: string; role: 'landlord' | 'tenant'; two_step: boolean }>(
+    const [credential] = await run<{ email: string; name: string; role: 'landlord' | 'tenant'; two_step: boolean; session_epoch: number }>(
       `update local_credential set password_hash = $2 where sub = $1
-       returning email, name, role, totp_enabled_at is not null as two_step`,
+       returning email, name, role, totp_enabled_at is not null as two_step, session_epoch`,
       [reset.sub, passwordHash],
     );
     if (!credential) throw invalid();
@@ -67,6 +67,8 @@ export const handler = route(async (event) => {
   // With two-step on, the emailed link alone must not sign anyone in: whoever reads the inbox
   // would be in. The password is changed; signing in still needs the code.
   if (user.two_step) return json(200, { token: null, user: null, signInWithCode: true });
-  const { two_step: _twoStep, ...signedIn } = user;
-  return json(200, { token: signToken({ ...signedIn, pv: credentialVersion(passwordHash) }), user: signedIn });
+  // The sign-out counter is part of the fingerprint the server checks: leaving it out made the
+  // new token dead on arrival for anyone who had ever signed out.
+  const { two_step: _twoStep, session_epoch: epoch, ...signedIn } = user;
+  return json(200, { token: signToken({ ...signedIn, pv: credentialVersion(passwordHash, epoch) }), user: signedIn });
 });

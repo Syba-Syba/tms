@@ -10,7 +10,7 @@ interface PrivacyState {
   acceptedVersion: string | null;
   acceptedAt: string | null;
   erasureBlockedBecause: string | null;
-  requests: { id: string; status: 'pending' | 'completed' | 'refused'; createdAt: string; response: string | null }[];
+  requests: { id: string; status: 'pending' | 'completed' | 'refused'; createdAt: string; response: string | null; landlord: string | null }[];
 }
 
 const REQUEST_LABEL = {
@@ -62,7 +62,7 @@ export function YourData() {
       setAsking(false);
       setNote('');
       await queryClient.invalidateQueries({ queryKey: ['privacy'] });
-      toast.show({ title: 'Request sent', description: 'Your landlord answers it, and you are emailed either way.', tone: 'success' });
+      toast.show({ title: 'Request sent', description: 'Each landlord answers for their own records, and you are emailed either way.', tone: 'success' });
     } catch (error) {
       toast.show({ title: 'Request not sent', description: humanError(error), tone: 'danger' });
     } finally {
@@ -89,7 +89,7 @@ export function YourData() {
             <div>
               {pending ? (
                 <Alert tone="info" title="Erasure requested">
-                  Sent {formatDate(pending.createdAt)}. Your landlord answers it, and you are emailed either way.
+                  Sent {formatDate(pending.createdAt)}. Each landlord you applied to or rented from answers for their own records, and you are emailed either way.
                 </Alert>
               ) : (
                 <>
@@ -102,7 +102,7 @@ export function YourData() {
           {data?.requests.filter((request) => request.status !== 'pending').map((request) => (
             <div key={request.id} className="space-y-1 border-t border-line-soft pt-3">
               <p className="flex items-center gap-2 text-meta">
-                Erasure request of {formatDate(request.createdAt)}
+                Erasure request of {formatDate(request.createdAt)}{request.landlord ? ` to ${request.landlord}` : ''}
                 <Badge tone={REQUEST_LABEL[request.status].tone}>{REQUEST_LABEL[request.status].label}</Badge>
               </p>
               {request.response ? <p className="text-xs text-ink-muted">{request.response}</p> : null}

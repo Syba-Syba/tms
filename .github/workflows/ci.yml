@@ -47,3 +47,10 @@ jobs:
 
       - name: Build self-hosted web app
         run: npm run selfhost:build
+
+      # The hosted kit's scripts run under busybox/dash sh. shellcheck is preinstalled on
+      # GitHub's ubuntu runners. sh -n checks one script per call (later names are arguments).
+      - name: Check deploy scripts
+        run: |
+          for f in deploy/backup.sh deploy/restore.sh deploy/entrypoint.sh; do sh -n "$f"; done
+          shellcheck -s sh deploy/backup.sh deploy/restore.sh deploy/entrypoint.sh

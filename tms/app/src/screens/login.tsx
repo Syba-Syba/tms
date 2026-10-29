@@ -15,9 +15,12 @@ export function Login() {
   const [apiDown, setApiDown] = useState(false);
 
   // A wrong VITE_API_URL or a dead server should be named on screen, not guessed at.
+  // '/health' is public on every deployment ('/' 404s behind API Gateway). Any HTTP answer,
+  // even a 503 from a degraded health check, proves the API is reachable; only a network
+  // failure means it is not.
   useEffect(() => {
-    fetch(baseUrl + '/', { method: 'GET' })
-      .then((response) => setApiDown(!response.ok))
+    fetch(`${baseUrl.replace(/\/$/, '')}/health`, { method: 'GET' })
+      .then(() => setApiDown(false))
       .catch(() => setApiDown(true));
   }, []);
   const toast = useToast();
@@ -25,7 +28,12 @@ export function Login() {
   const location = useLocation();
   // Someone who followed a landlord's listings link and has no account yet keeps the link
   // through sign-up, so they land on that landlord's units afterwards.
-  const returnTo = (location.state as { from?: string } | null)?.from ?? '';
+  // The guard passes the target in router state; an expired session signs out with a full
+  // page load (api/client.ts), which cannot carry state, so it arrives as ?from= instead.
+  // Both come from the address bar, so both go through safeReturnPath.
+  const queryFrom = new URLSearchParams(location.search).get('from');
+  const returnTo =
+    (location.state as { from?: string } | null)?.from ?? (queryFrom ? safeReturnPath(queryFrom, '') : '');
   const returnParams = new URLSearchParams(returnTo.startsWith('/apply') ? returnTo.split('?')[1] ?? '' : '');
   const listing = returnParams.get('landlord');
   const listedUnit = returnParams.get('unit');
@@ -44,7 +52,7 @@ export function Login() {
       await startSession(result.token, result.user);
       // Back to wherever the guard caught them, e.g. a copied /apply?unit= link. The target
       // came out of the address bar, so anything leaving this origin falls back to home.
-      navigate(safeReturnPath((location.state as { from?: string } | null)?.from), {
+      navigate(safeReturnPath(returnTo), {
         replace: true,
       });
     } catch (error) {

@@ -1,4 +1,6 @@
 import { query } from './db';
+import { ApiError, tooManyRequests } from './http';
+import { secondStepsByAccount } from './ratelimit';
 import { hashRecoveryCode, matchingStep, openSecret } from './totp';
 
 type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
@@ -16,6 +18,23 @@ export async function twoStepEnabled(sub: string, run: Run = query): Promise<boo
  * one of the recovery codes, which then cannot be used again. Accepting a code records its
  * step, so the same six digits do not work twice.
  */
+/**
+ * The second step for a change made while signed in. A wrong or missing code is a 403, not a
+ * 401: the session is fine, and a 401 would sign the person out instead of showing the error.
+ * Five wrong codes in fifteen minutes and the account waits.
+ */
+export async function requireSecondStep(sub: string, code: unknown, message = 'Enter the current code from your authenticator app.'): Promise<void> {
+  if (!secondStepsByAccount.allows(sub)) {
+    throw tooManyRequests(`Too many wrong codes. Try again in ${Math.ceil(secondStepsByAccount.retryAfterSeconds(sub) / 60)} minutes.`);
+  }
+  if (typeof code !== 'string' || code.trim() === '') throw new ApiError(403, 'code_required', message);
+  if (!(await checkSecondStep(sub, code))) {
+    secondStepsByAccount.record(sub);
+    throw new ApiError(403, 'code_wrong', 'That code did not match. Use the newest code from your authenticator app.');
+  }
+  secondStepsByAccount.clear(sub);
+}
+
 export async function checkSecondStep(sub: string, code: string | undefined, run: Run = query): Promise<boolean> {
   if (!code) return false;
   const [row] = await run<{ secret: Buffer | null; last_step: string | null }>(

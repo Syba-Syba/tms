@@ -32,4 +32,26 @@ describe('parseCurrencyInput', () => {
     expect(parseCurrencyInput('')).toBeNull();
     expect(parseCurrencyInput('R')).toBeNull();
   });
+
+  it('reads a lone point before exactly three digits as thousands', () => {
+    expect(parseCurrencyInput('8.500')).toBe(850000);
+    expect(parseCurrencyInput('8,500')).toBe(850000);
+    expect(parseCurrencyInput('1234.5')).toBe(123450);
+    expect(parseCurrencyInput('1234.500')).toBe(123450);
+  });
+
+  it('reads mixed and spaced grouping', () => {
+    expect(parseCurrencyInput('12.500,00')).toBe(1250000);
+    expect(parseCurrencyInput('1 234,56')).toBe(123456);
+  });
+
+  it('rejects scientific notation and other words', () => {
+    expect(parseCurrencyInput('1e5')).toBeNull();
+    expect(parseCurrencyInput('5 rand')).toBeNull();
+    expect(parseCurrencyInput('ZAR 100')).toBe(10000);
+  });
+
+  it('keeps the sign of a negative amount', () => {
+    expect(parseCurrencyInput('-5')).toBe(-500);
+  });
 });

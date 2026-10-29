@@ -21,6 +21,7 @@ import { handler as units_create } from './handlers/units-create';
 import { handler as units_delete } from './handlers/units-delete';
 import { handler as units_update } from './handlers/units-update';
 import { handler as applications_decide } from './handlers/applications-decide';
+import { handler as applications_withdraw } from './handlers/applications-withdraw';
 import { handler as applications_list } from './handlers/applications-list';
 import { handler as documents_confirm } from './handlers/documents-confirm';
 import { handler as documents_presign } from './handlers/documents-presign';
@@ -28,6 +29,7 @@ import { handler as inspections_create } from './handlers/inspections-create';
 import { handler as inspections_findings } from './handlers/inspections-findings';
 import { handler as inspections_photo_presign } from './handlers/inspections-photo-presign';
 import { handler as inspections_sign } from './handlers/inspections-sign';
+import { handler as inspections_reopen } from './handlers/inspections-reopen';
 import { handler as invoices_render } from './handlers/invoices-render';
 import { handler as leases_generate } from './handlers/leases-generate';
 import { handler as leases_get } from './handlers/leases-get';
@@ -71,6 +73,7 @@ import { handler as bank_imports_resolve } from './handlers/bank-imports-resolve
 import { handler as expenses_create } from './handlers/expenses-create';
 import { handler as expenses_list } from './handlers/expenses-list';
 import { handler as expenses_update } from './handlers/expenses-update';
+import { handler as expenses_slip_confirm } from './handlers/expenses-slip-confirm';
 import { handler as reports_income_expense } from './handlers/reports-income-expense';
 import { handler as reports_arrears } from './handlers/reports-arrears';
 import { handler as me_privacy } from './handlers/me-privacy';
@@ -126,6 +129,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/applications', applications_create],
   ['GET', '/applications', applications_list],
   ['POST', '/applications/{id}/decision', applications_decide],
+  ['POST', '/applications/{id}/withdraw', applications_withdraw],
   ['POST', '/applications/{id}/documents/presign', documents_presign],
   ['POST', '/applications/{id}/documents/confirm', documents_confirm],
   ['GET', '/applications/{id}/credit-check', credit_check],
@@ -137,6 +141,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['PUT', '/inspections/{id}/findings', inspections_findings],
   ['POST', '/inspections/{id}/photos/presign', inspections_photo_presign],
   ['POST', '/inspections/{id}/signature', inspections_sign],
+  ['POST', '/inspections/{id}/reopen', inspections_reopen],
   ['POST', '/leases/{id}/payments', payments_record],
   ['GET', '/leases', leases_list],
   ['GET', '/leases/{id}', leases_get],
@@ -194,6 +199,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/expenses', expenses_list],
   ['PUT', '/expenses/{id}', expenses_update],
   ['DELETE', '/expenses/{id}', expenses_update],
+  ['POST', '/expenses/{id}/slip/confirm', expenses_slip_confirm],
   ['GET', '/reports/income-expense', reports_income_expense],
   ['GET', '/reports/arrears', reports_arrears],
   ['GET', '/me/privacy', me_privacy],

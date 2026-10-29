@@ -2,6 +2,7 @@ import { requireLeaseAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
 import { ageBucket } from '../domain/money';
+import { dateFromIso, sastToday } from '../domain/dates';
 import { bankOf } from '../lib/landlord-account';
 
 /** One statement per lease: invoices as debits, payments as credits, running balance,
@@ -68,7 +69,8 @@ export const handler = route(async (event) => {
     [leaseId],
   );
 
-  const today = new Date();
+  // Today in South Africa, as a date: the UTC instant still said yesterday until 02:00.
+  const today = dateFromIso(sastToday());
   const invoiced = invoices.reduce((sum, invoice) => sum + Number(invoice.total_cents), 0);
   const received = payments.reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
   const depositBalance = deposit.reduce(
@@ -84,7 +86,7 @@ export const handler = route(async (event) => {
       .filter((payment) => payment.invoice_id === invoice.id)
       .reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
     const outstanding = Number(invoice.total_cents) - paidOnInvoice;
-    if (outstanding > 0) ageing[ageBucket(new Date(invoice.due_on), today)]! += outstanding;
+    if (outstanding > 0) ageing[ageBucket(dateFromIso(invoice.due_on), today)]! += outstanding;
   }
 
   return json(200, {

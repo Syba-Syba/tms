@@ -143,4 +143,29 @@ describe('adding charges to a lease', () => {
     expect((await call('DELETE', `/leases/${LEASE}/charges/${added.body.id}`, OWNER)).status).toBe(200);
     expect((await invoiceFor(later))!.total).toBe('850000');
   });
+
+  it('puts a final-month charge on the last invoice when the lease ends, instead of losing it', async () => {
+    // Notice ends the lease today. This month's invoice is already due and no later month will
+    // be billed. Before, the charge went to pending_charge for a month never invoiced.
+    await db.query(`delete from invoice_line where invoice_id in (select id from invoice where lease_id = $1 and period_start > $2)`, [LEASE, `${thisMonth}-01`]);
+    await db.query(`delete from payment where lease_id = $1 and invoice_id in (select id from invoice where lease_id = $1 and period_start > $2)`, [LEASE, `${thisMonth}-01`]);
+    await db.query(`delete from invoice where lease_id = $1 and period_start > $2`, [LEASE, `${thisMonth}-01`]);
+    await db.query(`delete from pending_charge where lease_id = $1`, [LEASE]);
+    const [current] = await db.query<{ id: string }>(
+      `insert into invoice (lease_id, period_start, due_on, total_cents, status) values ($1, $2, $3::date - 1, 850000, 'issued')
+       on conflict (lease_id, period_start) do update set due_on = excluded.due_on, status = 'issued' returning id`,
+      [LEASE, `${thisMonth}-01`, today],
+    );
+    const [notice] = await db.query<{ id: string }>(
+      `insert into termination (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days)
+       values ($1, 'tenant', 'end_of_term', $2::date - 30, $2::date, 20) returning id`,
+      [LEASE, today],
+    );
+    const added = await call('POST', `/leases/${LEASE}/charges`, OWNER, { period: thisMonth, kind: 'utility', description: 'Final water', amountCents: 45_000 });
+    expect(added.body).toMatchObject({ billed: true, onMonth: thisMonth });
+    expect(await db.query('select 1 from pending_charge where lease_id = $1', [LEASE])).toHaveLength(0);
+    const [line] = await db.query<{ invoice_id: string }>(`select invoice_id from invoice_line where description = 'Final water'`);
+    expect(line!.invoice_id).toBe(current!.id);
+    await db.query('delete from termination where id = $1', [notice!.id]);
+  });
 });

@@ -36,15 +36,20 @@ export const handler = route(async (event) => {
   }
   if (size === null) throw badRequest('That upload has not landed yet. Retry the upload, then confirm.');
   // A presigned PUT does not bind the body to the declared size, so the ceiling is checked here.
-  if (size > MAX_DOCUMENT_BYTES) throw badRequest('Files must be under 10 MB.');
+  // A refused upload is deleted, not left in storage where no row (and so no erasure) finds it.
+  const refuse = async (message: string) => {
+    await storage().remove(input.key).catch(() => undefined);
+    return badRequest(message);
+  };
+  if (size > MAX_DOCUMENT_BYTES) throw await refuse('Files must be under 10 MB.');
 
   // The stored type follows the bytes, not the label the client sent.
   const bytes = await storage().get(input.key);
   const image = sniffImageType(bytes);
   const contentType = image === 'png' ? 'image/png' : image === 'jpg' ? 'image/jpeg' : isPdf(bytes) ? 'application/pdf' : null;
-  if (!contentType) throw badRequest('That upload is not a JPEG, PNG or PDF.');
+  if (!contentType) throw await refuse('That upload is not a JPEG, PNG or PDF.');
 
-  await withTransaction(async (run) => {
+  const replaced = await withTransaction(async (run) => {
     const [application] = await run<{ status: string }>(
       'select status from application where id = $1 for update',
       [applicationId],
@@ -58,20 +63,25 @@ export const handler = route(async (event) => {
       'select id from application_document where s3_key = $1',
       [input.key],
     );
-    if (existing) return;
-    // The upload screen keeps one document per kind, so Replace supersedes the earlier one.
+    if (existing) return [];
+    // The upload screen keeps one document per kind, so Replace supersedes the earlier one, and
+    // its file goes with it. Left in storage, an old ID copy survived erasure and the sweep,
+    // which only find files through these rows.
+    let old: { s3_key: string }[] = [];
     if (kind !== 'other') {
-      await run('delete from application_document where application_id = $1 and kind = $2', [
-        applicationId,
-        kind,
-      ]);
+      old = await run<{ s3_key: string }>(
+        'delete from application_document where application_id = $1 and kind = $2 returning s3_key',
+        [applicationId, kind],
+      );
     }
     await run(
       `insert into application_document (application_id, kind, s3_key, content_type, size_bytes)
        values ($1, $2, $3, $4, $5)`,
       [applicationId, kind, input.key, contentType, size],
     );
+    return old.map((row) => row.s3_key);
   });
+  for (const key of replaced) await storage().remove(key).catch(() => undefined);
 
   return json(200, { confirmed: true });
 });

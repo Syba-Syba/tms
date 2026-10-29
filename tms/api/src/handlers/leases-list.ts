@@ -58,7 +58,8 @@ export const handler = route(async (event) => {
        left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
        left join renewal r on r.lease_id = l.id and r.status = 'offered'
       where l.status in ('active', 'scheduled', 'out_for_signature')
-        and (($1 and ll.cognito_sub = $2) or a.cognito_sub = $2)
+        -- Any member of the landlord's team, not only the owner: agents saw an empty list.
+        and (($1 and exists (select 1 from landlord_member m where m.landlord_id = ll.id and m.sub = $2)) or a.cognito_sub = $2)
       order by l.start_date desc`,
     [isLandlord, person.sub],
   );
