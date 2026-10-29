@@ -444,7 +444,9 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
   const [photos, setPhotos] = useState<{ id: string; url: string }[]>([]);
   const [photoBusy, setPhotoBusy] = useState<string | null>(null);
 
-  // The drawer is reused across units, so these fields follow whichever unit opens it.
+  // The drawer is reused across units, so these fields follow whichever unit opens it. Adding
+  // has no unit id (null every time), so keying on it alone kept the last unit's rent and
+  // deposit in a fresh Add-unit drawer; the property and each opening reset it too.
   useEffect(() => {
     setRentCents(unit?.monthlyRentCents ?? 0);
     setDepositCents(unit?.depositCents ?? 0);
@@ -461,7 +463,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
         : blankListing,
     );
     setPhotos(unit?.listing.photos ?? []);
-  }, [unit?.id]);
+  }, [unit?.id, property?.id, open]);
 
   const addPhoto = async () => {
     if (!unit) return;

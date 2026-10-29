@@ -8,6 +8,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError, openDocument } from '../api/client';
 import { formatDate } from '../lib/format';
+import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
 
@@ -87,7 +88,8 @@ function Slips() {
     try {
       await api.post(`/payment-proofs/${proofId}/decision`, body);
       await queryClient.invalidateQueries({ queryKey: ['payment-proofs'] });
-      await queryClient.invalidateQueries({ queryKey: ['leases'] });
+      // An accepted slip records a payment: lease, arrears, statement and reports all move.
+      await invalidateMoneyCaches(queryClient);
       setAccepting(null);
       setRejecting(null);
       toast.show({ title: done, tone: 'success' });
@@ -323,7 +325,8 @@ function ImportReview({
       queryClient.setQueryData(['bank-import', importId], result.import);
       await queryClient.invalidateQueries({ queryKey: ['bank-imports'] });
       await queryClient.invalidateQueries({ queryKey: ['payment-proofs'] });
-      await queryClient.invalidateQueries({ queryKey: ['leases'] });
+      // A matched line records a payment: lease, arrears, statement and reports all move.
+      await invalidateMoneyCaches(queryClient);
       const failed = result.results.filter((item) => !item.ok);
       toast.show(
         failed.length

@@ -117,10 +117,14 @@ export function TenantHome() {
           happen, the law treats the place as undamaged and nothing can be deducted from your
           deposit.
         </Alert>
-      ) : endingIn <= 60 ? (
+      ) : endingIn >= 0 && endingIn <= 60 ? (
         <Alert tone="info" title={`Your lease ends in ${endingIn} days`} className="mb-4">
           Your landlord should be in touch about renewing.
         </Alert>
+      ) : endingIn < 0 && lease.status === 'active' ? (
+        // A negative count used to read "ends in -40 days". A fixed-term lease that runs past
+        // its end date with nobody giving notice carries on month to month (CPA s14).
+        <Alert tone="info" title="Your lease has passed its end date and continues month to month." className="mb-4" />
       ) : null}
 
       </div>

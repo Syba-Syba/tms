@@ -19,6 +19,7 @@ import {
 } from '@hlonie/toolbox/ui';
 import { api, type ApplicationSummary, humanError } from '../api/client';
 import { formatDate } from '../lib/format';
+import { parsePercent } from '../lib/percent';
 import { QueryError } from '../components/query-state';
 import { createAndRender } from '../lib/uploads';
 import { CreditCheckPanel } from '../components/credit-check';
@@ -83,8 +84,9 @@ export function LandlordQueue() {
       setDeclining(null);
       setDeclineReason('');
       // Approving holds the unit and declining frees it, which the properties screen shows.
+      // ['applications'] is a prefix: it refetches this list and home's pending count too.
       queryClient.invalidateQueries({ queryKey: ['properties'] });
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
     } catch (error) {
       toast.show({ title: 'Decision not recorded', description: humanError(error), tone: 'danger' });
     } finally {
@@ -148,7 +150,7 @@ export function LandlordQueue() {
           api.post<{ id: string }>(`/applications/${item.id}/lease`, {
             startDate: terms.startDate,
             months: Number(terms.months),
-            escalationPct: Number(terms.escalationPct),
+            escalationPct: parsePercent(terms.escalationPct), // '7,5' is 7.5, not NaN
           }),
         (leaseId) => api.post(`/leases/${leaseId}/render`, {}),
       );

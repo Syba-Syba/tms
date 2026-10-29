@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
@@ -34,6 +34,7 @@ const DELIVERABLE = new Set(['email']);
 
 export function NotificationPreferences() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [rows, setRows] = useState<Preference[]>([]);
   const [saving, setSaving] = useState(false);
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -62,6 +63,9 @@ export function NotificationPreferences() {
           .filter((row) => !row.locked)
           .map(({ category, channel, enabled }) => ({ category, channel, enabled })),
       });
+      // Otherwise the cached copy still holds the old values, and leaving and returning
+      // to Settings showed them as if the save had not happened.
+      await queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
       toast.show({ title: 'Saved', tone: 'success' });
     } catch (error) {
       toast.show({ title: 'Not saved', description: humanError(error), tone: 'danger' });

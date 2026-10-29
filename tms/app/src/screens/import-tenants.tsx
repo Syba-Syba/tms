@@ -8,6 +8,7 @@ import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { localToday } from '../lib/dates';
 import { PAGE } from '../lib/layout';
+import { cleanPercentInput, parsePercent } from '../lib/percent';
 
 interface Unit { id: string; code: string; status: 'vacant' | 'held' | 'occupied' }
 interface Property { id: string; name: string; units: Unit[] }
@@ -86,7 +87,7 @@ export function ImportTenants() {
         startDate: form.startDate,
         endDate: form.endDate,
         monthlyRentCents: form.monthlyRentCents ?? 0,
-        escalationPct: Number(form.escalationPct || 0),
+        escalationPct: parsePercent(form.escalationPct),
         depositHeldCents: form.depositHeldCents ?? 0,
         currentMonthPaid: form.currentMonthPaid === 'yes',
         arrearsCents: form.owes ? (form.arrearsCents ?? 0) : 0,
@@ -217,7 +218,7 @@ export function ImportTenants() {
               </Field>
               <Field label="Yearly escalation" htmlFor="imp-esc" hint="Percent, on each lease anniversary.">
                 <Input id="imp-esc" inputMode="decimal" value={form.escalationPct} placeholder="0"
-                  onChange={(event) => setForm({ ...form, escalationPct: event.target.value.replace(/[^0-9.]/g, '') })} />
+                  onChange={(event) => setForm({ ...form, escalationPct: cleanPercentInput(event.target.value) })} />
               </Field>
               <Field label="Deposit you hold" htmlFor="imp-dep">
                 <CurrencyInput id="imp-dep" cents={form.depositHeldCents} onCentsChange={(next) => setForm({ ...form, depositHeldCents: next })} />

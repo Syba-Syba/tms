@@ -14,6 +14,7 @@ import { addDays, localToday } from '../lib/dates';
 import { formatDate, status } from '../lib/format';
 import { randomId } from '../lib/ids';
 import { useOpenDocument } from '../lib/open-document';
+import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 
 interface Lease {
@@ -87,9 +88,9 @@ export function LeaseDetail() {
     try {
       await fn();
       toast.show({ title: message, tone: 'success' });
-      queryClient.invalidateQueries({ queryKey: ['leases'] });
-      // A payment can clear the arrears, or bring the next reminder forward.
-      queryClient.invalidateQueries({ queryKey: ['arrears', leaseId] });
+      // A payment can clear the arrears, or bring the next reminder forward, and it moves the
+      // statement and both reports too; refetch() alone left those stale.
+      void invalidateMoneyCaches(queryClient);
       refetch();
     } catch (error) {
       toast.show({ title: 'That did not work', description: humanError(error), tone: 'danger' });

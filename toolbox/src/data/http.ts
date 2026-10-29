@@ -73,7 +73,12 @@ export function createHttpClient(options: HttpClientOptions) {
     // A 401 on a request that carried no token is not an expired session. Treating it as one
     // reloaded the sign-in page on a wrong password, hid the error, and sent the attempt twice,
     // which counted double against the lockout.
-    if (response.status === 401 && onUnauthorised && sentToken) {
+    //
+    // Even with a token, only a 401 that says the session itself is dead ('unauthorised', or no
+    // readable body at all, as a gateway sends) signs out. A 401 for a wrong confirmation code
+    // or password inside the app is an answer for the screen to show, not a reason to throw the
+    // user out mid-form. Read from a clone so the error path below can still read the body.
+    if (response.status === 401 && onUnauthorised && sentToken && isDeadSession(await safeBody(response.clone()))) {
       refreshing ??= Promise.resolve(onUnauthorised()).finally(() => {
         refreshing = null;
       });
@@ -114,6 +119,17 @@ export function createHttpClient(options: HttpClientOptions) {
     delete: <T>(path: string, options?: RequestOptions) =>
       request<T>(path, { ...options, method: 'DELETE' }),
   };
+}
+
+/**
+ * Whether a 401 body means the session is gone. The API answers a dead or invalid token with
+ * error.code 'unauthorised'; anything else carrying a code is a refusal the screen explains.
+ * A missing or unparseable body (a gateway or proxy 401) is treated as a dead session.
+ */
+export function isDeadSession(body: unknown): boolean {
+  const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  if (body === null || body === undefined || typeof body !== 'object' || code === undefined) return true;
+  return code === 'unauthorised';
 }
 
 export type HttpClient = ReturnType<typeof createHttpClient>;

@@ -13,6 +13,9 @@ services:
       POSTGRES_DB: tms
       POSTGRES_USER: tms_app
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.production}
+      # Passwords are checked on the socket too, not trusted. This only applies when the data
+      # volume is first created; an existing database keeps its pg_hba.conf (see README).
+      POSTGRES_INITDB_ARGS: "--auth-local=scram-sha-256 --auth-host=scram-sha-256"
     volumes:
       - db:/var/lib/postgresql/data
       # The app reaches Postgres through its socket, never a port: nothing else can connect.
@@ -68,9 +71,12 @@ services:
     image: mirror.gcr.io/library/postgres:16-alpine
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/backup.sh"]
+    # Still the whole file, for BACKUP_* and the RCLONE_CONFIG_* variables of whatever remote is
+    # configured, so this container also holds the app's secrets. See README, "Hardening still to do".
     env_file: .env.production
     environment:
       PGHOST: /var/run/postgresql
+      PGPASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.production}
       PGDATABASE: tms
       PGUSER: tms_app
     volumes:

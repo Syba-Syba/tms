@@ -7,6 +7,7 @@ import {
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { formatDate, formatMonth, status } from '../lib/format';
+import { localToday } from '../lib/dates';
 import { QueryState } from '../components/query-state';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { Money } from '../components/money';
@@ -40,7 +41,8 @@ const proofLabel = { pending: 'Waiting for landlord', accepted: 'Accepted', reje
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 const MAX_BYTES = 10 * 1024 * 1024;
-const today = () => new Date().toISOString().slice(0, 10);
+// The device's calendar (SAST for our users), not UTC: before 02:00 UTC was still yesterday.
+const today = localToday;
 
 const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -61,7 +63,11 @@ function statementCsv(statement: Statement): string {
   return rows.map((row) => row.map(csvCell).join(',')).join('\n');
 }
 
-const blankSlip = { invoiceId: '', amountCents: null as number | null, paidOn: today(), reference: '' };
+// A function, not a constant: computed at module load, paidOn stayed on the day the app was
+// opened, so a tab left open overnight offered yesterday as the payment date.
+const blankSlip = () => ({ invoiceId: '', amountCents: null as number | null, paidOn: today(), reference: '' });
+type Slip = ReturnType<typeof blankSlip>;
+const untouched = (slip: Slip) => !slip.invoiceId && slip.amountCents === null && !slip.reference;
 
 export function TenantRent() {
   const { leaseId } = useParams();
@@ -126,7 +132,7 @@ export function TenantRent() {
       await api.post(`/payment-proofs/${created.proofId}/submit`, {});
       await queryClient.invalidateQueries({ queryKey: ['statement', leaseId] });
       setShowSlip(false);
-      setSlip(blankSlip);
+      setSlip(blankSlip());
       setFile(null);
       toast.show({ title: 'Proof sent', description: 'Your landlord checks it against their account.', tone: 'success' });
     } catch (error) {
@@ -180,7 +186,11 @@ export function TenantRent() {
             Use it exactly, so your payment is matched to your unit. Your deposit stands at{' '}
             {formatZar((data?.depositBalanceCents ?? 0) / 100)}, interest included.
           </p>
-          <Button block variant="outline" disabled={!data} onClick={() => setShowSlip(true)}>
+          <Button block variant="outline" disabled={!data} onClick={() => {
+            // Fresh date each time it opens, unless they left a half-filled slip to come back to.
+            setSlip((current) => (untouched(current) ? blankSlip() : current));
+            setShowSlip(true);
+          }}>
             Send proof of payment
           </Button>
         </CardBody>

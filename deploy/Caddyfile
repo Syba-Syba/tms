@@ -2,6 +2,8 @@
 # the address landlords use, e.g. app.threshold.co.za; its DNS must point at this server.
 {$DOMAIN} {
 	encode zstd gzip
+	# Browsers that have been here once refuse plain HTTP to this address for a year.
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy app:3001
 	# Uploads go through the API, which caps them at 15 MB; this keeps anything larger off it.
 	request_body {

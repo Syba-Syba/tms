@@ -6,6 +6,7 @@ import { api, humanError } from '../api/client';
 import { addDays, localToday } from '../lib/dates';
 import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
+import { invalidateMoneyCaches } from '../lib/money-caches';
 import { Money } from './money';
 
 type Step = 'reminder_1' | 'reminder_3' | 'reminder_7' | 'letter_of_demand';
@@ -70,8 +71,8 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
       await fn();
       toast.show({ title: message, tone: 'success' });
       await refetch();
-      queryClient.invalidateQueries({ queryKey: ['lease', leaseId] });
-      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      // Lease, arrears and both reports (the old ['reports'] key matched no query).
+      void invalidateMoneyCaches(queryClient);
     } catch (error) {
       toast.show({ title: 'That did not work', description: humanError(error), tone: 'danger' });
     } finally {

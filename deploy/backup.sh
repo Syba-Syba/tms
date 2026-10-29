@@ -13,35 +13,50 @@ umask 077
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 # 00:30 UTC is 02:30 in Johannesburg (no daylight saving), before the morning jobs run.
 AT_UTC="${BACKUP_AT_UTC:-00:30}"
-DIR=/backups
+DIR="${BACKUP_DIR:-/backups}"
 
 log() { echo "$(date -u +%FT%TZ) backup: $*"; }
 
+# Every step below ends in `|| return 1`: backup is called as `backup || log ...`, and on the
+# left of || POSIX sh ignores set -e inside the function, so a failed step would otherwise carry
+# on and still write last-ok.
 offsite() {
   [ -n "${BACKUP_REMOTE:-}" ] || return 0
-  command -v rclone >/dev/null 2>&1 || apk add --no-cache rclone >/dev/null
-  rclone copy "$DIR" "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --max-age 48h
-  log "copied to $BACKUP_REMOTE"
+  command -v rclone >/dev/null 2>&1 || apk add --no-cache rclone >/dev/null || return 1
+  rclone copy "$DIR" "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --max-age 48h || return 1
+  # The copies off the server are kept as long as the ones here, and no longer.
+  rclone delete "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --min-age "${KEEP_DAYS}d" || return 1
+  log "copied to $BACKUP_REMOTE, pruned copies there older than $KEEP_DAYS days"
 }
 
 backup() {
-  stamp="$(date -u +%Y-%m-%dT%H%MZ)"
-  pg_dump --format=custom --file="$DIR/db-$stamp.dump.partial"
+  stamp="$(date -u +%Y-%m-%dT%H%MZ)" || return 1
+  db="$DIR/db-$stamp.dump"
+  files="$DIR/storage-$stamp.tar.gz"
+  # Left behind by a backup that died part-way.
+  find "$DIR" -name '*.partial' -mmin +1440 -delete || return 1
+  pg_dump --format=custom --file="$db.partial" || { log "FAILED: pg_dump"; rm -f "$db.partial"; return 1; }
   # A dump that pg_restore cannot list is not a backup.
-  pg_restore --list "$DIR/db-$stamp.dump.partial" >/dev/null
-  mv "$DIR/db-$stamp.dump.partial" "$DIR/db-$stamp.dump"
-  tar -czf "$DIR/storage-$stamp.tar.gz.partial" -C /data storage
-  mv "$DIR/storage-$stamp.tar.gz.partial" "$DIR/storage-$stamp.tar.gz"
-  find "$DIR" -name 'db-*.dump' -mtime +"$KEEP_DAYS" -delete
-  find "$DIR" -name 'storage-*.tar.gz' -mtime +"$KEEP_DAYS" -delete
-  offsite
+  pg_restore --list "$db.partial" >/dev/null || { log "FAILED: pg_restore cannot read $db.partial"; return 1; }
+  mv "$db.partial" "$db" || { log "FAILED: mv $db"; return 1; }
+  tar -czf "$files.partial" -C /data storage || { log "FAILED: tar of /data/storage"; rm -f "$files.partial"; return 1; }
+  mv "$files.partial" "$files" || { log "FAILED: mv $files"; return 1; }
+  find "$DIR" -name 'db-*.dump' -mtime +"$KEEP_DAYS" -delete || return 1
+  find "$DIR" -name 'storage-*.tar.gz' -mtime +"$KEEP_DAYS" -delete || return 1
+  if ! offsite; then
+    # The dump here is good and kept, but a backup only on this server is not a backup: no
+    # last-ok, so /health turns red and someone looks.
+    log "FAILED: OFFSITE COPY TO $BACKUP_REMOTE FAILED. db-$stamp.dump and storage-$stamp.tar.gz are kept here only; last-ok not updated"
+    return 1
+  fi
   # The app's health check reads this file's age: no fresh backup, no green light.
-  date -u +%FT%TZ > "$DIR/last-ok"
+  date -u +%FT%TZ > "$DIR/last-ok" || return 1
   log "done: db-$stamp.dump, storage-$stamp.tar.gz"
 }
 
 check() {
-  newest="$(ls -1t "$DIR"/db-*.dump 2>/dev/null | head -n 1)"
+  # Stamps sort by name, so the last is the newest.
+  newest="$(find "$DIR" -maxdepth 1 -name 'db-*.dump' | sort | tail -n 1)"
   [ -n "$newest" ] || { log "no dump to check"; exit 1; }
   log "restoring $newest into tms_restore_check"
   dropdb --if-exists tms_restore_check
@@ -57,20 +72,20 @@ check() {
     [ "$restored" -gt 0 ] || [ "$live" -eq 0 ] || failed=1
   done
   dropdb tms_restore_check
-  [ "$failed" -eq 0 ] && log "restore check passed" || { log "restore check FAILED"; exit 1; }
+  if [ "$failed" -eq 0 ]; then log "restore check passed"; else log "restore check FAILED"; exit 1; fi
 }
 
 case "${1:-loop}" in
-  now) backup; exit 0 ;;
+  now) backup || { log "backup FAILED"; exit 1; }; exit 0 ;;
   check) check; exit 0 ;;
 esac
 
 # First start, or a server that was off overnight: back up now if the last one is a day old.
-if [ ! -f "$DIR/last-ok" ] || [ -n "$(find "$DIR/last-ok" -mmin +1440)" ]; then backup || log "backup failed"; fi
+if [ ! -f "$DIR/last-ok" ] || [ -n "$(find "$DIR/last-ok" -mmin +1440)" ]; then backup || log "backup FAILED"; fi
 while true; do
   now="$(date -u +%s)"
   next="$(date -u -d "$(date -u +%F) $AT_UTC" +%s 2>/dev/null || date -u -D '%Y-%m-%d %H:%M' -d "$(date -u +%F) $AT_UTC" +%s)"
   [ "$next" -gt "$now" ] || next=$((next + 86400))
   sleep $((next - now))
-  backup || log "backup failed; the health check turns red after 36 hours without one"
+  backup || log "backup FAILED; the health check turns red after 36 hours without one"
 done

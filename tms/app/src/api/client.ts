@@ -27,7 +27,12 @@ export const api = createHttpClient({
     // A dead token means every answer would be someone else's; sign in again.
     await Preferences.remove({ key: 'id_token' });
     localStorage.removeItem('tms.user');
-    window.location.assign('/login');
+    // A full page load cannot carry router state, so the page they were on travels as ?from=
+    // and login.tsx sends them back there (through safeReturnPath) once they sign in again.
+    const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.assign(
+      window.location.pathname.startsWith('/login') ? '/login' : `/login?from=${encodeURIComponent(here)}`,
+    );
   },
 });
 
