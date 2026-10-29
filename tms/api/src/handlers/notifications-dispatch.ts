@@ -126,11 +126,21 @@ const park = (id: string, reason: string) =>
 /** Five tries in twenty-five minutes rode straight through any outage. The gaps now grow. */
 const retryDelayMinutes = (attempt: number) => Math.min(5 * 2 ** (attempt - 1), 240);
 
-/** Runs every few minutes. Claims a batch, then sends or parks each row on its own merits. */
-export const handler = async () => {
-  const due = await query<Pending>(
+/** How long a claimed row is hidden from other runs. Longer than any batch takes to send. */
+const LEASE_MINUTES = 10;
+
+/**
+ * Claims up to a batch of due rows for this run. SKIP LOCKED only holds the rows until this
+ * statement ends, so the claim also pushes send_after out as a lease: an overlapping run (a
+ * slow batch, or a manual run) skips them instead of sending the same message again. Each row
+ * then becomes sent, parked, or pending with its own retry time; one stranded by a crash is
+ * retried when the lease runs out.
+ */
+export const claimBatch = () =>
+  query<Pending>(
     `update notification
-        set attempts = attempts + 1
+        set attempts = attempts + 1,
+            send_after = now() + interval '${LEASE_MINUTES} minutes'
       where id in (
         select id from notification
          where status = 'pending' and send_after <= now()
@@ -141,6 +151,10 @@ export const handler = async () => {
       returning id, channel, recipient_to, subject, body, attempts,
                 created_at < now() - interval '${STALE_AFTER_HOURS} hours' as stale`,
   );
+
+/** Runs every few minutes. Claims a batch, then sends or parks each row on its own merits. */
+export const handler = async () => {
+  const due = await claimBatch();
 
   const counts = { claimed: due.length, sent: 0, failed: 0, skipped: 0, stale: 0 };
 

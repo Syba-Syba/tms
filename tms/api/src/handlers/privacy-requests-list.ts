@@ -18,9 +18,12 @@ export const handler = route(async (event) => {
             r.created_at::text, r.response
        from privacy_request r
        join applicant a on a.cognito_sub = r.person_sub
-      where exists (
+      -- This landlord's own requests. Ones from before requests were per landlord have none,
+      -- and show to every landlord the person applied to, as they always did.
+      where r.landlord_id = $1
+         or (r.landlord_id is null and exists (
               select 1 from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
-               where ap.applicant_id = a.id and p.landlord_id = $1)
+               where ap.applicant_id = a.id and p.landlord_id = $1))
       order by (r.status = 'pending') desc, r.created_at desc
       limit 100`,
     [landlordId],
@@ -35,7 +38,7 @@ export const handler = route(async (event) => {
       status: row.status,
       createdAt: row.created_at,
       response: row.response,
-      blockedBecause: row.status === 'pending' ? await erasureBlockFor(row.person_sub) : null,
+      blockedBecause: row.status === 'pending' ? await erasureBlockFor(row.person_sub, landlordId) : null,
     });
   }
   return json(200, { items });

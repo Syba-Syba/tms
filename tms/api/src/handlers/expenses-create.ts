@@ -12,7 +12,8 @@ import { expenseSchema, slipSchema } from '../domain/expense';
 const schema = expenseSchema.extend({ slip: slipSchema.optional() });
 const EXTENSION = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' } as const;
 
-/** Records an expense. With a slip, it also hands back a signed link to upload the photo to. */
+/** Records an expense. With a slip, it also hands back a signed link to upload the photo to;
+    after the PUT, POST /expenses/{id}/slip/confirm checks the bytes and keeps a copy. */
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
   const landlordId = await landlordIdFor(person);

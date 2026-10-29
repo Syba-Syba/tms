@@ -74,12 +74,55 @@ export const handler = route(async (event) => {
       `select pp.amount_cents, pp.paid_on, pp.reference, pp.status, pp.reject_reason, pp.submitted_at
          from payment_proof pp join lease l on l.id = pp.lease_id where l.applicant_id = $1`,
     ),
-    maintenanceRequests: await query(
-      `select title, description, category, severity, status, created_at from ticket where created_by = $1`,
-      [person.sub],
+    // Every repair on their leases, not only the ones they reported, with what was said on each.
+    maintenanceRequests: await byApplicant(
+      `select t.title, t.description, t.category, t.severity, t.status, t.created_at, t.rating, t.rating_note
+         from ticket t where t.lease_id in (select id from lease where applicant_id = $1) order by t.created_at`,
+    ),
+    maintenanceUpdates: await byApplicant(
+      `select e.at, e.actor_role, e.kind, e.note from ticket_event e join ticket t on t.id = e.ticket_id
+        where t.lease_id in (select id from lease where applicant_id = $1) order by e.at`,
+    ),
+    maintenancePhotos: await byApplicant(
+      `select ph.phase, ph.content_type, ph.uploaded_at from ticket_photo ph join ticket t on t.id = ph.ticket_id
+        where t.lease_id in (select id from lease where applicant_id = $1)`,
+    ),
+    inspections: await byApplicant(
+      `select i.kind, i.status, i.scheduled_for, i.completed_at,
+              (select json_agg(json_build_object('room', f.room, 'item', f.item, 'condition', f.condition, 'note', f.note))
+                 from inspection_finding f where f.inspection_id = i.id) as findings
+         from inspection i where i.lease_id in (select id from lease where applicant_id = $1) order by i.scheduled_for`,
+    ),
+    // Where and how they signed: the address and browser are recorded as evidence of signing.
+    signatures: await byApplicant(
+      `select 'lease' as document, signed_at, ip_address::text, user_agent from lease_signature
+        where party = 'tenant' and lease_id in (select id from lease where applicant_id = $1)
+       union all
+       select 'inspection', s.signed_at, s.ip_address::text, s.user_agent from inspection_signature s
+         join inspection i on i.id = s.inspection_id where s.party = 'tenant' and i.lease_id in (select id from lease where applicant_id = $1)
+       order by signed_at`,
+    ),
+    endOfTenancy: await byApplicant(
+      `select t.initiated_by, t.reason, t.notice_given_on, t.effective_on, t.penalty_cents, t.status, t.refund_rule,
+              (select json_agg(json_build_object('description', d.description, 'amountCents', d.amount_cents))
+                 from deposit_deduction d where d.termination_id = t.id) as deposit_deductions
+         from termination t where t.lease_id in (select id from lease where applicant_id = $1)`,
+    ),
+    arrears: await byApplicant(
+      `select c.opened_on, c.closed_on, c.paused_until, c.pause_reason,
+              (select json_agg(json_build_object('step', st.step, 'takenOn', st.taken_on, 'outstandingCents', st.outstanding_cents) order by st.taken_on)
+                 from arrears_step st where st.case_id = c.id) as steps
+         from arrears_case c where c.lease_id in (select id from lease where applicant_id = $1)`,
+    ),
+    renewals: await byApplicant(
+      `select offered_on, respond_by, term_months, new_start_date, new_end_date, new_rent_cents, escalation_pct, status, decided_at
+         from renewal where lease_id in (select id from lease where applicant_id = $1)`,
+    ),
+    invitations: await byApplicant(
+      `select email, created_at, expires_at, accepted_at, revoked_at from tenant_invite where applicant_id = $1`,
     ),
     messagesSentToYou: await query(
-      `select channel, subject, status, created_at from notification where recipient_sub = $1
+      `select channel, recipient_to, subject, body, status, created_at from notification where recipient_sub = $1
         order by created_at desc limit 500`,
       [person.sub],
     ),
@@ -88,15 +131,20 @@ export const handler = route(async (event) => {
       [person.sub],
     ),
     consents: await query(
-      'select kind, version, accepted_at, ip_address from consent where person_sub = $1 order by accepted_at',
+      'select kind, version, accepted_at, ip_address, user_agent from consent where person_sub = $1 order by accepted_at',
       [person.sub],
     ),
     privacyRequests: await query(
       'select kind, status, note, response, created_at, decided_at from privacy_request where person_sub = $1',
       [person.sub],
     ),
+    // What they did, and what others did to their records (a landlord viewing their ID copy).
     activity: await query(
-      `select action, entity, at from audit_log where actor_sub = $1 order by at desc limit 1000`,
+      `select action, entity, at, actor_role from audit_log
+        where actor_sub = $1
+           or (entity = 'application' and entity_id in (select a.id from application a join applicant p on p.id = a.applicant_id where p.cognito_sub = $1))
+           or (entity = 'lease' and entity_id in (select l.id from lease l join applicant p on p.id = l.applicant_id where p.cognito_sub = $1))
+        order by at desc limit 2000`,
       [person.sub],
     ),
   };

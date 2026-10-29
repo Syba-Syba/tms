@@ -244,6 +244,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /bank-imports/{id}/resolve | landlord | confirm lines as payments, or set them aside |
 | POST, GET | /expenses | landlord | record an expense with an optional slip; list by period |
 | PUT, DELETE | /expenses/{id} | landlord | correct or remove an expense |
+| POST | /expenses/{id}/slip/confirm | landlord | after the slip's upload: checks its bytes and keeps a copy |
 | GET | /reports/income-expense | landlord | rent invoiced, collected, expenses and net per property, tax year by default |
 | GET | /reports/arrears | landlord | what each lease owes, aged 0, 30, 60, 90 and 90+ days |
 | GET, POST | /me/privacy, /me/consents | signed in | notice version accepted; accept the current one |
@@ -259,7 +260,8 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /applications/{id}/documents/presign | tenant | get a presigned S3 upload URL |
 | POST | /applications/{id}/documents/confirm | tenant | record an application document once its upload has landed |
 | GET | /applications | landlord | queue with rent to income band |
-| POST | /applications/{id}/decision | landlord | approve or decline with a reason |
+| POST | /applications/{id}/decision | landlord | approve or decline with a reason; one approved applicant per unit at a time |
+| POST | /applications/{id}/withdraw | both | the applicant withdraws until a lease is sent for signing; the landlord withdraws an approved one whose lease was never signed, cancelling it; frees the unit when nobody else has a claim on it |
 | POST | /applications/{id}/lease | landlord | generate the lease, sets it out for signature |
 | POST | /leases/{id}/signature | both | sign, activates the lease when both parties are on file |
 | GET | /properties | landlord | the portfolio: every unit with tenancy, rent and open applications |
@@ -273,9 +275,10 @@ Apple developer fee, and the service worker gives them offline reads.
 | GET | /contractors | landlord | the directory that builds itself from past assignments |
 | GET | /inspections/{id} | both | full inspection state: findings, photos, signatures, draft |
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
+| POST | /inspections/{id}/reopen | both | back to in progress to fix a disputed finding; withdraws any signature, refused once both have signed |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and five routes in all; the table lists the shape of each family rather than every verb.
+One hundred and eight routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
@@ -661,15 +664,20 @@ The landlord is the responsible party; the app is what they process personal inf
   sign-in for anyone without the current version, landlords included.
 - Settings, Your data: download everything held about you as one JSON file (the ID number shows
   its last four digits; it is never decrypted), and ask for erasure.
-- Erasure: an account that never applied goes at once. Otherwise the request waits for the
-  landlord, under Settings, Privacy requests, and on the overview. The system refuses to erase
-  while records must be kept: five years after a lease ends (Tax Administration Act, and the
-  Rental Housing Tribunal). A refusal needs a reason, which the person is emailed with the
+- Erasure: an account that never applied goes at once. Otherwise the request goes to each
+  landlord the person applied to or rented from, under Settings, Privacy requests, and on the
+  overview. Each landlord answers for its own records only. The account, sign-in and identity go
+  once every landlord asked has erased. The system refuses to erase while records must be kept:
+  five years after a lease with that landlord ends (Tax Administration Act, and the Rental
+  Housing Tribunal). A refusal needs a reason, which the person is emailed with the
   Information Regulator's address. Erasure replaces the person's details with placeholders,
-  deletes their documents, slips, lease PDFs and signature images, their sign-in and their
+  deletes their documents, slips, lease PDFs, signature images and repair photos, blanks what
+  they wrote on repair requests and their payment references, removes their name, email and
+  phone from the landlord's messages and the activity log, deletes their sign-in and their
   messages, and leaves amounts and dates so the books still add up.
 - Retention: `privacy-sweep` runs daily and deletes the documents of applications declined or
-  withdrawn more than twelve months ago.
+  withdrawn more than twelve months ago, of applications left undecided with no change for
+  twelve months, and of applications approved twelve months ago that never got a lease.
 
 What is not here yet: a named Information Officer per landlord shown in the notice, and
 correction of details by the person themselves (they ask the landlord today).

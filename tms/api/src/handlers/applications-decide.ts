@@ -6,6 +6,29 @@ import { badRequest, conflict, forbidden, json, notFound, parseBody, route } fro
 import { decisionSchema } from '../domain/application';
 import { logger } from '../lib/logger';
 import { notify } from '../lib/notify';
+import type { query } from '../lib/db';
+
+/**
+ * Puts a held unit back on the market, unless someone else still has a claim on it. Declining
+ * one applicant used to free the unit outright, so it went back on /listings while another
+ * applicant was approved or their lease was out for signature.
+ */
+export async function releaseUnitIfUnclaimed(run: typeof query, unitId: string, applicationId: string) {
+  await run(
+    `update unit set status = 'vacant'
+      where id = $1 and status = 'held'
+        and not exists (
+              select 1 from application a
+               where a.unit_id = $1 and a.id <> $2
+                 and a.status in ('submitted', 'screening', 'approved')
+                 and not exists (select 1 from lease l
+                                  where l.application_id = a.id and l.status in ('terminated', 'cancelled')))
+        and not exists (
+              select 1 from lease l
+               where l.unit_id = $1 and l.status in ('draft', 'out_for_signature', 'scheduled', 'active'))`,
+    [unitId, applicationId],
+  );
+}
 
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
@@ -47,6 +70,26 @@ export const handler = route(async (event) => {
       throw conflict(`This application is already ${application.status}.`);
     }
 
+    if (input.outcome === 'approved') {
+      // Locking the unit stops two approvals on it racing past the check below.
+      await run('select id from unit where id = $1 for update', [application.unit_id]);
+      // Two approvals on one unit left the second applicant with a lease that could never be
+      // generated, and only one live lease is allowed per unit.
+      const [rival] = await run<{ id: string }>(
+        `select a.id from application a
+          where a.unit_id = $1 and a.id <> $2 and a.status = 'approved'
+            and not exists (select 1 from lease l
+                             where l.application_id = a.id and l.status in ('terminated', 'cancelled'))
+          limit 1`,
+        [application.unit_id, id],
+      );
+      if (rival) {
+        throw conflict(
+          'Another applicant is already approved for this unit. Withdraw that application first.',
+        );
+      }
+    }
+
     await run(
       `update application
           set status = $2, decided_at = now(), decided_by = $3, decline_reason = $4, updated_at = now()
@@ -55,11 +98,7 @@ export const handler = route(async (event) => {
     );
 
     // Declining frees the unit again so it can be advertised without manual cleanup.
-    if (input.outcome === 'declined') {
-      await run("update unit set status = 'vacant' where id = $1 and status = 'held'", [
-        application.unit_id,
-      ]);
-    }
+    if (input.outcome === 'declined') await releaseUnitIfUnclaimed(run, application.unit_id, id);
 
     return {
       result: { id, status: input.outcome },

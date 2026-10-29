@@ -40,23 +40,35 @@ export const handler = route(async (event) => {
     );
     if (existing) throw conflict('A lease already exists for this application.');
 
-    const [created] = await run<{ id: string; start_date: string; end_date: string }>(
-      `insert into lease
-         (application_id, unit_id, applicant_id, start_date, end_date,
-          monthly_rent_cents, escalation_pct, deposit_cents, status)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, 'out_for_signature')
-       returning id, start_date, end_date`,
-      [
-        applicationId,
-        application.unit_id,
-        application.applicant_id,
-        input.startDate,
-        leaseEndDate(input.startDate, input.months ?? 12),
-        Number(application.monthly_rent_cents),
-        input.escalationPct,
-        input.depositCents ?? Number(application.deposit_cents),
-      ],
-    );
+    let created: { id: string; start_date: string; end_date: string } | undefined;
+    try {
+      [created] = await run<{ id: string; start_date: string; end_date: string }>(
+        `insert into lease
+           (application_id, unit_id, applicant_id, start_date, end_date,
+            monthly_rent_cents, escalation_pct, deposit_cents, status)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, 'out_for_signature')
+         returning id, start_date, end_date`,
+        [
+          applicationId,
+          application.unit_id,
+          application.applicant_id,
+          input.startDate,
+          leaseEndDate(input.startDate, input.months ?? 12),
+          Number(application.monthly_rent_cents),
+          input.escalationPct,
+          input.depositCents ?? Number(application.deposit_cents),
+        ],
+      );
+    } catch (error) {
+      // lease_one_live_per_unit: another applicant's lease for this unit is out for signature
+      // or running. This surfaced as a 500.
+      if ((error as { code?: string }).code === '23505') {
+        throw conflict(
+          'This unit already has a lease out for signature or running. Cancel that lease before generating another.',
+        );
+      }
+      throw error;
+    }
 
     return created!;
   });

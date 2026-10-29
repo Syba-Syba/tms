@@ -11,8 +11,9 @@ const schema = z.object({ note: z.string().trim().max(1000).optional() });
  * Asks for one's personal information to be erased (POPIA sections 11(3) and 24).
  *
  * Someone who never applied for anything is only an account, so it goes at once. Anyone who
- * applied or rented has records a landlord is responsible for, so the request waits for the
- * landlord, who erases it or refuses with a reason; the retention rule decides which they may do.
+ * applied or rented has records a landlord is responsible for, so the request waits for each
+ * landlord they dealt with. Each erases or refuses for their own records, with a reason; the
+ * retention rule decides which they may do. The account itself goes once all have erased.
  */
 export const handler = route(async (event) => {
   const person = caller(event);
@@ -32,10 +33,21 @@ export const handler = route(async (event) => {
     return json(200, { status: 'completed' });
   }
 
+  // Every landlord this person applied to or rented from, one request each, made together.
   const created = await query<{ id: string }>(
-    `insert into privacy_request (person_sub, note) values ($1, $2)
-     on conflict (person_sub) where status = 'pending' do nothing returning id`,
-    [person.sub, input.note ?? null],
+    `insert into privacy_request (person_sub, note, landlord_id)
+     select $1, $2, landlords.id from (
+       select distinct p.landlord_id as id
+         from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
+        where ap.applicant_id = $3
+       union
+       select distinct p.landlord_id
+         from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
+        where l.applicant_id = $3
+     ) landlords
+     where not exists (select 1 from privacy_request r where r.person_sub = $1 and r.landlord_id = landlords.id and r.status = 'pending')
+     returning id`,
+    [person.sub, input.note ?? null, applicant.id],
   );
   if (created.length === 0) throw conflict('You already have a request waiting. Your landlord will answer it.');
 
@@ -45,6 +57,7 @@ export const handler = route(async (event) => {
     action: 'privacy.erasure_requested',
     entity: 'privacy_request',
     entityId: created[0]!.id,
+    detail: { landlords: created.length },
   });
   return json(201, { status: 'pending', id: created[0]!.id });
 });

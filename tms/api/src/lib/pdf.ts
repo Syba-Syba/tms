@@ -370,6 +370,15 @@ export async function renderInspectionPdf(input: InspectionData) {
     draw(ctx, `${signature.name} · ${signature.party} · ${signature.signedAt}`, { x: MARGIN, y: ctx.y - 58, size: 8.5, font: ctx.body, color: MUTED });
     ctx.y -= 70;
   }
+  if (data.draft) {
+    // pdf-lib stamps the render time into the file, so two renders of the same draft hashed
+    // differently and each re-render withdrew the other party's signature. The draft is dated
+    // by the inspection instead, so an unchanged inspection always renders the same bytes.
+    const stamp = new Date(`${data.date.slice(0, 10)}T00:00:00Z`);
+    const fixed = Number.isNaN(stamp.getTime()) ? new Date(0) : stamp;
+    ctx.doc.setCreationDate(fixed);
+    ctx.doc.setModificationDate(fixed);
+  }
   return seal(ctx);
 }
 
