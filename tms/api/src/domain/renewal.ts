@@ -56,13 +56,19 @@ export function rentForWindow(input: {
   leaseStart: Date;
   window: BillingWindow;
 }): number {
-  const monthly = rentForPeriod(
-    input.baseRentCents,
-    input.escalationPct,
-    input.leaseStart,
-    startOfMonth(input.window.from),
-  );
-  return proRataCents(monthly, input.window);
+  const { window } = input;
+  const monthly = rentForPeriod(input.baseRentCents, input.escalationPct, input.leaseStart, startOfMonth(window.from));
+  // A lease that started mid-month escalates mid-month. Rating the whole anniversary month on
+  // its 1st billed it all at the old rent, so the days from the anniversary on are charged at
+  // the new rent instead, on actual days as any part month is.
+  const anniversary = new Date(input.leaseStart);
+  anniversary.setUTCFullYear(window.from.getUTCFullYear());
+  if (anniversary.getUTCFullYear() > input.leaseStart.getUTCFullYear() && anniversary > window.from && anniversary <= window.to) {
+    const escalated = rentForPeriod(input.baseRentCents, input.escalationPct, input.leaseStart, anniversary);
+    const oldDays = dayCount(window.from, anniversary) - 1;
+    return Math.round((monthly * oldDays + escalated * (window.days - oldDays)) / window.daysInMonth);
+  }
+  return proRataCents(monthly, window);
 }
 
 export function describeWindow(window: BillingWindow): string {

@@ -77,6 +77,35 @@ try {
   );
   // Which migrations ran is the owner's business; the app only reads it for the health check.
   await client.query(`revoke insert, update, delete on schema_migrations from ${ident(SERVER)}`);
+  // Records of money and history are never deleted by the app (checked against every
+  // `delete from` in tms/api/src), so a bug that runs SQL as the app cannot erase them either.
+  // Cascades from a deleted parent still work: Postgres runs those as the table owner.
+  // A new table still gets the default grants above; add it here if the app never deletes from it.
+  await client.query(
+    `revoke delete on payment, deposit_ledger, billing_event, billing_invoice, consent from ${ident(SERVER)}`,
+  );
+  // The audit trail is written once. Only a privacy erasure rewrites its detail column, and the
+  // privacy sweep deletes failed sign-ins older than 90 days (handlers/privacy-sweep.ts); the
+  // trigger lets the app delete those rows and nothing else. Other roles (the owner, restores,
+  // the tests) are not limited by it.
+  await client.query(`revoke update on audit_log from ${ident(SERVER)}`);
+  await client.query(`grant update (detail) on audit_log to ${ident(SERVER)}`);
+  await client.query(`revoke truncate on audit_log from ${ident(SERVER)}`);
+  await client.query(
+    `create or replace function tms_audit_log_keep() returns trigger language plpgsql as $$
+     begin
+       if current_user = ${literal(SERVER)}
+          and not (old.action = 'auth.login_failed' and old.at < now() - interval '90 days') then
+         raise exception 'audit_log rows are kept; only failed sign-ins older than 90 days expire'
+           using errcode = 'insufficient_privilege';
+       end if;
+       return old;
+     end $$`,
+  );
+  await client.query(`drop trigger if exists tms_audit_log_keep on audit_log`);
+  await client.query(
+    `create trigger tms_audit_log_keep before delete on audit_log for each row execute function tms_audit_log_keep()`,
+  );
   await client.query('commit');
 } catch (error) {
   await client.query('rollback');

@@ -100,6 +100,16 @@ sql tms_server DB_SERVER_PASSWORD "select count(*) from landlord" >/dev/null || 
 sql tms_server DB_SERVER_PASSWORD "create table drill (id int)" 2>/dev/null && fail "tms_server can create tables"
 sql tms_server DB_SERVER_PASSWORD "drop table audit_log" 2>/dev/null && fail "tms_server can drop tables"
 sql tms_server DB_SERVER_PASSWORD "delete from schema_migrations" 2>/dev/null && fail "tms_server can edit the migration log"
+# One transaction: the delete must fail, which rolls the drill's own row back with it.
+sql tms_server DB_SERVER_PASSWORD "insert into audit_log (action, entity) values ('drill.check', 'drill');
+  delete from audit_log where entity = 'drill'" 2>/dev/null && fail "tms_server can delete the audit log"
+sql tms_server DB_SERVER_PASSWORD "delete from audit_log where action = 'auth.login_failed' and at < now() - interval '90 days'" \
+  >/dev/null || fail "tms_server cannot expire old failed sign-ins (the privacy sweep needs it)"
+sql tms_server DB_SERVER_PASSWORD "delete from payment" 2>/dev/null && fail "tms_server can delete payments"
+sql tms_server DB_SERVER_PASSWORD "delete from deposit_ledger" 2>/dev/null && fail "tms_server can delete the deposit ledger"
+sql tms_server DB_SERVER_PASSWORD "update audit_log set action = action" 2>/dev/null && fail "tms_server can rewrite the audit log"
+sql tms_server DB_SERVER_PASSWORD "update audit_log set detail = detail where false" >/dev/null \
+  || fail "tms_server cannot erase audit details (privacy requests need it)"
 sql tms_backup DB_BACKUP_PASSWORD "select count(*) from local_credential" >/dev/null || fail "tms_backup cannot read"
 sql tms_backup DB_BACKUP_PASSWORD "update landlord set phone = '0'" 2>/dev/null && fail "tms_backup can write"
 echo "ok"

@@ -18,6 +18,26 @@ export function formatDate(value: string | null | undefined): string {
   return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}`;
 }
 
+const SAST_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Johannesburg',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * A moment in time (an *At or created_at from the API, in UTC) → "7 Oct 2026", on the
+ * Johannesburg calendar. formatDate would show the UTC day, a day early before 02:00 SAST.
+ * Plain YYYY-MM-DD dates (due dates, paid-on dates) still go through formatDate.
+ */
+export function formatInstant(value: string | null | undefined): string {
+  if (!value) return '';
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return value;
+  const part = (type: string) => SAST_DAY.formatToParts(at).find((p) => p.type === type)?.value ?? '';
+  return formatDate(`${part('year')}-${part('month')}-${part('day')}`);
+}
+
 /** "2026-10" or "2026-10-01" → "October 2026". */
 export function formatMonth(value: string | null | undefined): string {
   if (!value) return '';

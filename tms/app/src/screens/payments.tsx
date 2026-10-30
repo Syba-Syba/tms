@@ -6,8 +6,10 @@ import {
   Textarea, useToast,
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
-import { api, humanError, openDocument } from '../api/client';
-import { formatDate } from '../lib/format';
+import { api, humanError } from '../api/client';
+import { useOpenDocument } from '../lib/open-document';
+import { QueryError } from '../components/query-state';
+import { formatDate, formatInstant } from '../lib/format';
 import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
@@ -75,7 +77,8 @@ export function Payments() {
 function Slips() {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { data, isLoading } = useQuery({
+  const openDocument = useOpenDocument();
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['payment-proofs'],
     queryFn: () => api.get<{ items: ProofRow[] }>('/payment-proofs'),
   });
@@ -101,6 +104,7 @@ function Slips() {
   };
 
   if (isLoading) return <Spinner />;
+  if (isError) return <QueryError error={error} onRetry={() => void refetch()} what="The slips" />;
   if (!data?.items.length) {
     return <EmptyState title="No slips waiting" description="When a tenant sends proof of payment, it shows up here." />;
   }
@@ -266,6 +270,9 @@ function BankImport() {
         </CardBody>
       </Card>
 
+      {history.isError ? (
+        <QueryError error={history.error} onRetry={() => void history.refetch()} what="Earlier imports" />
+      ) : null}
       {history.data?.items.length ? (
         <div className="space-y-2">
           <h2 className="label">Earlier imports</h2>
@@ -275,7 +282,7 @@ function BankImport() {
                 <div>
                   <p className="text-body font-semibold">{item.fileName}</p>
                   <p className="text-xs text-ink-muted">
-                    {formatDate(item.importedAt)}, {item.lines} credits, {item.matched} matched
+                    {formatInstant(item.importedAt)}, {item.lines} credits, {item.matched} matched
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -302,7 +309,7 @@ function ImportReview({
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { data } = useQuery({
+  const { data, isError, error, refetch } = useQuery({
     queryKey: ['bank-import', importId],
     queryFn: () => api.get<ImportDetail>(`/bank-imports/${importId}`),
   });
@@ -310,6 +317,7 @@ function ImportReview({
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
+  if (isError) return <QueryError error={error} onRetry={() => void refetch()} what="The import" />;
   if (!data) return <Spinner />;
   const unmatched = data.lines.filter((line) => line.status === 'unmatched');
   const picked = (line: ImportLine) => choice[line.id] ?? line.suggestion?.leaseId ?? '';

@@ -388,7 +388,8 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
  */
 const server = createServer((request, response) => {
   handle(request, response).catch((error: unknown) => {
-    logger.error('Unhandled failure.', { error, method: request.method, path: request.url });
+    // The path only: the query string can carry a reset token or a signed file link.
+    logger.error('Unhandled failure.', { error, method: request.method, path: (request.url ?? '').split('?')[0] });
     sendJson(response, 500, {
       error: { code: 'internal_error', message: 'Something went wrong on our side.' },
     });

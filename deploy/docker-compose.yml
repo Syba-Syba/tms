@@ -5,8 +5,17 @@
 
 name: threshold
 
+# Docker keeps container logs forever by default and they can fill the disk. Every service keeps
+# at most 5 files of 10 MB (the local driver also compresses them); `docker compose logs` still works.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   db:
+    logging: *logging
     image: mirror.gcr.io/library/postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -27,6 +36,7 @@ services:
       retries: 10
 
   app:
+    logging: *logging
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -56,6 +66,7 @@ services:
         condition: service_healthy
 
   caddy:
+    logging: *logging
     image: mirror.gcr.io/library/caddy:2.8-alpine
     restart: unless-stopped
     ports:
@@ -72,6 +83,7 @@ services:
       - app
 
   backup:
+    logging: *logging
     image: mirror.gcr.io/library/postgres:16-alpine
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/backup.sh"]

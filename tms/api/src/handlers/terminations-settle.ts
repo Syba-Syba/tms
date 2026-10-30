@@ -112,38 +112,15 @@ export const handler = route(async (event) => {
     );
   }
 
-  const [ledger] = await query<{ deposit: string; interest: string; already_out: string }>(
-    `select coalesce(sum(amount_cents) filter (where entry_type = 'received'), 0)::text as deposit,
-            coalesce(sum(amount_cents) filter (where entry_type = 'interest'), 0)::text as interest,
-            coalesce(sum(amount_cents) filter (where entry_type in ('deduction', 'refund')), 0)::text
-              as already_out
-       from deposit_ledger where lease_id = $1`,
-    [context.lease_id],
-  );
-  // Each open invoice less what was paid against it. Netting every payment on the lease
-  // against every invoice overstated arrears whenever a paid invoice sat beside an unpaid one.
-  // Rent paid above an invoice's total is a credit: a fully paid month that a notice later
-  // cut short. It first offsets arrears; whatever is left goes back to the tenant.
-  const [outstanding] = await query<{ arrears: string; credit: string }>(
-    `with owing as (
-       select i.status, i.total_cents - coalesce((select sum(p.amount_cents) from payment p
-                                                  where p.invoice_id = i.id), 0) as owed
-         from invoice i
-        where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
-     )
-     select coalesce(sum(owed) filter (where status in ('issued', 'part_paid') and owed > 0), 0)::text as arrears,
-            coalesce(sum(-owed) filter (where owed < 0), 0)::text as credit
-       from owing`,
-    [context.lease_id],
-  );
-  const grossArrears = Number(outstanding?.arrears ?? 0);
-  const rentCredit = Number(outstanding?.credit ?? 0);
+  // A rent credit first offsets arrears; whatever is left goes back to the tenant.
+  const balances = await readBalances(query, context.lease_id);
+  const { grossArrears, rentCredit } = balances;
 
   // Anything already paid out or deducted has left the deposit and cannot be refunded twice.
-  const alreadyOut = Number(ledger?.already_out ?? 0);
+  const alreadyOut = balances.alreadyOut;
   const summary = reconcile({
-    depositCents: Number(ledger?.deposit ?? 0),
-    interestCents: Number(ledger?.interest ?? 0),
+    depositCents: balances.deposit,
+    interestCents: balances.interest,
     deductionsCents:
       deductions.reduce((sum, row) => sum + Number(row.amount_cents), 0) + alreadyOut,
     arrearsCents: Math.max(0, grossArrears - rentCredit),
@@ -238,6 +215,20 @@ export const handler = route(async (event) => {
       [terminationId],
     );
     if (!locked || locked.status === 'settled') throw conflict('This deposit is already settled.');
+    // The figures above were read before the statement rendered, and a payment recorded in
+    // that time was then taken off the deposit as arrears as well: the full stale arrears went
+    // to the ledger while only what was still owing paid the invoices. The invoices are locked
+    // so nothing more can land on them, and the statement is only good if nothing changed.
+    const current = await readBalances(run, context.lease_id, true);
+    if (
+      current.grossArrears !== grossArrears ||
+      current.rentCredit !== rentCredit ||
+      current.deposit !== balances.deposit ||
+      current.interest !== balances.interest ||
+      current.alreadyOut !== alreadyOut
+    ) {
+      throw conflict('Payments changed while the statement was prepared. Try again.');
+    }
 
     // The ledger is the record. Every claim and the payout land in it as entries, and they
     // must bring the held balance to zero: arrears and the penalty were missing from it, so
@@ -264,7 +255,7 @@ export const handler = route(async (event) => {
     if (summary.arrearsCents > 0) {
       // What came off the deposit for arrears pays the open invoices, oldest first. Left open,
       // the statement still showed the tenant owing rent the deposit had already covered.
-      let applied = await post(summary.arrearsCents, 'Rent arrears');
+      // The ledger records what was actually applied to them, never more.
       const open = await run<{ id: string; owing: string }>(
         `select i.id, (i.total_cents - coalesce((select sum(p.amount_cents) from payment p
                                                   where p.invoice_id = i.id), 0))::text as owing
@@ -274,6 +265,8 @@ export const handler = route(async (event) => {
           for update`,
         [context.lease_id],
       );
+      const owing = open.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.owing)), 0);
+      let applied = await post(Math.min(summary.arrearsCents, owing), 'Rent arrears');
       for (const invoice of open) {
         const amount = Math.min(applied, Number(invoice.owing));
         if (amount <= 0) continue;
@@ -377,6 +370,47 @@ export const handler = route(async (event) => {
 });
 
 type SettleRun = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/**
+ * The deposit held and what the tenant owes or is owed in rent. Each open invoice less what was
+ * paid against it: netting every payment on the lease against every invoice overstated arrears
+ * whenever a paid invoice sat beside an unpaid one. Rent paid above an invoice's total is a
+ * credit, a fully paid month that a notice later cut short. With `lock`, the invoices are held
+ * for update, so no payment can land on them before the caller's transaction ends.
+ */
+async function readBalances(run: SettleRun, leaseId: string, lock = false) {
+  const [ledger] = await run<{ deposit: string; interest: string; already_out: string }>(
+    `select coalesce(sum(amount_cents) filter (where entry_type = 'received'), 0)::text as deposit,
+            coalesce(sum(amount_cents) filter (where entry_type = 'interest'), 0)::text as interest,
+            coalesce(sum(amount_cents) filter (where entry_type in ('deduction', 'refund')), 0)::text
+              as already_out
+       from deposit_ledger where lease_id = $1`,
+    [leaseId],
+  );
+  const invoices = await run<{ status: string; owed: string }>(
+    `select i.status, (i.total_cents - coalesce((select sum(p.amount_cents) from payment p
+                                                 where p.invoice_id = i.id), 0))::text as owed
+       from invoice i
+      where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
+      order by i.id
+      ${lock ? 'for update' : ''}`,
+    [leaseId],
+  );
+  let grossArrears = 0;
+  let rentCredit = 0;
+  for (const invoice of invoices) {
+    const owed = Number(invoice.owed);
+    if (owed > 0 && invoice.status !== 'paid') grossArrears += owed;
+    if (owed < 0) rentCredit -= owed;
+  }
+  return {
+    deposit: Number(ledger?.deposit ?? 0),
+    interest: Number(ledger?.interest ?? 0),
+    alreadyOut: Number(ledger?.already_out ?? 0),
+    grossArrears,
+    rentCredit,
+  };
+}
 
 /**
  * Moves payments sitting above an invoice's total onto the lease's open invoices, oldest first.

@@ -18,7 +18,7 @@ import {
   useToast,
 } from '@hlonie/toolbox/ui';
 import { api, type ApplicationSummary, humanError } from '../api/client';
-import { formatDate } from '../lib/format';
+import { formatDate, formatInstant } from '../lib/format';
 import { parsePercent } from '../lib/percent';
 import { QueryError } from '../components/query-state';
 import { createAndRender } from '../lib/uploads';
@@ -403,7 +403,7 @@ function DocumentsDrawer({ application, onClose }: {
               <div>
                 <p className="text-body font-semibold">{KIND_LABEL[document.kind] ?? document.kind}</p>
                 <p className="text-xs text-ink-muted">
-                  {(document.sizeBytes / 1024).toFixed(0)} KB · {formatDate(document.uploadedAt)}
+                  {(document.sizeBytes / 1024).toFixed(0)} KB · {formatInstant(document.uploadedAt)}
                 </p>
               </div>
               <span className="text-meta font-bold text-brand-500">Open</span>

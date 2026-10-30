@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, Modal, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
@@ -40,18 +40,39 @@ export function SettingsAccount() {
   const [asking, setAsking] = useState(false);
   const [code, setCode] = useState('');
 
+  // Sections with edits not yet saved. A refetch of ['landlord'] (after saving any one section)
+  // refreshes only the others, so saving the link never wipes a phone number being typed.
+  type Section = 'details' | 'bank' | 'slug';
+  const editing = useRef(new Set<Section>());
+  const editDetails = (next: typeof details) => {
+    editing.current.add('details');
+    setDetails(next);
+  };
+  const editBank = (next: Bank) => {
+    editing.current.add('bank');
+    setBank(next);
+  };
+  const editSlug = (next: string) => {
+    editing.current.add('slug');
+    setSlug(next);
+  };
+
   useEffect(() => {
     if (!data) return;
-    setDetails({
-      tradingName: data.account.tradingName,
-      email: data.account.email,
-      phone: data.account.phone,
-      registrationNo: data.account.registrationNo ?? '',
-      vatNo: data.account.vatNo ?? '',
-    });
-    setBank(data.account.bank ?? blankBank);
-    setOtherBank(Boolean(data.account.bank && !BANKS.some((entry) => entry.name === data.account.bank!.name)));
-    setSlug(data.account.slug ?? '');
+    if (!editing.current.has('details')) {
+      setDetails({
+        tradingName: data.account.tradingName,
+        email: data.account.email,
+        phone: data.account.phone,
+        registrationNo: data.account.registrationNo ?? '',
+        vatNo: data.account.vatNo ?? '',
+      });
+    }
+    if (!editing.current.has('bank')) {
+      setBank(data.account.bank ?? blankBank);
+      setOtherBank(Boolean(data.account.bank && !BANKS.some((entry) => entry.name === data.account.bank!.name)));
+    }
+    if (!editing.current.has('slug')) setSlug(data.account.slug ?? '');
   }, [data]);
 
   if (!data) {
@@ -59,10 +80,12 @@ export function SettingsAccount() {
   }
   const owner = data.me.role === 'owner';
 
-  const save = async (what: string, body: unknown, message: string) => {
+  const save = async (what: Section, body: unknown, message: string) => {
     setBusy(what);
     try {
       await api.put('/landlord', body);
+      // Saved: this section takes what the server now holds on the refetch below.
+      editing.current.delete(what);
       await queryClient.invalidateQueries({ queryKey: ['landlord'] });
       toast.show({ title: message, tone: 'success' });
       setAsking(false);
@@ -108,7 +131,7 @@ export function SettingsAccount() {
                 id="acct-business-name"
                 disabled={!owner}
                 value={details.tradingName}
-                onChange={(event) => setDetails({ ...details, tradingName: event.target.value })}
+                onChange={(event) => editDetails({ ...details, tradingName: event.target.value })}
               />
             </Field>
             <Field label="Business email" htmlFor="acct-business-email">
@@ -117,7 +140,7 @@ export function SettingsAccount() {
                 type="email"
                 disabled={!owner}
                 value={details.email}
-                onChange={(event) => setDetails({ ...details, email: event.target.value })}
+                onChange={(event) => editDetails({ ...details, email: event.target.value })}
               />
             </Field>
             <Field label="Business phone" htmlFor="acct-business-phone">
@@ -126,7 +149,7 @@ export function SettingsAccount() {
                 type="tel"
                 disabled={!owner}
                 value={details.phone}
-                onChange={(event) => setDetails({ ...details, phone: event.target.value })}
+                onChange={(event) => editDetails({ ...details, phone: event.target.value })}
               />
             </Field>
             <Field label="Company registration number" htmlFor="acct-registration-number" hint="Optional.">
@@ -134,7 +157,7 @@ export function SettingsAccount() {
                 id="acct-registration-number"
                 disabled={!owner}
                 value={details.registrationNo}
-                onChange={(event) => setDetails({ ...details, registrationNo: event.target.value })}
+                onChange={(event) => editDetails({ ...details, registrationNo: event.target.value })}
               />
             </Field>
             <Field label="VAT number" htmlFor="acct-vat-number" hint="Optional. Ten digits starting with 4. It prints on your invoices from Threshold so you can claim the VAT."
@@ -145,7 +168,7 @@ export function SettingsAccount() {
                 maxLength={10}
                 disabled={!owner}
                 value={details.vatNo}
-                onChange={(event) => setDetails({ ...details, vatNo: event.target.value.replace(/\D/g, '') })}
+                onChange={(event) => editDetails({ ...details, vatNo: event.target.value.replace(/\D/g, '') })}
               />
             </Field>
             <p className="text-xs text-ink-muted">These print on leases, invoices and letters.</p>
@@ -189,7 +212,7 @@ export function SettingsAccount() {
                     onChange={(event) => {
                       const picked = BANKS.find((entry) => entry.name === event.target.value);
                       setOtherBank(event.target.value === 'other');
-                      setBank(
+                      editBank(
                         picked
                           ? { ...bank, name: picked.name, branchCode: picked.branchCode }
                           : { ...bank, name: '', branchCode: '' },
@@ -208,7 +231,7 @@ export function SettingsAccount() {
                       id="acct-bank-name"
                       disabled={!owner}
                       value={bank.name}
-                      onChange={(event) => setBank({ ...bank, name: event.target.value })}
+                      onChange={(event) => editBank({ ...bank, name: event.target.value })}
                     />
                   </Field>
                 ) : null}
@@ -217,7 +240,7 @@ export function SettingsAccount() {
                     id="acct-account-holder"
                     disabled={!owner}
                     value={bank.holder}
-                    onChange={(event) => setBank({ ...bank, holder: event.target.value })}
+                    onChange={(event) => editBank({ ...bank, holder: event.target.value })}
                   />
                 </Field>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -227,7 +250,7 @@ export function SettingsAccount() {
                       inputMode="numeric"
                       disabled={!owner}
                       value={bank.accountNumber}
-                      onChange={(event) => setBank({ ...bank, accountNumber: event.target.value.replace(/\D/g, '') })}
+                      onChange={(event) => editBank({ ...bank, accountNumber: event.target.value.replace(/\D/g, '') })}
                     />
                   </Field>
                   <Field label="Branch code" htmlFor="acct-branch-code">
@@ -237,7 +260,7 @@ export function SettingsAccount() {
                       maxLength={6}
                       disabled={!owner}
                       value={bank.branchCode}
-                      onChange={(event) => setBank({ ...bank, branchCode: event.target.value.replace(/\D/g, '') })}
+                      onChange={(event) => editBank({ ...bank, branchCode: event.target.value.replace(/\D/g, '') })}
                     />
                   </Field>
                 </div>
@@ -296,7 +319,7 @@ export function SettingsAccount() {
               <div className="flex flex-wrap items-end gap-2">
                 <Field label="Change the end of the link" htmlFor="acct-link-name" className="min-w-0 flex-1">
                   <Input id="acct-link-name" value={slug}
-                    onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} />
+                    onChange={(event) => editSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} />
                 </Field>
                 <Button variant="outline" loading={busy === 'slug'}
                   disabled={busy !== null || slug === data.account.slug || !/^[a-z0-9][a-z0-9-]{2,39}$/.test(slug)}

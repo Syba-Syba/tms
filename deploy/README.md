@@ -55,7 +55,12 @@ database is unreadable without it.
   your phone.
 - **Alerts**: unhandled errors and failed jobs are emailed to `ALERT_EMAIL`, at most once an
   hour per kind of failure.
-- **Logs**: `docker compose logs -f app` (one JSON line per request or job).
+- **Logs**: `docker compose logs -f app` (one JSON line per request or job). Docker rotates
+  every container's log: at most five files of 10 MB each (`x-logging` in
+  `docker-compose.yml`), so older lines drop off and the disk never fills. Copy out anything you
+  need to keep. Caddy's access log leaves out the `token` and `sig` in reset, invite and file
+  links. A change to the logging settings applies once the containers are recreated
+  (`docker compose up -d --force-recreate`).
 
 ## Encrypting the copies off the server
 
@@ -189,7 +194,7 @@ Three roles, set up by the app each time it starts (`tms/api/scripts/db-roles.mj
 | Role | Used by | Can |
 | --- | --- | --- |
 | `tms_app` | migrations on start, `restore.sh` | everything: it owns the database (`DB_PASSWORD`) |
-| `tms_server` | the running app | read and write rows; not create, change or drop anything, nor edit the migration log (`DB_SERVER_PASSWORD`) |
+| `tms_server` | the running app | read and write rows; not delete payments, the deposit ledger, billing records or consents, nor delete or change the audit log beyond erasing its details and expiring failed sign-ins after 90 days; not create, change or drop anything, nor edit the migration log (`DB_SERVER_PASSWORD`) |
 | `tms_backup` | nightly backups and the restore check | read everything, and create the scratch database the check uses; not write (`DB_BACKUP_PASSWORD`) |
 
 The app container runs its migrations as `tms_app`, then starts the server as `tms_server`

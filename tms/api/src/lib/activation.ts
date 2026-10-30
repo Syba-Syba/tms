@@ -30,6 +30,7 @@ export async function activateScheduledLease(
     // The deposit ledger follows the tenant, not the lease, so the interest history moves
     // across with them rather than being refunded and recollected.
     await run(`update deposit_ledger set lease_id = $1 where lease_id = $2`, [lease.id, lease.previous_lease_id]);
+    await movePendingCharges(run, lease.previous_lease_id, lease.id);
   }
   await run(`update lease set status = 'active', activated_at = now() where id = $1`, [lease.id]);
   await run(`update unit set status = 'occupied' where id = $1`, [lease.unit_id]);
@@ -114,4 +115,44 @@ async function moveOpenInvoices(run: Run, fromLeaseId: string, toLeaseId: string
       where p.invoice_id = i.id and i.lease_id = $1 and p.lease_id = $2`,
     [toLeaseId, fromLeaseId],
   );
+}
+
+/**
+ * Moves charges waiting for a month the renewal bills over to the renewal. Left on the old
+ * lease, which is never billed again, water added for the renewal's first month before it was
+ * signed was billed to nobody. The run usually issued the renewal's invoice for that month
+ * already, and it only picks up charges as it creates an invoice, so a charge for a month that
+ * is already invoiced goes straight onto that invoice.
+ */
+async function movePendingCharges(run: Run, fromLeaseId: string, toLeaseId: string) {
+  await run(
+    `update pending_charge set lease_id = $1
+      where lease_id = $2
+        and period_start >= (select date_trunc('month', start_date) from lease where id = $1)`,
+    [toLeaseId, fromLeaseId],
+  );
+  const billed = await run<{ invoice_id: string; cents: string }>(
+    `with moved as (
+       delete from pending_charge c
+        using invoice i
+        where c.lease_id = $1 and i.lease_id = $1 and i.period_start = c.period_start and i.status <> 'void'
+        returning i.id as invoice_id, c.kind, c.description, c.amount_cents
+     ), lines as (
+       insert into invoice_line (invoice_id, kind, description, amount_cents)
+       select invoice_id, kind, description, amount_cents from moved
+     )
+     select invoice_id, sum(amount_cents)::text as cents from moved group by invoice_id`,
+    [toLeaseId],
+  );
+  for (const row of billed) {
+    await run(
+      `update invoice i
+          set total_cents = i.total_cents + $2,
+              status = case when paid.cents >= i.total_cents + $2 then 'paid'
+                            when paid.cents > 0 then 'part_paid' else 'issued' end
+         from (select coalesce(sum(amount_cents), 0) as cents from payment where invoice_id = $1) paid
+        where i.id = $1`,
+      [row.invoice_id, Number(row.cents)],
+    );
+  }
 }

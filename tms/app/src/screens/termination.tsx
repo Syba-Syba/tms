@@ -9,6 +9,7 @@ import { Money } from '../components/money';
 import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
+import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 
 interface ComparisonItem {
@@ -106,6 +107,10 @@ export function Termination() {
         setSettled(result);
         toast.show({ title: 'Deposit settled', tone: 'success' });
         changed();
+        // Settling ends the lease and moves money: statements, arrears and reports change, and
+        // the unit falls vacant on the properties list.
+        void invalidateMoneyCaches(queryClient);
+        queryClient.invalidateQueries({ queryKey: ['properties'] });
       } catch (error) {
         toast.show({ title: 'Cannot settle yet', description: humanError(error), tone: 'danger' });
       }
