@@ -22,8 +22,12 @@ async function annualRateFor(periodMonth: string): Promise<number> {
   return Number(process.env.DEPOSIT_INTEREST_ANNUAL_PCT ?? '5.5');
 }
 
-/** First of the month: post a month of interest on every held deposit.
+/** Once a month: post a month of interest on every held deposit.
     The tenant owns this money, so it is a ledger entry, never a recalculation at exit.
+
+    The month is the Johannesburg month of the run, and the balance is what was held at its
+    start, so a run on the 3rd (catching up a 1st the server missed) credits exactly what the
+    run on the 1st would have, and nothing for a deposit that arrived on the 2nd.
 
     Idempotent through the partial unique (lease_id, period_month) on interest rows, so a
     duplicate delivery or a manual re-run after a partial failure cannot credit the same month
@@ -42,11 +46,13 @@ export const handler = async () => {
        from deposit_ledger d
        join lease l on l.id = d.lease_id
       where l.status not in ('terminated', 'cancelled')
+        and d.occurred_on < $1::date
       group by d.lease_id
      having sum(case d.entry_type
               when 'received' then d.amount_cents
               when 'interest' then d.amount_cents
               else -d.amount_cents end) > 0`,
+    [periodMonth],
   );
 
   let posted = 0;
@@ -55,8 +61,9 @@ export const handler = async () => {
     const interest = monthlyInterestCents(Number(row.balance), annualPct);
     if (interest <= 0) continue;
     const inserted = await query<{ id: string }>(
-      `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month, note)
-       values ($1, 'interest', $2, $3, $4)
+      // Dated the first of its month, whatever day it ran, so next month's balance counts it.
+      `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month, note, occurred_on)
+       values ($1, 'interest', $2, $3, $4, $3)
        on conflict (lease_id, period_month) where entry_type = 'interest' do nothing
        returning id`,
       [row.lease_id, interest, periodMonth, `Interest at ${annualPct}% p.a.`],

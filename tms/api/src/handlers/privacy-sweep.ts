@@ -49,6 +49,11 @@ export const handler = async () => {
       returning c.id`,
     [DECLINED_RETENTION_MONTHS],
   );
-  log.info('Privacy sweep complete.', { found: stale.length, removed, creditChecks: checks.length });
+  // Failed sign-ins carry an email and an IP address, often of someone with no account here.
+  // They matter for spotting an attack in progress, not for ever.
+  const failedLogins = await query<{ id: string }>(
+    `delete from audit_log where action = 'auth.login_failed' and at < now() - interval '90 days' returning id`,
+  );
+  log.info('Privacy sweep complete.', { found: stale.length, removed, creditChecks: checks.length, failedLogins: failedLogins.length });
   return { found: stale.length, removed };
 };

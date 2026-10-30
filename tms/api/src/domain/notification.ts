@@ -185,8 +185,9 @@ export const TEMPLATES: Record<string, Template> = {
   inspection_tomorrow: {
     category: 'inspection',
     urgent: false,
-    subject: (d) => `Inspection tomorrow at ${d('unit')}`,
-    body: (d) => `A reminder that the ${d('kindLabel').toLowerCase()} inspection is tomorrow, ${d('date')}.`,
+    // Dated rather than "tomorrow": a sweep that missed a morning sends it on the day itself.
+    subject: (d) => `${d('kindLabel')} inspection on ${d('date')} at ${d('unit')}`,
+    body: (d) => `A reminder that the ${d('kindLabel').toLowerCase()} inspection for ${d('unit')} is on ${d('date')}.`,
   },
   lease_signed: {
     category: 'lease',
@@ -209,6 +210,15 @@ export const TEMPLATES: Record<string, Template> = {
     urgent: false,
     subject: (d) => `Your application for ${d('unit')} was not approved`,
     body: (d) => `The landlord declined your application for ${d('unit')}.\n\nThe reason given: ${d('reason')}`,
+  },
+  application_withdrawn: {
+    category: 'lease',
+    urgent: false,
+    subject: (d) => `Your application for ${d('unit')} was withdrawn`,
+    body: (d) =>
+      `The landlord withdrew your application for ${d('unit')}, and the lease that went with it is cancelled. ` +
+      `Nothing you signed on it binds you, and no inspection on it will go ahead.\n\n` +
+      `If you think this is a mistake, contact the landlord directly.`,
   },
   lease_ready_to_sign: {
     category: 'lease',
@@ -334,10 +344,13 @@ export const inQuietHours = (at: Date) => {
  */
 export function sendAfter(at: Date, urgent: boolean): Date {
   if (urgent || !inQuietHours(at)) return at;
-  const next = new Date(at);
-  if (sastHour(at) >= QUIET_FROM_HOUR) next.setUTCDate(next.getUTCDate() + 1);
-  next.setUTCHours(QUIET_UNTIL_HOUR - SAST_OFFSET_HOURS, 0, 0, 0);
-  return next;
+  // The release is 07:00 on the South African calendar day. Taking the UTC date put it on the
+  // previous day between 00:00 and 02:00 SAST, a time already passed, so it went out at once.
+  const sast = new Date(at.getTime() + SAST_OFFSET_HOURS * 3600000);
+  const dayOffset = sastHour(at) >= QUIET_FROM_HOUR ? 1 : 0;
+  return new Date(
+    Date.UTC(sast.getUTCFullYear(), sast.getUTCMonth(), sast.getUTCDate() + dayOffset, QUIET_UNTIL_HOUR - SAST_OFFSET_HOURS),
+  );
 }
 
 export const preferencesSchema = z.object({

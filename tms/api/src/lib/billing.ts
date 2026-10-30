@@ -108,8 +108,11 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
       : 0;
     const total = rent + otherLines;
 
-    // A month nobody occupies and nobody paid for goes entirely.
-    if (!window && paid === 0) {
+    // A month nobody occupies and nobody paid for goes entirely, unless it carries other
+    // charges. Those are often the last occupied month's water, put on this invoice because
+    // that month's was already due, and voiding the invoice lost them. The rent comes off and
+    // the charges stand, as on a paid month.
+    if (!window && paid === 0 && otherLines === 0) {
       await run(`update invoice set status = 'void' where id = $1`, [invoice.id]);
       changed += 1;
       continue;
@@ -147,4 +150,61 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
     changed += 1;
   }
   return changed;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const monthLabel = (month: string) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+
+/**
+ * Puts charges waiting for a month after `lastDay` onto the lease's last invoice, as adding a
+ * charge to an ending lease does. Once a lease ends the run never bills those months again, so
+ * water added for next month before notice was served waited in pending_charge for ever,
+ * billed to nobody and missing from the deposit settlement. Each keeps its own month in the
+ * description. Runs inside the caller's transaction; returns how many charges moved.
+ */
+export async function movePendingChargesPast(run: Run, leaseId: string, lastDay: string): Promise<number> {
+  const charges = await run<{ id: string; period_start: string; kind: string; description: string; amount_cents: string }>(
+    `select id, period_start::text, kind, description, amount_cents::text from pending_charge
+      where lease_id = $1 and period_start > date_trunc('month', $2::date)
+      order by period_start, created_at
+      for update`,
+    [leaseId, lastDay],
+  );
+  if (charges.length === 0) return 0;
+  const [last] = await run<{ id: string; period_start: string }>(
+    `select id, period_start::text from invoice
+      where lease_id = $1 and status <> 'void' order by period_start desc limit 1 for update`,
+    [leaseId],
+  );
+  if (!last) {
+    logger.warn('Charges after the last month of a lease have no invoice to go on; left pending.', { leaseId });
+    return 0;
+  }
+  for (const charge of charges) {
+    const description = charge.period_start.slice(0, 7) === last.period_start.slice(0, 7)
+      ? charge.description
+      : `${charge.description} (${monthLabel(charge.period_start)})`;
+    await run(`insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, $2, $3, $4)`, [
+      last.id,
+      charge.kind,
+      description,
+      charge.amount_cents,
+    ]);
+    await run('delete from pending_charge where id = $1', [charge.id]);
+  }
+  await addToInvoice(run, last.id, charges.reduce((sum, charge) => sum + Number(charge.amount_cents), 0));
+  return charges.length;
+}
+
+/** Moves an invoice's total by `deltaCents` and resets its status from what has been paid. */
+async function addToInvoice(run: Run, invoiceId: string, deltaCents: number): Promise<void> {
+  await run(
+    `update invoice i
+        set total_cents = i.total_cents + $2,
+            status = case when paid.cents >= i.total_cents + $2 then 'paid'
+                          when paid.cents > 0 then 'part_paid' else 'issued' end
+       from (select coalesce(sum(amount_cents), 0) as cents from payment where invoice_id = $1) paid
+      where i.id = $1`,
+    [invoiceId, deltaCents],
+  );
 }

@@ -2,6 +2,7 @@ import { requireApplicationAccess } from '../lib/access';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, route } from '../lib/http';
+import { notify } from '../lib/notify';
 import { releaseUnitIfUnclaimed } from './applications-decide';
 
 /**
@@ -59,6 +60,44 @@ export const handler = route(async (event) => {
       [id],
     );
     await releaseUnitIfUnclaimed(run, application.unit_id, id);
+
+    // An inspection booked on a lease that will never start is not going to happen. Left open,
+    // the morning sweep kept reminding both parties of it. 'missed' is the only closed state
+    // short of a completed, signed inspection.
+    if (ids.length > 0) {
+      await run(
+        `update inspection set status = 'missed'
+          where lease_id = any($1::uuid[]) and status in ('in_progress', 'awaiting_signatures')`,
+        [ids],
+      );
+    }
+
+    // The applicant may already have signed the lease that has just been cancelled, and heard
+    // nothing. Sent in the same commit, so they are told only if the withdrawal stands. One
+    // without an account is addressed by their applicant row, so the email still reaches them.
+    if (asLandlord) {
+      const [applicant] = await run<{ sub: string; email: string; phone: string; unit: string }>(
+        `select coalesce(ap.cognito_sub, 'applicant:' || ap.id) as sub, ap.email, ap.phone,
+                p.name || ' ' || u.code as unit
+           from application a
+           join applicant ap on ap.id = a.applicant_id
+           join unit u on u.id = a.unit_id
+           join property p on p.id = u.property_id
+          where a.id = $1`,
+        [id],
+      );
+      if (applicant) {
+        await notify(
+          {
+            to: { sub: applicant.sub, email: applicant.email, phone: applicant.phone },
+            kind: 'application_withdrawn',
+            dedupeKey: `application_withdrawn:${id}`,
+            data: { unit: applicant.unit },
+          },
+          run,
+        );
+      }
+    }
 
     await audit(
       {

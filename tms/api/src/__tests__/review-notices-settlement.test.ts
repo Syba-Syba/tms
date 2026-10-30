@@ -170,14 +170,23 @@ describe('a notice beside a renewal', () => {
     );
   };
 
-  it('is refused once a renewal has been accepted, and nothing is recorded', async () => {
+  // Refused once both parties have signed the renewal. An accepted but unsigned one is
+  // cancelled by the notice instead (workflows-audit-2.test.ts).
+  it('is refused once a renewal has been signed, and nothing is recorded', async () => {
     await scheduleRenewal();
+    for (const party of ['tenant', 'landlord']) {
+      await db.query(
+        `insert into lease_signature (lease_id, party, signature_s3_key, pdf_sha256)
+         select id, $2, 'sig.png', 'h' from lease where previous_lease_id = $1 and status = 'scheduled'`,
+        [LEASE, party],
+      );
+    }
     const response = await call('POST', `/leases/${LEASE}/termination`, {
       ...tenant,
       body: { initiatedBy: 'tenant', reason: 'early_tenant' },
     });
     expect(response.status).toBe(409);
-    expect(response.body.error.message).toMatch(/renewal of this lease has been accepted/);
+    expect(response.body.error.message).toMatch(/renewal of this lease has been signed/);
     const rows = await db.query('select 1 from termination where lease_id = $1', [LEASE]);
     expect(rows).toHaveLength(0);
   });

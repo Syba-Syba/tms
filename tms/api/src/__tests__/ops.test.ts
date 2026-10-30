@@ -32,7 +32,8 @@ describe('the health check', () => {
     expect(before.statusCode).toBe(503);
     const behind = JSON.parse(before.body).jobsBehind as string[];
     expect(behind).toContain('invoices-run');
-    expect(behind).not.toContain('interest-run');
+    // Interest runs daily now (catching up a missed 1st), so it is judged like the others.
+    expect(behind).toContain('interest-run');
 
     for (const job of behind) {
       await db.query(`insert into audit_log (actor_role, action, entity, detail) values ('job', 'job.finished', 'job', $1)`, [

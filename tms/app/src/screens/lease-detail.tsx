@@ -11,7 +11,7 @@ import { ChargesPanel, type Charge } from '../components/charges-panel';
 import { Money } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
-import { formatDate, status } from '../lib/format';
+import { formatDate, status, formatInstant } from '../lib/format';
 import { randomId } from '../lib/ids';
 import { useOpenDocument } from '../lib/open-document';
 import { invalidateMoneyCaches } from '../lib/money-caches';
@@ -237,7 +237,7 @@ export function LeaseDetail() {
               {data.tenantHasAccount
                 ? `${data.tenant} uses the app.`
                 : data.tenantInviteSentAt
-                  ? `${data.tenant} was invited to the app ${formatDate(data.tenantInviteSentAt.slice(0, 10))} and has not joined yet.`
+                  ? `${data.tenant} was invited to the app ${formatInstant(data.tenantInviteSentAt)} and has not joined yet.`
                   : `${data.tenant} is not using the app yet.`}
             </p>
           </div>
@@ -469,6 +469,7 @@ export function LeaseDetail() {
       <Modal open={showPayment} onOpenChange={(next) => setShowPayment(next)} title="Record a payment">
         <div className="space-y-3">
           <Select
+            aria-label="What this pays"
             value={payment.invoiceId}
             onChange={(e) => setPayment({ ...payment, invoiceId: e.target.value })}
             options={[
@@ -480,10 +481,12 @@ export function LeaseDetail() {
             ]}
           />
           <CurrencyInput
+            aria-label="Amount"
             cents={payment.amountCents}
             onCentsChange={(next) => setPayment({ ...payment, amountCents: next ?? 0 })}
           />
           <Input
+            aria-label="Bank reference"
             placeholder="Bank reference"
             value={payment.reference}
             onChange={(e) => setPayment({ ...payment, reference: e.target.value })}

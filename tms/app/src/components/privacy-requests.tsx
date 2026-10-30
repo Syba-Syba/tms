@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, CardBody, Modal, Textarea, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { formatDate } from '../lib/format';
+import { formatInstant } from '../lib/format';
 
 export interface PrivacyRequest {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   note: string | null;
   status: 'pending' | 'completed' | 'refused';
   createdAt: string;
@@ -65,7 +65,7 @@ export function PrivacyRequests() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-lead font-semibold">{request.name}</p>
-                    <p className="truncate text-xs text-ink-muted">{request.email}, asked {formatDate(request.createdAt)}</p>
+                    <p className="truncate text-xs text-ink-muted">{request.email ? `${request.email}, ` : ''}asked {formatInstant(request.createdAt)}</p>
                   </div>
                   <Badge tone={request.status === 'pending' ? 'warning' : request.status === 'completed' ? 'success' : 'neutral'}>
                     {request.status === 'pending' ? 'To answer' : request.status === 'completed' ? 'Erased' : 'Refused'}

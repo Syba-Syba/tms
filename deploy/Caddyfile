@@ -9,8 +9,19 @@
 	request_body {
 		max_size 16MB
 	}
+	# Access log on stdout, rotated by Docker (see docker-compose.yml). Reset and invite links
+	# carry ?token= and signed file links ?sig=; neither is written to the log. Caddy already
+	# leaves out Cookie and Authorization headers.
 	log {
 		output stdout
-		format console
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					replace token REDACTED
+					replace sig REDACTED
+				}
+			}
+		}
 	}
 }

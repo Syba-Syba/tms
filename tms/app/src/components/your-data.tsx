@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import { Alert, Badge, Button, Card, CardBody, Modal, Textarea, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { endSession, isLandlord } from '../lib/session';
-import { formatDate } from '../lib/format';
+import { formatInstant } from '../lib/format';
 
 interface PrivacyState {
   acceptedVersion: string | null;
@@ -77,7 +77,7 @@ export function YourData() {
         <CardBody className="space-y-4">
           <p className="text-body text-ink-muted">
             {data?.acceptedAt
-              ? `You agreed to the privacy notice on ${formatDate(data.acceptedAt)}. `
+              ? `You agreed to the privacy notice on ${formatInstant(data.acceptedAt)}. `
               : ''}
             <Link to="/privacy" className="font-bold text-brand-500">Read the privacy notice</Link>
           </p>
@@ -89,7 +89,7 @@ export function YourData() {
             <div>
               {pending ? (
                 <Alert tone="info" title="Erasure requested">
-                  Sent {formatDate(pending.createdAt)}. Each landlord you applied to or rented from answers for their own records, and you are emailed either way.
+                  Sent {formatInstant(pending.createdAt)}. Each landlord you applied to or rented from answers for their own records, and you are emailed either way.
                 </Alert>
               ) : (
                 <>
@@ -102,7 +102,7 @@ export function YourData() {
           {data?.requests.filter((request) => request.status !== 'pending').map((request) => (
             <div key={request.id} className="space-y-1 border-t border-line-soft pt-3">
               <p className="flex items-center gap-2 text-meta">
-                Erasure request of {formatDate(request.createdAt)}{request.landlord ? ` to ${request.landlord}` : ''}
+                Erasure request of {formatInstant(request.createdAt)}{request.landlord ? ` to ${request.landlord}` : ''}
                 <Badge tone={REQUEST_LABEL[request.status].tone}>{REQUEST_LABEL[request.status].label}</Badge>
               </p>
               {request.response ? <p className="text-xs text-ink-muted">{request.response}</p> : null}

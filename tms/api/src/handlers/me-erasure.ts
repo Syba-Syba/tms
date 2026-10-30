@@ -22,8 +22,12 @@ export const handler = route(async (event) => {
   }
   const input = parseBody(event, schema);
 
-  const [applicant] = await query<{ id: string }>('select id from applicant where cognito_sub = $1', [person.sub]);
-  if (!applicant) {
+  const [applicant] = await query<{ id: string; applications: number }>(
+    'select id, (select count(*)::int from application where applicant_id = applicant.id) as applications from applicant where cognito_sub = $1',
+    [person.sub],
+  );
+  // No landlord holds anything about them: never applied, or every landlord has already erased.
+  if (!applicant || applicant.applications === 0) {
     await erasePerson(person.sub, { sub: person.sub, role: 'tenant' });
     await query(
       `insert into privacy_request (person_sub, note, status, decided_by, decided_at, response)

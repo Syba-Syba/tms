@@ -3,6 +3,7 @@ import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
 import { EXPENSE_CATEGORIES, taxYear, taxYearOf } from '../domain/expense';
+import { sastToday } from '../domain/dates';
 
 const isDate = (value: string | undefined): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 
@@ -27,7 +28,8 @@ interface Row {
 export const handler = route(async (event) => {
   const landlordId = await landlordIdFor(requireLandlord(event));
   const params = event.queryStringParameters ?? {};
-  const fallback = taxYear(taxYearOf(new Date().toISOString().slice(0, 10)));
+  // The tax year turns over at midnight in Johannesburg; in UTC it was still February until 02:00.
+  const fallback = taxYear(taxYearOf(sastToday()));
   const from = params.from ?? fallback.from;
   const to = params.to ?? fallback.to;
   if (!isDate(from) || !isDate(to) || from > to) throw badRequest('Give a from and to date, YYYY-MM-DD, in order.');

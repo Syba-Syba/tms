@@ -161,7 +161,8 @@ functions:
   interestRun:
     handler: src/handlers/interest-run.handler
     events:
-      - schedule: cron(0 5 1 * ? *)
+      # Daily: a missed 1st catches up later in the month; a repeat run posts nothing twice.
+      - schedule: cron(30 3 * * ? *)
 
   notificationsDispatch:
     handler: src/handlers/notifications-dispatch.handler

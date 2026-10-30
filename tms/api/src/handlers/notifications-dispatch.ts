@@ -1,6 +1,7 @@
 import { query } from '../lib/db';
 import { jobLogger } from '../lib/logger';
 import { sendWhatsapp, whatsappConfig } from '../lib/whatsapp';
+import { slaSweep } from './notifications-sweep';
 
 const log = jobLogger('notifications-dispatch');
 
@@ -203,6 +204,16 @@ export const handler = async () => {
       if (parked) counts.skipped += 1;
       else counts.failed += 1;
     }
+  }
+
+  // Maintenance deadline warnings look 6 hours ahead, so they are raised here, every few
+  // minutes, rather than only by the 05:00 sweep, which caught most deadlines after the fact.
+  // After the batch, so this run's counts are unchanged; the next run sends what it queued.
+  // A failure here must not fail delivery of everything else.
+  try {
+    await slaSweep();
+  } catch (error) {
+    log.error('Maintenance deadline warnings failed.', { error });
   }
 
   log.info('Notification dispatch complete.', { mode: MODE, ...counts });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, Input, SegmentedControl, Select, Textarea, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { formatDate } from '../lib/format';
+import { formatDate, formatInstant } from '../lib/format';
 import { putFile } from '../lib/photos';
 import { useOpenDocument } from '../lib/open-document';
 import { localToday } from '../lib/dates';
@@ -159,7 +159,7 @@ export function CreditCheckPanel({ applicationId }: { applicationId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-ink-muted">
-        The applicant agreed on {formatDate(data.consent.acceptedAt.slice(0, 10))}. Run the check with your bureau, then record it here.
+        The applicant agreed on {formatInstant(data.consent.acceptedAt)}. Run the check with your bureau, then record it here.
       </p>
       <div className="grid grid-cols-2 gap-3">
         <div>

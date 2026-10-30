@@ -69,7 +69,9 @@ export const handler = route(async (event) => {
     // 'scheduled' exists for exactly this moment: the new lease is agreed, but the current one
     // is still live until its last day. Two 'active' leases on one unit is blocked by the
     // index, and rightly so. Accepting is not signing: the new lease goes live, and is billed,
-    // only once both parties have signed its document.
+    // only once both parties have signed its document. A unit holds one scheduled lease; a new
+    // offer cancels an unsigned one, so a clash left here is another lease queued on the unit,
+    // which is the landlord's to sort out, not a server error.
     const [created] = await run<{ id: string; ref_no: number }>(
       `insert into lease (application_id, unit_id, applicant_id, start_date, end_date,
                           monthly_rent_cents, escalation_pct, deposit_cents, status,
@@ -82,7 +84,12 @@ export const handler = route(async (event) => {
         Number(renewal.new_rent_cents), Number(renewal.escalation_pct),
         Number(renewal.new_rent_cents), renewal.lease_id,
       ],
-    );
+    ).catch((error: { code?: string }) => {
+      if (error?.code === '23505') {
+        throw conflict('Another lease is already waiting to start on this unit. Ask the landlord to cancel it first.');
+      }
+      throw error;
+    });
 
     await run(
       `update renewal set status = 'accepted', decided_at = now(), new_lease_id = $2 where id = $1`,

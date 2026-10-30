@@ -8,6 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { formatDate, formatMonth, status } from '../lib/format';
 import { localToday } from '../lib/dates';
+import { csvText } from '../lib/csv';
 import { QueryState } from '../components/query-state';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { Money } from '../components/money';
@@ -44,8 +45,6 @@ const MAX_BYTES = 10 * 1024 * 1024;
 // The device's calendar (SAST for our users), not UTC: before 02:00 UTC was still yesterday.
 const today = localToday;
 
-const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
-
 /** There is no server-rendered PDF for a running statement, only for the exit statement, so
     the download is built from the same rows the screen is already showing. CSV, because the
     thing a tenant does with this is hand it to a bank or paste it into a dispute. */
@@ -60,7 +59,7 @@ function statementCsv(statement: Statement): string {
   rows.push([]);
   rows.push(['', 'Balance outstanding', '', (statement.balanceCents / 100).toFixed(2), '']);
   rows.push(['', 'Deposit held', '', '', (statement.depositBalanceCents / 100).toFixed(2)]);
-  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  return csvText(rows);
 }
 
 // A function, not a constant: computed at module load, paidOn stayed on the day the app was
@@ -261,6 +260,7 @@ export function TenantRent() {
       >
         <div className="space-y-3">
           <Select
+            aria-label="What this pays"
             value={slip.invoiceId}
             onChange={(event) => setSlip({ ...slip, invoiceId: event.target.value })}
             options={[
@@ -282,6 +282,7 @@ export function TenantRent() {
             onChange={(event) => setSlip({ ...slip, paidOn: event.target.value })}
           />
           <Input
+            aria-label="Reference you used"
             placeholder="Reference you used (optional)"
             maxLength={60}
             value={slip.reference}

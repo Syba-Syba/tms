@@ -26,7 +26,7 @@ const requireLocalDriver = () => {
 
 const refuse = (retryAfter: number) =>
   tooManyRequests(
-    `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}.`,
+    `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}, or reset your password to get in now.`,
   );
 
 export const handler = route(async (event) => {

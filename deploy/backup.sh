@@ -75,8 +75,12 @@ check() {
     live="$(psql -At -c "select count(*) from $table")"
     restored="$(psql -At -d tms_restore_check -c "select count(*) from $table")"
     echo "  $table: live $live, restored $restored"
-    # The live database may have grown since the dump; it must never have fewer rows than it.
-    [ "$restored" -le "$live" ] || failed=1
+    case "$table" in
+      # A landlord may delete a property or unit after the dump, so the live count can drop.
+      property | unit) ;;
+      # These only grow: the live database must never have fewer rows than the dump.
+      *) [ "$restored" -le "$live" ] || failed=1 ;;
+    esac
     [ "$restored" -gt 0 ] || [ "$live" -eq 0 ] || failed=1
   done
   dropdb tms_restore_check

@@ -138,7 +138,7 @@ describe('credit checks', () => {
     expect((await call('GET', `/applications/${applied.body.id}/credit-check`, OWNER)).body.consent).not.toBeNull();
 
     const { erasePerson } = await import('../lib/privacy');
-    await erasePerson(applicant.sub, { sub: 'test', role: 'landlord' });
+    await erasePerson(applicant.sub, { sub: 'test', role: 'landlord' }, { landlordId: '11111111-1111-1111-1111-111111111111' });
     const left = await db.query('select id from credit_check where application_id = $1', [applicationId]);
     expect(left).toHaveLength(0);
   });

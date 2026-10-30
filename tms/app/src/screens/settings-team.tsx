@@ -5,7 +5,7 @@ import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
 import { SettingsNav } from '../components/settings-nav';
 import { useLandlord } from '../lib/landlord';
-import { formatDate } from '../lib/format';
+import { formatInstant } from '../lib/format';
 import { PAGE } from '../lib/layout';
 
 interface Team {
@@ -102,7 +102,7 @@ export function SettingsTeam() {
                   <div className="min-w-0">
                     <p className="truncate text-body font-semibold">{pending.name}</p>
                     <p className="truncate text-xs text-ink-muted">
-                      {pending.email}, link works until {formatDate(pending.expiresAt.slice(0, 10))}
+                      {pending.email}, link works until {formatInstant(pending.expiresAt)}
                     </p>
                   </div>
                   {owner ? (

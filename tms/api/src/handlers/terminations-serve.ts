@@ -10,7 +10,7 @@ import {
   type TerminationReason,
 } from '../domain/termination';
 import { addDaysIso, dateFromIso, isoDate, sastToday } from '../domain/dates';
-import { trimInvoicesAfter } from '../lib/billing';
+import { movePendingChargesPast, trimInvoicesAfter } from '../lib/billing';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
 
@@ -82,23 +82,28 @@ export const handler = route(async (event) => {
 
     // An accepted renewal takes over from this lease on its start date and moves the tenant
     // across. A notice here was lost at that handover and the tenant billed under the new
-    // lease, so the two cannot both stand: the notice is refused while the renewal is.
-    const [renewed] = await run<{ start_date: string }>(
-      `select start_date::text from lease where previous_lease_id = $1 and status = 'scheduled'`,
+    // lease, so the two cannot both stand. Once both parties have signed the renewal it is a
+    // binding lease, and the notice is refused. Until then it is only an acceptance: it is
+    // cancelled with the notice. Refusing that too left a tenant who accepted and changed their
+    // mind with no way out at all, since an unsigned scheduled lease cannot be cancelled.
+    const [renewed] = await run<{ id: string; start_date: string; signed: boolean }>(
+      `select l.id, l.start_date::text,
+              (select count(*) from lease_signature s where s.lease_id = l.id) = 2 as signed
+         from lease l where l.previous_lease_id = $1 and l.status = 'scheduled' for update`,
       [leaseId],
     );
-    if (renewed) {
+    if (renewed?.signed) {
       throw conflict(
-        `A renewal of this lease has been accepted and starts on ${renewed.start_date}, so notice ` +
+        `A renewal of this lease has been signed and starts on ${renewed.start_date}, so notice ` +
           'cannot be served on it. Once the new lease starts, notice is given on that one.',
       );
     }
 
     const notice = dateFromIso(noticeGivenOn);
     const leaseEnd = dateFromIso(lease.end_date);
-    const noticeDays = noticeBusinessDays(input.reason, notice, leaseEnd);
-    const earliest = earliestEffectiveDate(input.reason, notice, leaseEnd);
-    const latest = latestEffectiveDate(input.reason, notice, leaseEnd);
+    const noticeDays = noticeBusinessDays(input.reason, notice, leaseEnd, input.initiatedBy);
+    const earliest = earliestEffectiveDate(input.reason, notice, leaseEnd, input.initiatedBy);
+    const latest = latestEffectiveDate(input.reason, notice, leaseEnd, input.initiatedBy);
     const effective = input.effectiveOn ? dateFromIso(isoDate(input.effectiveOn)) : earliest;
     // The parties may agree a later date than the minimum, never an earlier one.
     if (effective < earliest) {
@@ -138,9 +143,16 @@ export const handler = route(async (event) => {
     // An offer to renew a lease that is ending lapses with the notice; accepting it afterwards
     // would start a new lease the tenant has just said they are leaving.
     await run(`update renewal set status = 'lapsed' where lease_id = $1 and status = 'offered'`, [leaseId]);
+    if (renewed) {
+      await run(`update lease set status = 'cancelled' where id = $1`, [renewed.id]);
+      await run(`update renewal set status = 'lapsed' where new_lease_id = $1 and status = 'accepted'`, [renewed.id]);
+    }
 
     // Next month's rent may already have been invoiced in full on the 25th.
     const trimmed = await trimInvoicesAfter(run, leaseId, isoDate(effective));
+    // A charge already added for a month after the lease now ends would never be billed: the
+    // invoice run stops at the last month. It goes on the last invoice instead.
+    const chargesMoved = await movePendingChargesPast(run, leaseId, isoDate(effective));
 
     return {
       id: termination.id,
@@ -148,6 +160,8 @@ export const handler = route(async (event) => {
       earliestLawful: isoDate(earliest),
       noticeGivenOn,
       invoicesAdjusted: trimmed,
+      chargesMoved,
+      renewalCancelled: renewed?.id ?? null,
     };
   });
 

@@ -32,6 +32,23 @@ export const handler = route(async (event) => {
     );
     if (notice) throw conflict('Notice has been served on this lease, so there is nothing to renew.');
 
+    // A renewal accepted earlier waits as a scheduled lease, and a unit holds only one. Signed
+    // by both parties it is binding, so there is nothing left to offer. Unsigned it is only an
+    // acceptance, and the new offer replaces it; otherwise accepting this one failed with a 500.
+    const [scheduled] = await run<{ id: string; start_date: string; signed: boolean }>(
+      `select l.id, l.start_date::text,
+              (select count(*) from lease_signature s where s.lease_id = l.id) = 2 as signed
+         from lease l where l.previous_lease_id = $1 and l.status = 'scheduled' for update`,
+      [leaseId],
+    );
+    if (scheduled?.signed) {
+      throw conflict(`A signed renewal of this lease starts on ${scheduled.start_date}, so there is nothing to offer.`);
+    }
+    if (scheduled) {
+      await run(`update lease set status = 'cancelled' where id = $1`, [scheduled.id]);
+      await run(`update renewal set status = 'withdrawn' where new_lease_id = $1 and status = 'accepted'`, [scheduled.id]);
+    }
+
     // The deposit already held, interest included, decides how big the top-up needs to be.
     const [held] = await run<{ balance: string }>(
       `select coalesce(sum(case entry_type

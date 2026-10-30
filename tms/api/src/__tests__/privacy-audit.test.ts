@@ -127,7 +127,7 @@ describe('erasure leaves nothing that names the person', () => {
     );
 
     const { erasePerson } = await import('../lib/privacy');
-    await erasePerson(as.sub, { sub: 'sub-landlord', role: 'landlord' });
+    await erasePerson(as.sub, { sub: 'sub-landlord', role: 'landlord' }, { landlordId: '11111111-1111-1111-1111-111111111111' });
 
     const [after] = await db.query<{ description: string; rating_note: string | null }>(
       'select description, rating_note from ticket where id = $1', [ticket!.id],

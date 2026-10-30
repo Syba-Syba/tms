@@ -5,8 +5,11 @@ import {
   Badge, Button, Card, CardBody, CurrencyInput, EmptyState, Input, Modal, PageHeader, Select, Spinner, Tabs, useToast,
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
-import { api, humanError, openDocument } from '../api/client';
+import { api, humanError } from '../api/client';
+import { useOpenDocument } from '../lib/open-document';
+import { QueryError } from '../components/query-state';
 import { formatDate } from '../lib/format';
+import { downloadCsv } from '../lib/csv';
 import { PAGE } from '../lib/layout';
 import { addDays, localToday } from '../lib/dates';
 import { Money } from '../components/money';
@@ -115,19 +118,7 @@ function periods() {
   ];
 }
 
-const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const rands = (cents: number) => (cents / 100).toFixed(2);
-
-function downloadCsv(name: string, rows: (string | number)[][]) {
-  const url = URL.createObjectURL(
-    new Blob([rows.map((row) => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' }),
-  );
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 /** What the portfolio earned, who owes what, and the costs behind both. */
 export function Reports() {
@@ -149,7 +140,7 @@ function IncomeExpense() {
   const options = periods();
   const [period, setPeriod] = useState(options[0]!.value);
   const range = options.find((option) => option.value === period)!;
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['report-income', range.from, range.to],
     queryFn: () => api.get<IncomeReport>(`/reports/income-expense?from=${range.from}&to=${range.to}`),
   });
@@ -185,7 +176,9 @@ function IncomeExpense() {
         />
         <Button variant="outline" disabled={!data} onClick={exportCsv}>Download CSV</Button>
       </div>
-      {isLoading || !data ? (
+      {isError ? (
+        <QueryError error={error} onRetry={() => void refetch()} what="The report" />
+      ) : isLoading || !data ? (
         <Spinner />
       ) : (
         <>
@@ -272,10 +265,11 @@ function stageText(item: ArrearsReport['items'][number]): string {
 }
 
 function Arrears() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['report-arrears'],
     queryFn: () => api.get<ArrearsReport>('/reports/arrears'),
   });
+  if (isError) return <QueryError error={error} onRetry={() => void refetch()} what="The arrears report" />;
   if (isLoading || !data) return <Spinner />;
 
   const exportCsv = () =>
@@ -354,6 +348,7 @@ const blank = {
 function Expenses() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const openDocument = useOpenDocument();
   const options = periods();
   const [period, setPeriod] = useState(options[0]!.value);
   const range = options.find((option) => option.value === period)!;
@@ -445,7 +440,9 @@ function Expenses() {
         />
         <Button onClick={() => setEditing({ id: null, form: { ...blank, incurredOn: today() } })}>Add expense</Button>
       </div>
-      {list.isLoading ? (
+      {list.isError ? (
+        <QueryError error={list.error} onRetry={() => void list.refetch()} what="The expenses" />
+      ) : list.isLoading ? (
         <Spinner />
       ) : !list.data?.items.length ? (
         <EmptyState title="No expenses in this period" description="Add rates, levies, insurance and repairs as you pay them." />
