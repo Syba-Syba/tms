@@ -269,15 +269,25 @@ describe('input and sign-in', () => {
     expect((await apply(as, { email: 'formula@example.co.za', firstName: "Thandi-Mae O'Neil" })).status).toBe(201);
   });
 
-  it('keeps the account open to its owner while someone else is guessing its password', async () => {
+  it('lets the owner back in through a password reset while someone else is guessing', async () => {
     await register('Locked Owner', 'locked@example.co.za');
     for (let i = 0; i < 10; i += 1) {
-      await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'guess-guess-' + i }, '10.66.0.1');
+      await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'guess-guess-' + i }, `10.66.0.${i}`);
     }
-    // The guessing address stays locked out, right password or not.
-    expect((await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'long-enough-1' }, '10.66.0.1')).status).toBe(429);
-    // The owner, from anywhere else, gets in.
-    expect((await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'long-enough-1' }, '10.77.0.1')).status).toBe(200);
+    // Locked for everyone, the right password included: guesses can come from many addresses.
+    const locked = await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'long-enough-1' }, '10.77.0.1');
+    expect(locked.status).toBe(429);
+    expect(locked.body.error.message).toMatch(/reset your password/);
+
+    // The owner resets through their inbox, and can sign in at once.
+    await call('POST', '/auth/reset/request', null, { email: 'locked@example.co.za' }, '10.77.0.1');
+    const [sent] = await db.query<{ body: string }>(
+      `select n.body from notification n join local_credential c on c.sub = n.recipient_sub
+        where c.email = 'locked@example.co.za' and n.kind = 'password_reset'`,
+    );
+    const token = /token=([A-Za-z0-9_-]+)/.exec(sent!.body)![1];
+    expect((await call('POST', '/auth/reset/confirm', null, { token, newPassword: 'a-new-long-password' }, '10.77.0.1')).status).toBe(200);
+    expect((await call('POST', '/auth/login', null, { email: 'locked@example.co.za', password: 'a-new-long-password' }, '10.77.0.1')).status).toBe(200);
   });
 
   it('forgets failed sign-ins after 90 days', async () => {

@@ -5,7 +5,7 @@ import { withTransaction } from '../lib/db';
 import { ApiError, json, parseBody, route, tooManyRequests } from '../lib/http';
 import { hashResetToken, requireLocalDriver } from '../lib/password-reset';
 import { hashPassword } from '../lib/passwords';
-import { resetConfirmsByAddress } from '../lib/ratelimit';
+import { failedLoginsByAccount, resetConfirmsByAddress } from '../lib/ratelimit';
 
 const schema = z.object({
   token: z.string().min(20).max(200),
@@ -56,6 +56,9 @@ export const handler = route(async (event) => {
     return { sub: reset.sub, ...credential };
   });
 
+  // Someone sending wrong passwords for this email locks it for everyone. The owner, who has
+  // just proved they read its inbox, is not that someone: their way back in is not held up.
+  failedLoginsByAccount.clear(user.email);
   await audit({
     actorSub: user.sub,
     actorRole: user.role,

@@ -4,7 +4,7 @@ import { dummyHash, verifyPassword } from '../lib/passwords';
 import { audit } from '../lib/audit';
 import { query } from '../lib/db';
 import { mode } from '../lib/mode';
-import { failedLoginsByAccount, failedLoginsByAccountFrom, failedLoginsByAddress } from '../lib/ratelimit';
+import { failedLoginsByAccount, failedLoginsByAddress } from '../lib/ratelimit';
 import { json, parseBody, route, tooManyRequests, ApiError } from '../lib/http';
 import { checkSecondStep, twoStepEnabled } from '../lib/two-step';
 
@@ -26,7 +26,7 @@ const requireLocalDriver = () => {
 
 const refuse = (retryAfter: number) =>
   tooManyRequests(
-    `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}.`,
+    `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}, or reset your password to get in now.`,
   );
 
 export const handler = route(async (event) => {
@@ -36,12 +36,8 @@ export const handler = route(async (event) => {
   const address = event.requestContext.http?.sourceIp ?? 'unknown';
 
   // Checked before the password, so a locked account costs an attacker nothing to probe and
-  // the server nothing to answer. The lock holds against the addresses the wrong passwords came
-  // from; the owner, signing in from anywhere else, still gets in.
-  const pair = `${email}|${address}`;
-  if (!failedLoginsByAccount.allows(email) && !failedLoginsByAccountFrom.allows(pair)) {
-    throw refuse(failedLoginsByAccount.retryAfterSeconds(email));
-  }
+  // the server nothing to answer.
+  if (!failedLoginsByAccount.allows(email)) throw refuse(failedLoginsByAccount.retryAfterSeconds(email));
   if (!failedLoginsByAddress.allows(address)) throw refuse(failedLoginsByAddress.retryAfterSeconds(address));
 
   const [credential] = await query<{
@@ -62,7 +58,6 @@ export const handler = route(async (event) => {
   if (!credential || !matched) {
     failedLoginsByAccount.record(email);
     failedLoginsByAddress.record(address);
-    failedLoginsByAccountFrom.record(pair);
     // A run of these against one account, or from one address, is what a password-guessing
     // attempt looks like afterwards. The rate limiter forgets on restart; this does not.
     await audit({
@@ -82,7 +77,6 @@ export const handler = route(async (event) => {
     if (!(await checkSecondStep(credential.sub, input.code))) {
       failedLoginsByAccount.record(email);
       failedLoginsByAddress.record(address);
-      failedLoginsByAccountFrom.record(pair);
       await audit({
         actorSub: credential.sub, actorRole: credential.role, action: 'auth.login_failed', entity: 'credential',
         entityId: null, detail: { email, address, knownAccount: true, secondStep: true },

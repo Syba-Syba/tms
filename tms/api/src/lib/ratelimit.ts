@@ -53,12 +53,6 @@ const MINUTE = 60_000;
  */
 export const failedLoginsByAccount = new AttemptLimiter(10, 15 * MINUTE);
 export const failedLoginsByAddress = new AttemptLimiter(30, 15 * MINUTE);
-/**
- * Failed sign-ins per account from one address. While an account is locked, only addresses that
- * already failed against it are refused, so someone sending wrong passwords for a landlord's
- * email cannot keep the landlord out. Each fresh address gets one try during the lock.
- */
-export const failedLoginsByAccountFrom = new AttemptLimiter(1, 15 * MINUTE);
 
 /** Sign-ups per address. Each one writes a row and runs scrypt. */
 export const registrationsByAddress = new AttemptLimiter(10, 60 * MINUTE);
