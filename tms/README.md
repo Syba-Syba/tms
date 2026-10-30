@@ -666,18 +666,20 @@ The landlord is the responsible party; the app is what they process personal inf
   its last four digits; it is never decrypted), and ask for erasure.
 - Erasure: an account that never applied goes at once. Otherwise the request goes to each
   landlord the person applied to or rented from, under Settings, Privacy requests, and on the
-  overview. Each landlord answers for its own records only. The account, sign-in and identity go
-  once every landlord asked has erased. The system refuses to erase while records must be kept:
-  five years after a lease with that landlord ends (Tax Administration Act, and the Rental
-  Housing Tribunal). A refusal needs a reason, which the person is emailed with the
-  Information Regulator's address. Erasure replaces the person's details with placeholders,
-  deletes their documents, slips, lease PDFs, signature images and repair photos, blanks what
-  they wrote on repair requests and their payment references, removes their name, email and
-  phone from the landlord's messages and the activity log, deletes their sign-in and their
-  messages, and leaves amounts and dates so the books still add up.
+  overview. Each landlord answers for its own records only, and the system refuses to erase
+  while records must be kept: five years after a lease with that landlord ends (Tax
+  Administration Act, and the Rental Housing Tribunal). A refusal needs a reason, which the
+  person is emailed with the Information Regulator's address. Erasing deletes that landlord's
+  documents, slips, lease, invoice, inspection and deposit PDFs, letters of demand, signature
+  images and repair photos, blanks what the person wrote on repair requests and their payment
+  references, removes their name, email and phone from that landlord's messages, and moves the
+  landlord's applications and leases onto an anonymous "Erased person" record, so amounts and
+  dates still add up. Other landlords' records are not touched. The account, sign-in and
+  identity (and their email, name and IP addresses in the activity log) go once no landlord
+  holds an application about the person any more.
 - Retention: `privacy-sweep` runs daily and deletes the documents of applications declined or
   withdrawn more than twelve months ago, of applications left undecided with no change for
-  twelve months, and of applications approved twelve months ago that never got a lease.
+  twelve months, and of applications approved twelve months ago that never got a lease. Failed sign-in records (an email and an IP address) go after 90 days.
 
 What is not here yet: a named Information Officer per landlord shown in the notice, and
 correction of details by the person themselves (they ask the landlord today).

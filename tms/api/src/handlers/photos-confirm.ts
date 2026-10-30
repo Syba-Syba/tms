@@ -78,6 +78,7 @@ export const handler = route(async (event) => {
       `update ${table} set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
       [input.photoId, contentType, size, keptKey],
     );
+    await removeUpload(photo.s3_key, keptKey);
     return json(200, { confirmed: true, key: keptKey });
   }
 
@@ -103,5 +104,12 @@ export const handler = route(async (event) => {
     );
     await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [inspection.id]);
   });
+  await removeUpload(photo.s3_key, keptKey);
   return json(200, { confirmed: true, key: keptKey });
 });
+
+/** The raw upload, once the row points at the checked copy: no row would ever find it again,
+    so erasure and deletes would leave it behind. A retried confirm reads the kept key. */
+async function removeUpload(uploaded: string, kept: string) {
+  if (uploaded !== kept) await storage().remove(uploaded).catch(() => undefined);
+}

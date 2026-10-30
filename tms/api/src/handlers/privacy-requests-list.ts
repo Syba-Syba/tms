@@ -11,13 +11,18 @@ import { erasureBlockFor } from '../lib/privacy';
 export const handler = route(async (event) => {
   const landlordId = await landlordIdFor(requireLandlord(event));
   const rows = await query<{
-    id: string; person_sub: string; name: string; email: string; note: string | null; status: string;
+    id: string; person_sub: string; name: string; email: string | null; note: string | null; status: string;
     created_at: string; response: string | null;
   }>(
-    `select r.id, r.person_sub, a.first_name || ' ' || a.last_name as name, a.email, r.note, r.status,
-            r.created_at::text, r.response
+    // An answered erasure stays listed as the record that it was done, without the details it
+    // removed. Before, it kept showing the person's name and email, and vanished altogether once
+    // their account went.
+    `select r.id, r.person_sub,
+            case when r.status = 'completed' then 'Erased person' else a.first_name || ' ' || a.last_name end as name,
+            case when r.status = 'completed' then null else a.email end as email,
+            r.note, r.status, r.created_at::text, r.response
        from privacy_request r
-       join applicant a on a.cognito_sub = r.person_sub
+       left join applicant a on a.cognito_sub = r.person_sub
       -- This landlord's own requests. Ones from before requests were per landlord have none,
       -- and show to every landlord the person applied to, as they always did.
       where r.landlord_id = $1

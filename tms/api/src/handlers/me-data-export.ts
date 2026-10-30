@@ -122,7 +122,11 @@ export const handler = route(async (event) => {
       `select email, created_at, expires_at, accepted_at, revoked_at from tenant_invite where applicant_id = $1`,
     ),
     messagesSentToYou: await query(
-      `select channel, recipient_to, subject, body, status, created_at from notification where recipient_sub = $1
+      // A reset or invite link in a message is a live credential: shown here, a stolen session
+      // could use it to set a new password. The text stays, the token does not.
+      `select channel, recipient_to, subject,
+              regexp_replace(body, '([?&](token|sig)=)[^[:space:]&]+', '\\1[removed]', 'g') as body,
+              status, created_at from notification where recipient_sub = $1
         order by created_at desc limit 500`,
       [person.sub],
     ),

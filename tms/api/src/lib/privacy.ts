@@ -3,6 +3,7 @@ import { audit } from './audit';
 import { query, withTransaction } from './db';
 import { logger } from './logger';
 import { storage } from './storage';
+import { sastToday } from '../domain/dates';
 import { erasureBlock, type LeaseForRetention } from '../domain/privacy';
 
 type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
@@ -43,143 +44,218 @@ export async function leasesOf(sub: string, landlordId: string | null = null): P
 }
 
 export async function erasureBlockFor(sub: string, landlordId: string | null = null): Promise<string | null> {
-  return erasureBlock(await leasesOf(sub, landlordId), new Date().toISOString().slice(0, 10));
+  return erasureBlock(await leasesOf(sub, landlordId), sastToday());
 }
 
 /**
- * Erases a person's personal information, from one landlord's records or from all of them.
+ * Erases what one landlord holds about a person, and the person's identity once no landlord
+ * holds anything more about them.
  *
- * Rows that rent, deposits and leases hang off stay, with the person's details removed, so a
- * landlord's books still add up. Uploaded files are deleted, free text the person wrote is
- * blanked, and their name, email and phone are scrubbed from the landlord's notifications.
+ * With `landlordId`, that landlord's records only, as the responsible party for them: uploaded
+ * files and generated documents are deleted, free text the person wrote is blanked, payment
+ * references and bank lines lose their name, and their name, email and phone are scrubbed from
+ * that landlord's messages. The landlord's applications and leases then move onto an anonymous
+ * stand-in record, so every screen of that landlord shows "Erased person" while rent, deposits
+ * and leases still add up. Other landlords' records are not touched.
  *
- * `landlordId` scopes it to one landlord, who answered the request as responsible party for
- * their own records only. The person's identity (the applicant row, the sign-in, messages to
- * them, their name in the activity log) goes only with `identity: true`: once every landlord
- * concerned has erased, or when there was never a landlord at all.
+ * Then, and also without `landlordId`, the identity goes once no application is left on the
+ * person's own record: the applicant row, the sign-in, messages to them, the IP address and
+ * device on their consents, and their email, name and IP addresses in the activity log. Someone
+ * who still has records with another landlord (even one they never asked) keeps their account.
  *
  * Callers check the retention rule first. This does not, so a test can exercise it directly.
  */
 export async function erasePerson(
   sub: string,
   actor: { sub: string; role: string },
-  scope: { landlordId?: string | null; identity?: boolean } = {},
-): Promise<{ files: number }> {
+  scope: { landlordId?: string } = {},
+): Promise<{ files: number; identityErased: boolean }> {
   const landlordId = scope.landlordId ?? null;
-  const identity = scope.identity ?? landlordId === null;
-  const keys = await withTransaction(async (run) => {
+  const { keys, identityErased } = await withTransaction(async (run) => {
     const [applicant] = await run<{ id: string; first_name: string; last_name: string; email: string; phone: string }>(
       'select id, first_name, last_name, email, phone from applicant where cognito_sub = $1 for update',
       [sub],
     );
+    const [credential] = await run<{ email: string; name: string }>(
+      'select email, name from local_credential where sub = $1',
+      [sub],
+    );
     const files: string[] = [];
+    const collect = async (sql: string, params: unknown[]) => {
+      const rows = await run<{ key: string | null }>(sql, params);
+      for (const { key } of rows) {
+        if (!key || key.startsWith('erased/')) continue;
+        files.push(key);
+        // A checked copy was made from a raw upload; the raw one is deleted too.
+        const raw = key.replace(/\.kept\.([a-z]+)$/, '.$1');
+        if (raw !== key) files.push(raw);
+      }
+    };
 
-    if (applicant) {
-      // Applications and leases in scope: one landlord's, or every one.
-      const inScope = `(select ap.id from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
-                         where ap.applicant_id = $1 and ($2::uuid is null or p.landlord_id = $2))`;
-      const leasesInScope = `(select l.id from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
-                               where l.applicant_id = $1 and ($2::uuid is null or p.landlord_id = $2))`;
-      const ids = [applicant.id, landlordId];
-      const collect = async (sql: string, params: unknown[] = ids) => {
-        const rows = await run<{ key: string | null }>(sql, params);
-        files.push(...rows.map((row) => row.key).filter((key): key is string => Boolean(key) && !key!.startsWith('erased/')));
-      };
+    if (applicant && landlordId) {
+      const applications = (
+        await run<{ id: string }>(
+          `select ap.id from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
+            where ap.applicant_id = $1 and p.landlord_id = $2`,
+          [applicant.id, landlordId],
+        )
+      ).map((row) => row.id);
+      const leases = (
+        await run<{ id: string }>(
+          `select l.id from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
+            where l.applicant_id = $1 and p.landlord_id = $2`,
+          [applicant.id, landlordId],
+        )
+      ).map((row) => row.id);
+      const apps = [applications];
+      const ls = [leases];
 
       // Application paperwork and anything recorded about it.
-      await collect(`select s3_key as key from application_document where application_id in ${inScope}`);
-      await run(`delete from credit_check where application_id in ${inScope}`, ids);
-      await run(`delete from application_document where application_id in ${inScope}`, ids);
-      await run(`update application set notes = null where id in ${inScope}`, ids);
+      await collect('select s3_key as key from application_document where application_id = any($1)', apps);
+      await run('delete from credit_check where application_id = any($1)', apps);
+      await run('delete from application_document where application_id = any($1)', apps);
+      await run('update application set notes = null where id = any($1)', apps);
 
-      // Files on the leases: slips, the lease and invoice PDFs, signatures, repair photos.
-      await collect(`select s3_key as key from payment_proof where lease_id in ${leasesInScope}`);
-      await collect(`select pdf_s3_key as key from lease where id in ${leasesInScope}`);
-      await collect(`select pdf_s3_key as key from invoice where lease_id in ${leasesInScope}`);
-      await collect(`select signature_s3_key as key from lease_signature where party = 'tenant' and lease_id in ${leasesInScope}`);
-      await collect(`select s.signature_s3_key as key from inspection_signature s join inspection i on i.id = s.inspection_id
-                      where s.party = 'tenant' and i.lease_id in ${leasesInScope}`);
+      // Files on the leases: slips, the lease and invoice PDFs, signatures, inspection reports,
+      // the deposit statement, letters of demand, and the photos they took reporting repairs.
+      await collect('select s3_key as key from payment_proof where lease_id = any($1)', ls);
+      await collect('select pdf_s3_key as key from lease where id = any($1)', ls);
+      await collect('select pdf_s3_key as key from invoice where lease_id = any($1)', ls);
+      await collect(`select signature_s3_key as key from lease_signature where party = 'tenant' and lease_id = any($1)`, ls);
+      await collect(
+        `select s.signature_s3_key as key from inspection_signature s join inspection i on i.id = s.inspection_id
+          where s.party = 'tenant' and i.lease_id = any($1)`,
+        ls,
+      );
+      await collect('select pdf_s3_key as key from inspection where lease_id = any($1)', ls);
+      await collect('select draft_s3_key as key from inspection where lease_id = any($1)', ls);
+      await collect('select statement_s3_key as key from termination where lease_id = any($1)', ls);
+      await collect(
+        `select st.document_s3_key as key from arrears_step st join arrears_case c on c.id = st.case_id
+          where c.lease_id = any($1)`,
+        ls,
+      );
       await collect(
         `select ph.s3_key as key from ticket_photo ph join ticket t on t.id = ph.ticket_id
-          where ph.phase = 'report' and t.created_by = $3 and t.lease_id in ${leasesInScope}`,
-        [...ids, sub],
+          where ph.phase = 'report' and t.created_by = $2 and t.lease_id = any($1)`,
+        [leases, sub],
       );
 
-      // The keys are required, so they point at nothing rather than being cleared.
-      await run(`update payment_proof set s3_key = 'erased/' || id, reference = null where lease_id in ${leasesInScope}`, ids);
-      await run(`update lease set pdf_s3_key = null where id in ${leasesInScope}`, ids);
-      await run(`update invoice set pdf_s3_key = null where lease_id in ${leasesInScope}`, ids);
+      // Required keys point at nothing rather than being cleared.
+      await run(`update payment_proof set s3_key = 'erased/' || id, reference = null where lease_id = any($1)`, ls);
+      await run('update lease set pdf_s3_key = null where id = any($1)', ls);
+      await run('update invoice set pdf_s3_key = null where lease_id = any($1)', ls);
       await run(
         `update lease_signature set signature_s3_key = 'erased/' || id, ip_address = null, user_agent = null
-          where party = 'tenant' and lease_id in ${leasesInScope}`,
-        ids,
+          where party = 'tenant' and lease_id = any($1)`,
+        ls,
       );
       await run(
         `update inspection_signature set signature_s3_key = 'erased/' || id, ip_address = null, user_agent = null
-          where party = 'tenant' and inspection_id in (select id from inspection where lease_id in ${leasesInScope})`,
-        ids,
+          where party = 'tenant' and inspection_id in (select id from inspection where lease_id = any($1))`,
+        ls,
       );
-      // What the tenant wrote about repairs, and the photos they took when reporting. The ticket and the completion photos stay: it is
-      // the property's maintenance history.
+      await run('update inspection set pdf_s3_key = null, draft_s3_key = null where lease_id = any($1)', ls);
+      await run('update termination set statement_s3_key = null where lease_id = any($1)', ls);
       await run(
-        `delete from ticket_photo where phase = 'report' and ticket_id in (select id from ticket where created_by = $3 and lease_id in ${leasesInScope})`,
-        [...ids, sub],
+        `update arrears_step set document_s3_key = 'erased/' || id
+          where document_s3_key is not null and case_id in (select id from arrears_case where lease_id = any($1))`,
+        ls,
+      );
+      // What the tenant wrote about repairs, and the photos they took reporting them. The ticket
+      // and the completion photos stay: they are the property's maintenance history.
+      await run(
+        `delete from ticket_photo where phase = 'report'
+            and ticket_id in (select id from ticket where created_by = $2 and lease_id = any($1))`,
+        [leases, sub],
       );
       await run(
         `update ticket set description = '[Removed at the tenant''s request]', rating_note = null
-          where created_by = $3 and lease_id in ${leasesInScope}`,
-        [...ids, sub],
+          where created_by = $2 and lease_id = any($1)`,
+        [leases, sub],
       );
       await run(
         `update ticket_event set note = '[Removed at the tenant''s request]'
-          where actor_role = 'tenant' and note is not null and ticket_id in (select id from ticket where lease_id in ${leasesInScope})`,
-        ids,
+          where actor_role = 'tenant' and note is not null and ticket_id in (select id from ticket where lease_id = any($1))`,
+        ls,
       );
       // Payment references and bank lines carry their name ("N PHIRI LSE-00101").
-      await run(`update payment set reference = null where lease_id in ${leasesInScope}`, ids);
-      await run(`update bank_line set description = '[erased]' where lease_id in ${leasesInScope}`, ids);
-      await run(`delete from tenant_invite where lease_id in ${leasesInScope} or (applicant_id = $1 and $2::uuid is null)`, ids);
+      await run('update payment set reference = null where lease_id = any($1)', ls);
+      await run(`update bank_line set description = '[erased]' where lease_id = any($1)`, ls);
+      await run('delete from tenant_invite where lease_id = any($1)', ls);
 
       // The landlord's own messages about this person ("Proof of payment from Naledi Phiri,
       // call 082…") keep their purpose but lose the details.
       const fullName = `${applicant.first_name} ${applicant.last_name}`.trim();
-      const scrub = (column: string) =>
-        `replace(replace(replace(replace(${column}, $3, 'the tenant'), $4, '[email removed]'), $5, '[phone removed]'), $7, '[phone removed]')`;
       // A blank phone must not match (and blank out) every message. The number is stored as
       // +27…, and messages often carry it as dialled locally, 08….
       const phone = applicant.phone || 'no phone on record';
       const localPhone = phone.startsWith('+27') ? `0${phone.slice(3)}` : phone;
-      const identifiers = [fullName, applicant.email, phone];
+      const scrub = (column: string) =>
+        `replace(replace(replace(replace(${column}, $2, 'the tenant'), $3, '[email removed]'), $4, '[phone removed]'), $5, '[phone removed]')`;
       await run(
         `update notification set subject = ${scrub('subject')}, body = ${scrub('body')}
-          where recipient_sub is distinct from $6
-            and (lease_id in ${leasesInScope} or ($2::uuid is null and (body like '%' || $3 || '%' or subject like '%' || $3 || '%')))`,
-        [...ids, ...identifiers, sub, localPhone],
+          where lease_id = any($1) and recipient_sub is distinct from $6`,
+        [leases, fullName, applicant.email, phone, localPhone, sub],
       );
 
-      if (identity) {
-        // Their name and email in the activity log (sign-ins, invites, password resets).
-        await run(
-          `update audit_log set detail = replace(replace(detail::text, $1, '[email removed]'), $2, 'the tenant')::jsonb
-            where detail::text like '%' || $1 || '%' or detail::text like '%' || $2 || '%'`,
-          [applicant.email, fullName],
+      // The landlord's applications and leases move to an anonymous stand-in, so the shared
+      // record no longer shows this landlord the person's name, contact details or income.
+      if (applications.length > 0 || leases.length > 0) {
+        const [standIn] = await run<{ id: string }>(
+          `insert into applicant (first_name, last_name, email, phone, monthly_income_cents, erased_at)
+           values ('Erased', 'person', 'erased-' || gen_random_uuid() || '@invalid', '', 0, now())
+           returning id`,
         );
-        await run(
-          `update applicant set first_name = 'Erased', last_name = 'person', id_number_enc = '\\x00',
-                  id_number_last4 = '0000', email = 'erased-' || id || '@invalid', phone = '',
-                  employer = null, monthly_income_cents = 0, cognito_sub = null, erased_at = now()
-            where id = $1`,
-          [applicant.id],
-        );
+        await run('update lease set applicant_id = $2 where id = any($1)', [leases, standIn!.id]);
+        await run('update application set applicant_id = $2 where id = any($1)', [applications, standIn!.id]);
       }
     }
 
-    if (identity) {
-      await run('delete from notification where recipient_sub = $1', [sub]);
-      await run('delete from notification_preference where person_sub = $1', [sub]);
-      await run('delete from local_credential where sub = $1', [sub]);
+    // The identity goes once no landlord holds an application about this person any more.
+    // Every lease hangs off an application, so this covers leases too.
+    const [left] = applicant
+      ? await run<{ n: number }>('select count(*)::int as n from application where applicant_id = $1', [applicant.id])
+      : [{ n: 0 }];
+    if (left!.n > 0) return { keys: files, identityErased: false };
+
+    const emails = [...new Set([applicant?.email, credential?.email].filter((e): e is string => Boolean(e)))];
+    const names = [...new Set([applicant ? `${applicant.first_name} ${applicant.last_name}`.trim() : null, credential?.name]
+      .filter((n): n is string => Boolean(n && n.length >= 3)))];
+    // Their email, name and the IP addresses of their sign-ins in the activity log. Failed
+    // sign-ins for their email carry no actor, so they are found by the email in the detail.
+    for (const email of emails) {
+      await run(
+        `update audit_log set detail = (replace(detail::text, $1, '[email removed]'))::jsonb - 'address'
+          where detail::text like '%' || $1 || '%'`,
+        [email],
+      );
     }
-    return files;
+    for (const name of names) {
+      await run(
+        `update audit_log set detail = (replace(detail::text, $1, 'the tenant'))::jsonb where detail::text like '%' || $1 || '%'`,
+        [name],
+      );
+    }
+    await run(`update audit_log set detail = detail - 'address' where actor_sub = $1 and detail ? 'address'`, [sub]);
+    // What they agreed to, and when, stays as proof; where from and on what device does not.
+    await run('update consent set ip_address = null, user_agent = null where person_sub = $1', [sub]);
+    if (applicant) {
+      await run(
+        `update applicant set first_name = 'Erased', last_name = 'person', id_number_enc = '\\x00',
+                id_number_last4 = '0000', email = 'erased-' || id || '@invalid', phone = '',
+                employer = null, monthly_income_cents = 0, cognito_sub = null, erased_at = now()
+          where id = $1`,
+        [applicant.id],
+      );
+      await run('delete from tenant_invite where applicant_id = $1', [applicant.id]);
+    }
+    await run('delete from tenant_invite where accepted_sub = $1', [sub]);
+    await run('delete from notification where recipient_sub = $1', [sub]);
+    await run('delete from notification_preference where person_sub = $1', [sub]);
+    // Password reset links and recovery codes go with the sign-in (on delete cascade).
+    await run('delete from local_credential where sub = $1', [sub]);
+    return { keys: files, identityErased: true };
   });
 
   // After the commit: a file that fails to delete is logged and retried by hand, never a reason
@@ -196,9 +272,9 @@ export async function erasePerson(
     action: 'privacy.erased',
     entity: 'person',
     entityId: null,
-    detail: { personSub: sub, files: keys.length, landlordId, identity },
+    detail: { personSub: sub, files: keys.length, landlordId, identityErased },
   });
-  return { files: keys.length };
+  return { files: keys.length, identityErased };
 }
 
 /** A message straight to an address, outside preferences: the person asked for this answer. */

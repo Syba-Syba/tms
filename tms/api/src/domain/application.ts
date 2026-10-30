@@ -30,10 +30,21 @@ export const saPhone = z
   })
   .refine((value) => /^\+27\d{9}$/.test(value), 'Enter a valid South African mobile number.');
 
+/** A name as people write them: letters (any language), spaces, apostrophes, hyphens and dots,
+    starting with a letter. A name starting with = or + became a formula in a landlord's
+    spreadsheet export, and there was no length limit at all. */
+const personName = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required.`)
+    .max(80, `${label} must be 80 characters or fewer.`)
+    .regex(/^\p{L}[\p{L}\p{M}' .-]*$/u, `${label} can only have letters, spaces, apostrophes and hyphens.`);
+
 export const createApplicationSchema = z.object({
   unitId: z.guid(),
-  firstName: z.string().min(1, 'First name is required.'),
-  lastName: z.string().min(1, 'Last name is required.'),
+  firstName: personName('First name'),
+  lastName: personName('Last name'),
   idNumber: saIdNumber,
   email: z.string().email('Enter a valid email address.'),
   phone: saPhone,

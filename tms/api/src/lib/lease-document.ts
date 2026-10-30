@@ -78,15 +78,21 @@ export async function renderLeaseDocument(
   await storage().put(key, rendered.bytes, 'application/pdf');
   // The guard above is re-checked at write time: a signature that landed while rendering
   // must win, or it would attest a document this update is about to replace.
-  const updated = await query<{ id: string }>(
-    `update lease set pdf_s3_key = $2, pdf_sha256 = $3
+  const updated = await query<{ id: string; old_key: string | null }>(
+    `with before as (select pdf_s3_key from lease where id = $1)
+     update lease set pdf_s3_key = $2, pdf_sha256 = $3
       where id = $1 and not exists (select 1 from lease_signature s where s.lease_id = $1)
-      returning id`,
+      returning id, (select pdf_s3_key from before) as old_key`,
     [leaseId, key, rendered.sha256],
   );
   if (updated.length === 0) {
+    // Nothing points at this render, so nothing (erasure included) would ever find it.
+    await storage().remove(key).catch(() => undefined);
     throw conflict('This lease has been signed; its document cannot be re-rendered.');
   }
+  // The superseded render carries the tenant's name and ID digits and no row points at it.
+  const oldKey = updated[0]!.old_key;
+  if (oldKey && oldKey !== key) await storage().remove(oldKey).catch(() => undefined);
 
   return { key, sha256: rendered.sha256, status: lease.status };
 }

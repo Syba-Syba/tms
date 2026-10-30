@@ -41,21 +41,13 @@ export const handler = route(async (event) => {
     // Only this landlord's records, and only their leases count for the retention rule.
     const block = await erasureBlockFor(request.person_sub, landlordId);
     if (block) throw conflict(block);
-    await erasePerson(request.person_sub, { sub: person.sub, role: 'landlord' }, { landlordId, identity: false });
+    const erased = await erasePerson(request.person_sub, { sub: person.sub, role: 'landlord' }, { landlordId });
     await query(
       `update privacy_request set status = 'completed', decided_by = $2, decided_at = now(),
               response = 'Your personal information has been erased from our records.' where id = $1`,
       [requestId, person.sub],
     );
-    // The rest of this request's landlords, asked at the same time. A legacy request had one.
-    const [outstanding] = await query<{ open: string }>(
-      `select count(*)::text as open from privacy_request
-        where person_sub = $1 and created_at = $2::timestamptz and status <> 'completed'`,
-      [request.person_sub, request.created_at],
-    );
-    const everyoneErased = Number(outstanding!.open) === 0;
-    if (everyoneErased) {
-      await erasePerson(request.person_sub, { sub: person.sub, role: 'landlord' }, { identity: true });
+    if (erased.identityErased) {
       // Sent to the address captured before erasure; the account it belonged to is gone.
       await tellPerson(
         null, request.person_sub, request.email, 'Your information has been erased',
@@ -66,7 +58,7 @@ export const handler = route(async (event) => {
       await tellPerson(
         null, request.person_sub, request.email, `${request.landlord_name} erased your information`,
         `Hi ${request.first_name},\n\n${request.landlord_name} has erased your personal information from their records, as you asked. ` +
-          'Your account stays open until every landlord you asked has answered.',
+          'Your account stays open while other landlords still hold records about you. Each answers for their own.',
       );
     }
   } else {
