@@ -21,9 +21,11 @@ export const handler = route(async (event) => {
       // The tenancy ends on the termination's effective date when notice has been served,
       // which is earlier than end_date on every early cancellation. Anchoring the window to
       // end_date meant no exit inspection could ever be valid for those leases, and without
-      // one the law deems the place undamaged: every deduction was forfeited.
+      // one the law deems the place undamaged: every deduction was forfeited. The notice date
+      // wins even when it is later: a lease past its end date runs month to month (CPA s14),
+      // and taking the earlier of the two put the window on an end date that had already gone.
       `select l.id, l.status,
-              least(l.end_date, coalesce(t.effective_on, l.end_date))::text as last_day,
+              coalesce(t.effective_on, l.end_date)::text as last_day,
               u.bedrooms, u.bathrooms
          from lease l
          join unit u on u.id = l.unit_id
@@ -76,8 +78,10 @@ export const handler = route(async (event) => {
     return { id: inspection!.id, seeded: rows.length };
   });
 
+  // A tenant imported without an account is addressed by their applicant row, so the email
+  // telling them when to be there still goes out.
   const [tenant] = await query<{ sub: string | null; email: string; phone: string; unit: string }>(
-    `select a.cognito_sub as sub, a.email, a.phone, p.name || ' ' || u.code as unit
+    `select coalesce(a.cognito_sub, 'applicant:' || a.id) as sub, a.email, a.phone, p.name || ' ' || u.code as unit
        from lease l
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id

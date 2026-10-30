@@ -19,8 +19,9 @@ import { alert, describeError } from './alerts';
  * Every job is idempotent (unique keys on invoices, interest months and notification dedupe
  * keys; status guards on activation), so each daily job also runs once at startup. A machine
  * that was off at 06:00 catches up when it comes back rather than skipping the month. A job
- * with onDay catches up only on that day: interest posted on the 15th credited a month to a
- * deposit that arrived on the 10th, and only because the server happened to restart.
+ * with onDay catches up only on that day. Deposit interest has none: it is credited on the
+ * balance held at the start of the month, so a catch-up on the 15th cannot credit a month to a
+ * deposit that arrived on the 10th.
  *
  * A day counts as done only when the job succeeded. A failed run is retried on later ticks,
  * with a growing wait, rather than waiting for tomorrow (or, for interest, next month).
@@ -42,7 +43,11 @@ export const JOBS: Job[] = [
   { name: 'privacy-sweep', run: privacySweep, dailyAt: '04:30' },
   { name: 'notifications-sweep', run: notificationsSweep, dailyAt: '05:00' },
   { name: 'arrears-run', run: () => arrearsRun(), dailyAt: '05:15' },
-  { name: 'interest-run', run: interestRun, dailyAt: '05:30', onDay: 1 },
+  // Daily rather than only on the 1st: a server that was down on the 1st, or a run that kept
+  // failing that day, lost the month's interest for good. The run credits each month once
+  // (unique per lease and month) and only on what was held at the month's start, so the later
+  // days of the month are harmless repeats or the catch-up.
+  { name: 'interest-run', run: interestRun, dailyAt: '05:30' },
   { name: 'invoices-run', run: () => invoicesRun(), dailyAt: '06:00' },
 ];
 
@@ -144,7 +149,7 @@ export function startScheduler(
   };
 
   // Catch-up: the daily jobs run once on boot, in dependency order (activation before
-  // invoicing). Interest runs only on the 1st, as it would have on its own tick. Before a
+  // invoicing). Before a
   // job's own time, a catch-up is yesterday's missed run arriving late (the sweep still dates
   // by UTC before 02:00), so the job runs again at its time today rather than being skipped.
   const catchUp = async () => {

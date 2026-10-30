@@ -79,17 +79,20 @@ const counter = (fail = 0) => {
 };
 
 describe('startup catch-up and deposit interest', () => {
-  it('posts no interest when the server restarts mid-month', async () => {
-    // The probe: a restart on the 15th credited the whole month to every held deposit.
+  it('posts no interest on a deposit that arrived mid-month when the server restarts', async () => {
+    // The probe: a restart on the 15th credited the whole month to every held deposit. Interest
+    // now catches up on any day, but only on what was held when the month began.
+    const { addDaysIso, sastMonthStart } = await import('../domain/dates');
+    await db.query(`update deposit_ledger set occurred_on = $2 where lease_id = $1`, [LEASE, addDaysIso(sastMonthStart(), 9)]);
     const s = harness(scheduler.JOBS, '2026-10-15T08:00:00Z');
     await s.catchUp();
     const rows = await db.query(`select id from deposit_ledger where entry_type = 'interest'`);
     expect(rows).toHaveLength(0);
-    // The other daily jobs still caught up, and each left a record.
+    // The daily jobs all caught up, and each left a record.
     const audited = await db.query<{ job: string }>(
       `select detail->>'job' as job from audit_log where action = 'job.finished' order by id`,
     );
-    expect(audited.map((row) => row.job)).toEqual(['leases-activate', 'privacy-sweep', 'notifications-sweep', 'arrears-run', 'invoices-run']);
+    expect(audited.map((row) => row.job)).toEqual(['leases-activate', 'privacy-sweep', 'notifications-sweep', 'arrears-run', 'interest-run', 'invoices-run']);
   });
 
   it('catches up a job with onDay only on that day', async () => {
@@ -103,7 +106,8 @@ describe('startup catch-up and deposit interest', () => {
     expect([monthly.runs, daily.runs]).toEqual([0, 1]);
     await harness(jobs, '2026-11-01T08:00:00Z').catchUp();
     expect([monthly.runs, daily.runs]).toEqual([1, 2]);
-    expect(scheduler.JOBS.find((job) => job.name === 'interest-run')?.onDay).toBe(1);
+    // Deposit interest is no longer one of them: a missed 1st lost the month for good.
+    expect(scheduler.JOBS.find((job) => job.name === 'interest-run')?.onDay).toBeUndefined();
   });
 });
 

@@ -5,6 +5,7 @@ import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import { recordConsent } from '../lib/privacy';
 import { PRIVACY_VERSION } from '../domain/privacy';
+import { sastToday } from '../domain/dates';
 
 const recordSchema = z.object({
   bureau: z.enum(['transunion', 'experian', 'xds', 'compuscan', 'tpn', 'other']),
@@ -83,7 +84,9 @@ export const handler = route(async (event) => {
   if (!(await hasCreditConsent(applicationId))) {
     throw conflict('The applicant has not agreed to a credit check. Ask them to agree on their application first.');
   }
-  if (input.checkedOn > new Date().toISOString().slice(0, 10)) throw badRequest('The check date cannot be in the future.');
+  // Today in Johannesburg: the UTC date is still yesterday until 02:00 SAST, which refused a
+  // check run and recorded just after midnight as being in the future.
+  if (input.checkedOn > sastToday()) throw badRequest('The check date cannot be in the future.');
 
   let documentId: string | null = null;
   if (input.reportKey) {

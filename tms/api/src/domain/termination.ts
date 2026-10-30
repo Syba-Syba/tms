@@ -121,12 +121,33 @@ export const HOLDOVER_NOTICE_BUSINESS_DAYS = 20;
     or month-to-month end date may go. Anything later is a new lease, not a notice. */
 export const LATEST_AFTER_END_DAYS = 31;
 
+/** CPA s14(2)(c): the landlord must tell the tenant 40 to 80 business days before a fixed term
+    expires. Told later, the lease does not simply end: it carries on month to month. */
+export const LANDLORD_END_OF_TERM_BUSINESS_DAYS = 40;
+
+export type Initiator = 'tenant' | 'landlord' | 'mutual';
+
 const runOut = (noticeGivenOn: Date, leaseEnd: Date) => leaseEnd <= noticeGivenOn;
 
+/** A landlord's end-of-term notice served too close to the end date. The lease then continues
+    month to month, so it ends on 20 business days' notice, not on the end date: before this a
+    landlord could end a fixed term with a day's warning. */
+const landlordLate = (reason: TerminationReason, initiatedBy: Initiator | undefined, noticeGivenOn: Date, leaseEnd: Date) =>
+  reason === 'end_of_term' &&
+  initiatedBy === 'landlord' &&
+  !runOut(noticeGivenOn, leaseEnd) &&
+  addBusinessDays(noticeGivenOn, LANDLORD_END_OF_TERM_BUSINESS_DAYS) > leaseEnd;
+
 /** The business days of notice this notice needs. A lease past its end date is month to month,
-    so even 'end_of_term' needs the full 20 days then. */
-export function noticeBusinessDays(reason: TerminationReason, noticeGivenOn: Date, leaseEnd: Date): number {
+    so even 'end_of_term' needs the full 20 days then, as does a landlord's late end-of-term notice. */
+export function noticeBusinessDays(
+  reason: TerminationReason,
+  noticeGivenOn: Date,
+  leaseEnd: Date,
+  initiatedBy?: Initiator,
+): number {
   if (reason !== 'mutual' && runOut(noticeGivenOn, leaseEnd)) return HOLDOVER_NOTICE_BUSINESS_DAYS;
+  if (landlordLate(reason, initiatedBy, noticeGivenOn, leaseEnd)) return HOLDOVER_NOTICE_BUSINESS_DAYS;
   return NOTICE_BUSINESS_DAYS[reason];
 }
 
@@ -136,11 +157,16 @@ export function earliestEffectiveDate(
   reason: TerminationReason,
   noticeGivenOn: Date,
   leaseEnd: Date,
+  initiatedBy?: Initiator,
 ): Date {
   // Notice served after the lease has already run out: it is month to month by then, so the
   // notice period runs from the notice date. Ending it that same day was a same-day exit.
   if (runOut(noticeGivenOn, leaseEnd)) {
     return reason === 'mutual' ? noticeGivenOn : addBusinessDays(noticeGivenOn, HOLDOVER_NOTICE_BUSINESS_DAYS);
+  }
+  if (landlordLate(reason, initiatedBy, noticeGivenOn, leaseEnd)) {
+    const afterNotice = addBusinessDays(noticeGivenOn, HOLDOVER_NOTICE_BUSINESS_DAYS);
+    return afterNotice > leaseEnd ? afterNotice : leaseEnd;
   }
   if (reason === 'end_of_term') return leaseEnd;
   const afterNotice = addBusinessDays(noticeGivenOn, NOTICE_BUSINESS_DAYS[reason]);
@@ -148,14 +174,18 @@ export function earliestEffectiveDate(
 }
 
 /** The latest end date a notice may name. A one-sided notice ends the lease by its end date at
-    the latest; only an agreed one, or a lease already month to month, goes a little past it. */
+    the latest; only an agreed one, a lease already month to month, or a landlord's late end-of-term notice
+    (which makes it month to month) goes a little past it. */
 export function latestEffectiveDate(
   reason: TerminationReason,
   noticeGivenOn: Date,
   leaseEnd: Date,
+  initiatedBy?: Initiator,
 ): Date {
-  if (reason !== 'mutual' && !runOut(noticeGivenOn, leaseEnd)) return leaseEnd;
-  const earliest = earliestEffectiveDate(reason, noticeGivenOn, leaseEnd);
+  if (reason !== 'mutual' && !runOut(noticeGivenOn, leaseEnd) && !landlordLate(reason, initiatedBy, noticeGivenOn, leaseEnd)) {
+    return leaseEnd;
+  }
+  const earliest = earliestEffectiveDate(reason, noticeGivenOn, leaseEnd, initiatedBy);
   const from = earliest > leaseEnd ? earliest : leaseEnd;
   return addDays(from, LATEST_AFTER_END_DAYS);
 }
