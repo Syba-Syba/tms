@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 
@@ -59,23 +60,27 @@ export function ResetPassword() {
       </p>
       <Card>
         <CardBody className="space-y-3">
+          <Field label="New password" htmlFor="reset-password" hint="At least 8 characters.">
           <Input
+            id="reset-password"
             type="password"
-            placeholder="New password, at least 8 characters"
             name="new-password"
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
+          </Field>
+          <Field label="New password again" htmlFor="reset-confirm">
           <Input
+            id="reset-confirm"
             type="password"
-            placeholder="Type it again"
             name="confirm-password"
             autoComplete="new-password"
             value={confirm}
             onChange={(event) => setConfirm(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && ready && save()}
           />
+          </Field>
           {mismatch ? <p className="text-xs text-danger">The two passwords differ.</p> : null}
           <Button block loading={busy} disabled={!ready} onClick={save}>
             Save and sign in

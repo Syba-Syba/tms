@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 
 /** The server answers the same whether or not the email has an account, so this screen does too. */
@@ -35,15 +36,17 @@ export function ForgotPassword() {
       ) : null}
       <Card>
         <CardBody className="space-y-3">
+          <Field label="Email" htmlFor="forgot-email">
           <Input
+            id="forgot-email"
             type="email"
-            placeholder="Email"
             name="email"
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && email.includes('@') && send()}
           />
+          </Field>
           <Button block loading={busy} disabled={!email.includes('@')} onClick={send}>
             {sent ? 'Send another link' : 'Send reset link'}
           </Button>

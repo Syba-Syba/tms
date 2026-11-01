@@ -20,12 +20,12 @@ describe('signing in and out', () => {
       </>,
     );
 
-    type(screen.getByPlaceholderText('Email'), 'landlord@example.co.za');
-    type(screen.getByPlaceholderText('Password'), 'wrong');
+    type(screen.getByLabelText('Email'), 'landlord@example.co.za');
+    type(screen.getByLabelText('Password'), 'wrong');
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await screen.findByText('Sign in failed');
 
-    type(screen.getByPlaceholderText('Password'), 'dev');
+    type(screen.getByLabelText('Password'), 'dev');
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await screen.findByText('PROBE-HOME');
     expect(JSON.parse(localStorage.getItem('tms.user')!)).toMatchObject({
@@ -45,9 +45,9 @@ describe('signing in and out', () => {
       </>,
     );
 
-    type(screen.getByPlaceholderText('Full name'), 'Click Tester');
-    type(screen.getByPlaceholderText('Email'), `clicks-${Date.now()}@example.co.za`);
-    type(screen.getByPlaceholderText('Password, at least 8 characters'), 'a-long-password');
+    type(screen.getByLabelText('Full name'), 'Click Tester');
+    type(screen.getByLabelText('Email'), `clicks-${Date.now()}@example.co.za`);
+    type(screen.getByLabelText('Password'), 'a-long-password');
     // POPIA: the account is not created until the privacy notice is agreed to.
     expect(screen.getByRole('button', { name: 'Create the account' })).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));

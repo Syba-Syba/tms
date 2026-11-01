@@ -75,8 +75,8 @@ describe('two-step sign-in', () => {
         <Route path="/" element={<div>PROBE-HOME</div>} />
       </>,
     );
-    type(screen.getByPlaceholderText('Email'), email);
-    type(screen.getByPlaceholderText('Password'), 'a-long-password');
+    type(screen.getByLabelText('Email'), email);
+    type(screen.getByLabelText('Password'), 'a-long-password');
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     const code = await screen.findByLabelText('Code from your authenticator app');
     // The code used to turn it on cannot be used again, so this is the next one along.
