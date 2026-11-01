@@ -335,3 +335,58 @@ describe('the deposit a tenant still owes', () => {
     expect(await owing()).toBe(0);
   });
 });
+
+describe('what an erasing landlord still sees', () => {
+  it('shows "Erased person" in its activity log, and drops messages addressed to the person', async () => {
+    const as = await register('Kagiso Moloi', 'kagiso@example.co.za');
+    const [unitA] = await db.query<{ id: string }>(
+      `insert into unit (property_id, code, bedrooms, bathrooms, monthly_rent_cents, deposit_cents, status)
+       values ('22222222-2222-2222-2222-222222222222', 'K1', 1, 1, 500000, 500000, 'vacant') returning id`,
+    );
+    const [unitB] = await db.query<{ id: string }>(
+      `insert into unit (property_id, code, bedrooms, bathrooms, monthly_rent_cents, deposit_cents, status)
+       values ((select id from property where name = 'Other Court'), 'K2', 1, 1, 500000, 500000, 'vacant') returning id`,
+    );
+    const toA = await apply(as, { email: 'kagiso@example.co.za', firstName: 'Kagiso', lastName: 'Moloi', unitId: unitA!.id });
+    const toB = await apply(as, { email: 'kagiso@example.co.za', firstName: 'Kagiso', lastName: 'Moloi', unitId: unitB!.id });
+    expect(toA.status).toBe(201);
+    expect(toB.status).toBe(201);
+    await call('POST', `/applications/${toA.body.id}/decision`, LANDLORD, { outcome: 'declined', reason: 'Unit let to someone else.' });
+    // A message to them under a stand-in address, as an imported tenant gets before they have an account.
+    const [{ applicant_id }] = (await db.query<{ applicant_id: string }>('select applicant_id from application where id = $1', [toA.body.id])) as [{ applicant_id: string }];
+    const [lease] = await db.query<{ id: string }>(
+      `insert into lease (application_id, unit_id, applicant_id, start_date, end_date, monthly_rent_cents, deposit_cents, status)
+       values ($1, $2, $3, current_date - 3000, current_date - 2600, 500000, 500000, 'terminated') returning id`,
+      [toA.body.id, unitA!.id, applicant_id],
+    );
+    await db.query(
+      `insert into notification (lease_id, recipient_sub, recipient_to, channel, category, kind, subject, body)
+       values ($1, 'applicant:' || $2, 'kagiso@example.co.za', 'email', 'inspection', 'inspection_tomorrow', 'Inspection tomorrow', 'Hi Kagiso, ...')`,
+      [lease!.id, applicant_id],
+    );
+
+    expect((await call('POST', '/me/erasure-request', as, {})).status).toBe(201);
+    const request = (await call('GET', '/privacy-requests', LANDLORD)).body.items.find((i: { email: string }) => i.email === 'kagiso@example.co.za');
+    expect((await call('POST', `/privacy-requests/${request.id}/decision`, LANDLORD, { decision: 'erase' })).status).toBe(200);
+
+    const log = await call('GET', `/audit?entity=application&entityId=${toA.body.id}`, LANDLORD);
+    expect(log.status).toBe(200);
+    expect(log.body.items.length).toBeGreaterThan(0);
+    expect(JSON.stringify(log.body)).not.toContain('Kagiso');
+    expect(log.body.items.some((item: { actor: { name: string } }) => item.actor.name === 'Erased person')).toBe(true);
+    expect(await db.query(`select 1 from notification where recipient_to = 'kagiso@example.co.za' and lease_id = $1`, [lease!.id])).toHaveLength(0);
+    // B still holds their application, so the account and B's view stand.
+    expect((await call('POST', '/auth/login', null, { email: 'kagiso@example.co.za', password: 'long-enough-1' })).status).toBe(200);
+  });
+
+  it('removes every message sent to their address once the identity goes', async () => {
+    const made = await call('POST', '/auth/register', null, { name: 'Invite Only', email: 'invite-only@example.co.za', password: 'long-enough-1', consentVersion: PRIVACY_VERSION }, '10.9.7.7');
+    const as = { sub: made.body.user.sub as string, groups: 'tenant' };
+    await db.query(
+      `insert into notification (recipient_sub, recipient_to, channel, category, kind, subject, body)
+       values ('tenant-invite:00000000-0000-0000-0000-000000000099', 'invite-only@example.co.za', 'email', 'lease', 'tenant_invite', 'Join', 'Hi Invite, /join?token=abc')`,
+    );
+    expect((await call('POST', '/me/erasure-request', as, {})).body.status).toBe('completed');
+    expect(await db.query(`select 1 from notification where recipient_to = 'invite-only@example.co.za'`)).toHaveLength(0);
+  });
+});
