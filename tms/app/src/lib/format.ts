@@ -18,24 +18,51 @@ export function formatDate(value: string | null | undefined): string {
   return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}`;
 }
 
-const SAST_DAY = new Intl.DateTimeFormat('en-CA', {
+/**
+ * A Postgres text timestamp ("2026-10-07 22:33:06.087+00", what `at::text` sends) → ISO 8601
+ * ("2026-10-07T22:33:06.087+00:00"). Chrome reads the Postgres form, Safari returns Invalid
+ * Date for it, so every iPhone showed the raw string. ISO input passes through unchanged.
+ */
+export function toIsoInstant(value: string): string {
+  return value
+    .trim()
+    .replace(/^(\d{4}-\d{2}-\d{2}) (?=\d)/, '$1T')
+    .replace(/([+-]\d{2})$/, '$1:00')
+    .replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+}
+
+const parseInstant = (value: string): Date | null => {
+  const at = new Date(toIsoInstant(value));
+  return Number.isNaN(at.getTime()) ? null : at;
+};
+
+const SAST_PARTS = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Africa/Johannesburg',
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
 });
+
+const sastParts = (at: Date) => {
+  const parts = SAST_PARTS.formatToParts(at);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return { day: `${part('year')}-${part('month')}-${part('day')}`, time: `${part('hour')}:${part('minute')}` };
+};
 
 /**
  * A moment in time (an *At or created_at from the API, in UTC) → "7 Oct 2026", on the
  * Johannesburg calendar. formatDate would show the UTC day, a day early before 02:00 SAST.
- * Plain YYYY-MM-DD dates (due dates, paid-on dates) still go through formatDate.
+ * Plain YYYY-MM-DD dates (due dates, paid-on dates) still go through formatDate. A value that
+ * will not parse falls back to the date as written.
  */
 export function formatInstant(value: string | null | undefined): string {
   if (!value) return '';
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return value;
-  const part = (type: string) => SAST_DAY.formatToParts(at).find((p) => p.type === type)?.value ?? '';
-  return formatDate(`${part('year')}-${part('month')}-${part('day')}`);
+  const at = parseInstant(value);
+  if (!at) return formatDate(value);
+  return formatDate(sastParts(at).day);
 }
 
 /** "2026-10" or "2026-10-01" → "October 2026". */
@@ -99,13 +126,13 @@ export function status(value: string): { label: string; tone: Tone } {
   return { label: words.charAt(0).toUpperCase() + words.slice(1), tone: 'neutral' };
 }
 
-/** A timestamp → "7 Oct 2026, 14:30" in the viewer's own time, which for this app is SAST. */
+/** A timestamp → "7 Oct 2026, 14:30" on the Johannesburg clock, whatever the device's zone. */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '';
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return value;
-  const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
-  return `${at.getDate()} ${MONTHS[at.getMonth()]} ${at.getFullYear()}, ${time}`;
+  const at = parseInstant(value);
+  if (!at) return formatDate(value);
+  const { day, time } = sastParts(at);
+  return `${formatDate(day)}, ${time}`;
 }
 
 export const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from './button';
 import { Input } from './input';
 import { Modal } from './modal';
@@ -13,6 +13,7 @@ export function ConfirmDialog({
   requireText,
   onConfirm,
   loading,
+  children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -22,12 +23,15 @@ export function ConfirmDialog({
   requireText?: string;
   onConfirm: () => void;
   loading?: boolean;
+  /** What the action will do, in figures, above the buttons. */
+  children?: ReactNode;
 }) {
   const [typed, setTyped] = useState('');
   const blocked = !!requireText && typed !== requireText;
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={title} description={description} size="sm">
+      {children ? <div className="mb-4">{children}</div> : null}
       {requireText ? (
         <div className="space-y-2">
           <p className="text-body text-ink-muted">

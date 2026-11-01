@@ -19,6 +19,20 @@ import { formatDate } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
 
+/**
+ * Which of the five steps are done, and the first one still waiting. Counting signatures
+ * (2 + how many) showed the landlord as signed when only the tenant had.
+ */
+export function signingProgress(status: string, signedParties: string[]): { done: boolean[]; current: number } {
+  const landlord = signedParties.includes('landlord');
+  const tenant = signedParties.includes('tenant');
+  // An accepted renewal is 'scheduled' once both have signed: it is waiting only for its date.
+  const finished = status === 'active' || (status === 'scheduled' && landlord && tenant);
+  const done = [true, true, landlord || finished, tenant || finished, finished];
+  const current = done.indexOf(false);
+  return { done, current: current === -1 ? done.length : current };
+}
+
 interface Lease {
   id: string;
   ref: string;
@@ -101,7 +115,7 @@ export function LeaseReview() {
     }
   };
 
-  const stepIndex = data.status === 'active' || (isRenewal && signedParties.length === 2) ? 4 : 2 + signedParties.length;
+  const progress = signingProgress(data.status, signedParties);
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
@@ -145,7 +159,7 @@ export function LeaseReview() {
       <Card className="mb-4">
         <CardBody>
           <Stepper
-            current={stepIndex}
+            current={progress.current}
             steps={[
               { title: isRenewal ? 'Renewal accepted' : 'Application approved' },
               { title: 'Lease generated' },
@@ -160,7 +174,7 @@ export function LeaseReview() {
               isRenewal
                 ? { title: `Starts ${formatDate(data.startDate)}`, detail: 'Takes over from the current lease' }
                 : { title: 'Lease active', detail: 'Deposit due within 7 days' },
-            ]}
+            ].map((step, index) => ({ ...step, done: progress.done[index] }))}
           />
         </CardBody>
       </Card>

@@ -50,14 +50,22 @@ interface Ticket {
 
 const SEVERITY = { emergency: 'danger', urgent: 'warning', routine: 'neutral' } as const;
 
-/** Five arches, filled to the rating. The motif does the work a star rating usually does. */
+/** Five arches, filled to the rating. The motif does the work a star rating usually does.
+    A radio group, so a screen reader says which rating is chosen, not just five buttons. */
 function ArchRating({ value, onChange }: { value: number; onChange?: (next: number) => void }) {
   return (
-    <div className="flex gap-2.5">
+    <div
+      role="radiogroup"
+      aria-label={onChange ? 'Rating' : `Rated ${value} of 5`}
+      aria-readonly={onChange ? undefined : true}
+      className="flex gap-2.5"
+    >
       {[1, 2, 3, 4, 5].map((step) => (
         <button
           key={step}
           type="button"
+          role="radio"
+          aria-checked={step === value}
           disabled={!onChange}
           onClick={() => onChange?.(step)}
           aria-label={`${step} of 5`}
@@ -165,7 +173,8 @@ export function TicketDetail() {
                   <p className="mt-1 rounded-sm bg-surface-muted px-3 py-2 text-meta">{entry.note}</p>
                 ) : null}
                 <p className="mt-0.5 font-mono text-2xs text-ink-muted">
-                  {entry.at.slice(0, 16).replace('T', ' ')}
+                  {/* at::text is UTC; sliced as written it was two hours behind for everyone. */}
+                  {formatDateTime(entry.at)}
                 </p>
               </div>
             </div>
@@ -209,16 +218,19 @@ export function TicketDetail() {
               </div>
             ) : null}
             <Input
+              aria-label="Contractor name"
               placeholder="Name"
               value={contractor.name}
               onChange={(e) => setContractor({ ...contractor, name: e.target.value })}
             />
             <Input
+              aria-label="Contractor trade"
               placeholder="Trade"
               value={contractor.trade}
               onChange={(e) => setContractor({ ...contractor, trade: e.target.value })}
             />
             <Input
+              aria-label="Contractor phone"
               placeholder="Phone"
               value={contractor.phone}
               onChange={(e) => setContractor({ ...contractor, phone: e.target.value })}
@@ -238,7 +250,7 @@ export function TicketDetail() {
         <Card className="mb-4">
           <CardBody className="space-y-3">
             <p className="text-lead font-semibold">Add a quote, or start without one</p>
-            <CurrencyInput cents={quote} onCentsChange={(next) => setQuote(next ?? 0)} />
+            <CurrencyInput aria-label="Quote amount" cents={quote} onCentsChange={(next) => setQuote(next ?? 0)} />
             <div className="flex gap-2">
               <Button
                 loading={busy}
@@ -279,6 +291,7 @@ export function TicketDetail() {
               Your rating follows the contractor and decides who gets called next time.
             </p>
             <Textarea
+              aria-label="Anything to add"
               placeholder="Anything to add"
               value={ratingNote}
               onChange={(e) => setRatingNote(e.target.value)}
@@ -313,6 +326,7 @@ export function TicketDetail() {
         <Card>
           <CardBody className="space-y-3">
             <Textarea
+              aria-label="Message"
               placeholder="Add a message to this ticket"
               value={message}
               onChange={(e) => setMessage(e.target.value)}

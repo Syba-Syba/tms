@@ -178,6 +178,7 @@ function Slips() {
         {rejecting ? (
           <div className="space-y-3">
             <Textarea
+              aria-label="Reason for rejecting"
               placeholder="For example: nothing has arrived in the account yet."
               maxLength={300}
               value={rejecting.reason}

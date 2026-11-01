@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { Alert, Button, Card, CardBody, PageHeader, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
@@ -21,6 +22,34 @@ export function ApplyDocuments() {
   const toast = useToast();
   const [state, setState] = useState<Record<string, UploadState>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+
+  // What is already on file. Upload state used to live only here, so an applicant coming back
+  // saw every document missing and could not finish.
+  const onFile = useQuery({
+    queryKey: ['application-documents', applicationId],
+    queryFn: () =>
+      api.get<{ items: { kind: string; contentType: string; viewUrl: string }[] }>(
+        `/applications/${applicationId}/documents`,
+      ),
+    enabled: Boolean(applicationId),
+  });
+  useEffect(() => {
+    const items = onFile.data?.items ?? [];
+    if (items.length === 0) return;
+    // A capture in progress on this screen wins over what the server had before it.
+    setState((current) => {
+      const next = { ...current };
+      for (const item of items) next[item.kind] ??= 'synced';
+      return next;
+    });
+    setPreviews((current) => {
+      const next = { ...current };
+      for (const item of items) {
+        if (item.contentType.startsWith('image/')) next[item.kind] ??= item.viewUrl;
+      }
+      return next;
+    });
+  }, [onFile.data]);
 
   const capture = async (kind: Kind) => {
     let photo: Awaited<ReturnType<typeof pickPhoto>>;
@@ -50,7 +79,9 @@ export function ApplyDocuments() {
     }
   };
 
-  const done = REQUIRED.every((item) => state[item.kind] === 'synced');
+  // The application was sent when it was created (apply-start); this screen only adds files to
+  // it, so leaving is safe whenever nothing is mid-upload.
+  const uploading = Object.values(state).some((value) => value === 'uploading');
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
@@ -101,8 +132,8 @@ export function ApplyDocuments() {
           </CardBody>
         </Card>
       ) : null}
-      <Button block className="mt-5" disabled={!done} onClick={() => navigate('/')}>
-        Submit application
+      <Button block className="mt-5" disabled={uploading} onClick={() => navigate('/')}>
+        Done
       </Button>
     </main>
   );
