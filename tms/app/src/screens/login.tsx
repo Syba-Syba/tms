@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, baseUrl, errorCode, humanError } from '../api/client';
 import { safeReturnPath } from '../lib/safe-path';
 import { startSession, type SessionUser } from '../lib/session';
@@ -99,23 +100,27 @@ export function Login() {
       ) : null}
       <Card>
         <CardBody className="space-y-3">
+          <Field label="Email" htmlFor="login-email">
           <Input
+            id="login-email"
             type="email"
-            placeholder="Email"
             name="email"
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
+          </Field>
+          <Field label="Password" htmlFor="login-password">
           <Input
+            id="login-password"
             type="password"
-            placeholder="Password"
             name="password"
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && email && password && signIn()}
           />
+          </Field>
           {code !== null ? (
             <div className="space-y-1.5">
               <label htmlFor="login-code" className="block text-body font-medium text-ink">Code from your authenticator app</label>

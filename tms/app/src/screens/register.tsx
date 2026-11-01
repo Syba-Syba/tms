@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { Button, Card, CardBody, Checkbox, Input, SegmentedControl, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
@@ -77,48 +78,56 @@ export function Register() {
           />
           {kind === 'landlord' ? (
             <>
+              <Field label="Business name" htmlFor="reg-business" hint="Or your own name, if you have no company.">
               <Input
-                placeholder="Business name, or your own name"
-                aria-label="Business name"
+                id="reg-business"
                 name="organization"
                 autoComplete="organization"
                 value={business.tradingName}
                 onChange={(event) => setBusiness({ ...business, tradingName: event.target.value })}
               />
+              </Field>
+              <Field label="Phone" htmlFor="reg-phone" hint="For tenants to reach you.">
               <Input
+                id="reg-phone"
                 type="tel"
-                placeholder="Phone, for tenants to reach you"
-                aria-label="Phone"
                 name="tel"
                 autoComplete="tel"
                 value={business.phone}
                 onChange={(event) => setBusiness({ ...business, phone: event.target.value })}
               />
+              </Field>
             </>
           ) : null}
+          <Field label={kind === 'landlord' ? 'Your full name' : 'Full name'} htmlFor="reg-name">
           <Input
-            placeholder={kind === 'landlord' ? 'Your full name' : 'Full name'}
+            id="reg-name"
             name="name"
             autoComplete="name"
             value={form.name}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
+          </Field>
+          <Field label="Email" htmlFor="reg-email">
           <Input
+            id="reg-email"
             type="email"
-            placeholder="Email"
             name="email"
             autoComplete="email"
             value={form.email}
             onChange={(event) => setForm({ ...form, email: event.target.value })}
           />
+          </Field>
+          <Field label="Password" htmlFor="reg-password" hint="At least 8 characters.">
           <Input
+            id="reg-password"
             type="password"
-            placeholder="Password, at least 8 characters"
             name="new-password"
             autoComplete="new-password"
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
           />
+          </Field>
           <Checkbox
             id="register-consent"
             checked={consent}

@@ -23,9 +23,9 @@ describe('a new landlord', () => {
     );
     type(screen.getByLabelText('Business name'), `Clicks Rentals ${stamp}`);
     type(screen.getByLabelText('Phone'), '082 000 1111');
-    type(screen.getByPlaceholderText('Your full name'), 'Clicks Owner');
-    type(screen.getByPlaceholderText('Email'), `owner-${stamp}@example.co.za`);
-    type(screen.getByPlaceholderText('Password, at least 8 characters'), 'a-long-password');
+    type(screen.getByLabelText('Your full name'), 'Clicks Owner');
+    type(screen.getByLabelText('Email'), `owner-${stamp}@example.co.za`);
+    type(screen.getByLabelText('Password'), 'a-long-password');
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Create the account' }));
 

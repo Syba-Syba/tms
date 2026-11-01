@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, errorCode, humanError } from '../api/client';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { startSession, type SessionUser } from '../lib/session';
@@ -71,13 +72,17 @@ export function Join() {
           </p>
           <Card>
             <CardBody className="space-y-3">
-              <Input type="password" aria-label="Password"
-                placeholder={invite.data.hasAccount ? 'Your password' : 'Password, at least 8 characters'}
+              <Field label={invite.data.hasAccount ? 'Your password' : 'Password'} htmlFor="join-password"
+                hint={invite.data.hasAccount ? undefined : 'At least 8 characters.'}>
+              <Input id="join-password" type="password"
                 autoComplete={invite.data.hasAccount ? 'current-password' : 'new-password'}
                 value={password} onChange={(event) => setPassword(event.target.value)} />
+              </Field>
               {code !== null ? (
-                <Input aria-label="Code from your authenticator app" inputMode="numeric" autoComplete="one-time-code"
-                  placeholder="Code from your authenticator app" value={code} onChange={(event) => setCode(event.target.value)} />
+                <Field label="Code from your authenticator app" htmlFor="join-code">
+                  <Input id="join-code" inputMode="numeric" autoComplete="one-time-code"
+                    value={code} onChange={(event) => setCode(event.target.value)} />
+                </Field>
               ) : null}
               <Checkbox
                 id="join-consent"
