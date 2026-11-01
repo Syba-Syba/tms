@@ -4,6 +4,10 @@ import { requireLeaseAccess } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { storage } from '../lib/storage';
+import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
+
+/** Slips started but not sent that one lease may have in the last hour. */
+export const MAX_PENDING_SLIPS = 5;
 
 const schema = z.object({
   target: z.enum(['invoice', 'deposit']).default('invoice'),
@@ -27,6 +31,7 @@ export const handler = route(async (event) => {
   const access = await requireLeaseAccess(event, leaseId);
   if (!access.isTenant) throw forbidden('Only the tenant sends proof of payment.');
   const input = parseBody(event, schema);
+  requireUploadLinkAllowance(access.person.sub);
 
   // A slip dated tomorrow is a typo or a promise, and neither is a payment.
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
@@ -52,6 +57,16 @@ export const handler = route(async (event) => {
     if (!['issued', 'part_paid'].includes(invoice.status)) throw conflict('That invoice is already settled.');
   }
 
+  // A slip started and never sent counts for an hour, until the uploads sweep deletes it.
+  const [pending] = await query<{ n: number }>(
+    `select count(*)::int as n from payment_proof
+      where lease_id = $1 and status = 'uploading' and created_at > now() - interval '1 hour'`,
+    [leaseId],
+  );
+  if (pending!.n >= MAX_PENDING_SLIPS) {
+    throw conflict('Several slips are still uploading on this lease. Send those first, or try again in an hour.');
+  }
+
   const key = `payment-proofs/${leaseId}/${randomUUID()}.${EXTENSION[input.contentType]}`;
   const uploadUrl = await storage().presignPut(key, input.contentType, 300);
   const [proof] = await query<{ id: string }>(
@@ -65,5 +80,6 @@ export const handler = route(async (event) => {
     ],
   );
 
+  uploadLinksByAccount.record(access.person.sub);
   return json(201, { proofId: proof!.id, uploadUrl, expiresInSeconds: 300 });
 });

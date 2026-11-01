@@ -65,6 +65,24 @@ export function requestLogger(event: Event) {
   });
 }
 
+const ID_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|local-.+|\d+)$/i;
+
+/**
+ * "METHOD /path/{id}" for the request. The router sets routeKey to the matched template; a
+ * handler invoked some other way (a test, a direct Lambda call) falls back to the path with
+ * id-like segments folded to {id}, so the key still does not grow with every id.
+ */
+export function routeTemplate(event: Event): string {
+  const http = event.requestContext?.http;
+  const key = (event as { routeKey?: string }).routeKey;
+  if (key && key !== '$default' && !key.includes('{proxy+}') && key.includes(' /')) return key;
+  const path = (event.rawPath ?? http?.path ?? '')
+    .split('/')
+    .map((part) => (ID_SEGMENT.test(part) ? '{id}' : part))
+    .join('/');
+  return `${http?.method} ${path}`;
+}
+
 /** Wraps a handler so every failure returns the same shape and nothing leaks a stack trace. */
 export const route =
   (handler: (event: Event) => Promise<APIGatewayProxyResultV2>) =>
@@ -91,11 +109,10 @@ export const route =
       }
       log.error('Unhandled failure.', { error, durationMs: Date.now() - started });
       const http = event.requestContext?.http;
-      void alert(
-        `request:${http?.method} ${event.rawPath ?? http?.path}`,
-        `Error on ${http?.method} ${event.rawPath ?? http?.path}`,
-        describeError(error),
-      );
+      // One alert per route, not per URL: keyed by the raw path, each distinct id (a scan of
+      // made-up ids, say) was a new key and a new email to ALERT_EMAIL.
+      const where = routeTemplate(event);
+      void alert(`request:${where}`, `Error on ${where}`, describeError(error));
       return json(500, {
         error: { code: 'internal_error', message: 'Something went wrong on our side.' },
       });

@@ -9,6 +9,8 @@ export interface Billing {
   standing: 'trial' | 'active' | 'past_due' | 'cancelling' | 'lapsed';
   status: 'trialing' | 'active' | 'past_due' | 'cancelled';
   plan: PlanId | null;
+  /** A plan change that takes effect from the next payment. */
+  pendingPlan: PlanId | null;
   trialEndsOn: string;
   paidUntil: string | null;
   graceDays: number;

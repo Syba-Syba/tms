@@ -18,6 +18,17 @@ export const handler = route(async (event) => {
     [slug],
   );
   if (!landlord) throw notFound('Landlord');
+  // The page is public, so the landlord's email and phone show only while they are advertising
+  // something. A landlord with nothing listed has not offered their contact details to anyone
+  // who guesses their link (POPIA: no more personal information than the purpose needs).
+  const [advertising] = await query<{ listed: boolean }>(
+    `select exists (select 1 from unit u join property p on p.id = u.property_id
+                     where p.landlord_id = $1 and u.listed) as listed`,
+    [landlord.id],
+  );
+  const contact = advertising?.listed
+    ? { phone: landlord.phone, email: landlord.email }
+    : { phone: null, email: null };
 
   const units = await query<{
     id: string; code: string; bedrooms: number; bathrooms: number; monthly_rent_cents: string; deposit_cents: string;
@@ -47,7 +58,7 @@ export const handler = route(async (event) => {
   }
 
   return json(200, {
-    landlord: { name: landlord.trading_name, phone: landlord.phone, email: landlord.email, slug },
+    landlord: { name: landlord.trading_name, ...contact, slug },
     items: units.map((unit) => ({
       id: unit.id,
       // The street address stays off a public page: the suburb is enough to decide to apply.

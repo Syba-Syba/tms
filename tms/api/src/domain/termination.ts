@@ -86,6 +86,18 @@ export function addBusinessDays(from: Date, count: number): Date {
   return cursor;
 }
 
+/** Business days after `from` up to and including `to`: how many addBusinessDays(from, n)
+    steps it takes to reach `to`. Zero when `to` is not after `from`. */
+export function businessDaysBetween(from: Date, to: Date): number {
+  let cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  let count = 0;
+  while (cursor < to) {
+    cursor = addDays(cursor, 1);
+    if (cursor <= to && isBusinessDay(cursor)) count += 1;
+  }
+  return count;
+}
+
 /* ------------------------------------------------------------------ *
  * Notice
  * ------------------------------------------------------------------ */
@@ -105,8 +117,8 @@ export type TerminationReason = keyof typeof NOTICE_BUSINESS_DAYS;
 export const serveNoticeSchema = z.object({
   initiatedBy: z.enum(['tenant', 'landlord', 'mutual']),
   reason: z.enum(['end_of_term', 'early_tenant', 'breach_by_tenant', 'breach_by_landlord', 'mutual']),
-  // The tenant's notice is dated the day it is served, whatever the client sends; a landlord
-  // may record one received up to a month ago. Omitted, it is today.
+  // A tenant's notice is dated the day it is served. The landlord may record a tenant's paper
+  // notice received up to a month ago; the landlord's own or a mutual notice is dated today.
   noticeGivenOn: z.coerce.date().optional(),
   // Only supplied when the parties agree a later date than the minimum.
   effectiveOn: z.coerce.date().optional(),
@@ -271,3 +283,32 @@ export const settleSchema = z.object({
   restoredOn: z.coerce.date().optional(),
   refundReference: z.string().max(60).optional(),
 });
+
+/**
+ * The move-in inspection that is the baseline for a lease's exit, as a scalar subquery giving
+ * its id. A renewal is a new lease row, but the tenant moved in once: the incoming inspection
+ * sits on the first lease of the chain. Looking only at the current lease left every renewed
+ * lease without a baseline, so no deduction could ever be backed by an inspection. The nearest
+ * one up the previous_lease_id chain wins, so a lease with its own move-in inspection keeps it.
+ * `leaseExpr` is SQL for the current lease id (a column or a parameter).
+ */
+export const incomingInspectionSql = (leaseExpr: string) => `(
+  with recursive chain(id, depth) as (
+    select ${leaseExpr}::uuid, 0
+    union all
+    select l.previous_lease_id, chain.depth + 1
+      from chain join lease l on l.id = chain.id
+     where l.previous_lease_id is not null and chain.depth < 50
+  )
+  select ii.id from chain join inspection ii on ii.lease_id = chain.id
+   where ii.kind = 'incoming' and ii.status <> 'missed'
+   order by chain.depth, ii.created_at desc
+   limit 1
+)`;
+
+/** SQL true when an outgoing inspection `i` is the live one for termination `t`: not replaced,
+    and booked inside the final three days before the current effective date. One booked for an
+    earlier end date says nothing about the condition the tenant leaves the place in. */
+export const outgoingInWindowSql = (i: string, t: string) =>
+  `(${i}.kind = 'outgoing' and ${i}.status <> 'missed'
+    and ${i}.scheduled_for between ${t}.effective_on - 3 and ${t}.effective_on)`;

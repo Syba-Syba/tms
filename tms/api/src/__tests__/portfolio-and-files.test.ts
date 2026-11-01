@@ -412,7 +412,8 @@ describe('the remaining buttons', () => {
       body: {
         initiatedBy: 'landlord',
         reason: 'end_of_term',
-        noticeGivenOn: new Date().toISOString().slice(0, 10),
+        // Today in South Africa: the UTC date is yesterday before 02:00, and a landlord's notice cannot be backdated.
+        noticeGivenOn: new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10),
       },
     });
     expect(notice.status).toBe(201);

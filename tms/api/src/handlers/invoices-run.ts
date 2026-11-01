@@ -24,6 +24,28 @@ export function periodsDue(now: Date = new Date()): string[] {
   return sastDayOfMonth(now) >= ISSUE_FROM_DAY ? [current, nextMonthStart(current)] : [current];
 }
 
+/**
+ * Months before the current one that a live lease has no invoice for. The daily run only bills
+ * the current month (and the next from the 25th), so a lease that started in a month that had
+ * ended before it was activated (starts 28 October, signed 2 November) never had those days
+ * billed. Each such month is billed like any other; the run's own checks (the lease's billable
+ * window, notice, a renewal's previous lease) still decide whether there is anything to bill.
+ * An imported lease is billed in Threshold only from the month it was brought in.
+ */
+export async function missedPeriods(current: string): Promise<string[]> {
+  const rows = await query<{ period: string }>(
+    `select distinct m::date::text as period
+       from lease l
+       cross join lateral generate_series(date_trunc('month', l.start_date::timestamp),
+                                          $1::timestamp - interval '1 month', interval '1 month') m
+      where l.status = 'active' and l.source <> 'import'
+        and not exists (select 1 from invoice i where i.lease_id = l.id and i.period_start = m::date)
+      order by 1`,
+    [current],
+  );
+  return rows.map((row) => row.period);
+}
+
 interface BillableLease {
   id: string;
   status: string;
@@ -42,8 +64,9 @@ interface BillableLease {
   tenant_phone: string;
 }
 
-export const handler = async (input?: { periods?: string[] }) => {
-  const periods = input?.periods ?? periodsDue();
+export const handler = async (input?: { periods?: string[]; now?: Date }) => {
+  const periods = input?.periods
+    ?? [...new Set([...(await missedPeriods(sastMonthStart(input?.now))), ...periodsDue(input?.now)])];
   let issued = 0;
   let considered = 0;
 
@@ -65,7 +88,8 @@ export const handler = async (input?: { periods?: string[] }) => {
               u.code as unit_code,
               'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref,
               p.name || ' ' || u.code as unit_label,
-              a.cognito_sub as tenant_sub, a.email as tenant_email, a.phone as tenant_phone
+              -- An imported tenant has no sign-in yet, and is told by email all the same.
+              coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub, a.email as tenant_email, a.phone as tenant_phone
          from lease l
          join unit u on u.id = l.unit_id
          join property p on p.id = u.property_id
@@ -76,7 +100,10 @@ export const handler = async (input?: { periods?: string[] }) => {
                            where pi.lease_id = l.previous_lease_id and pi.period_start = $1::date
                              and pi.status <> 'void')
           and l.start_date <= ($1::date + interval '1 month' - interval '1 day')
-          and (t.effective_on is null or t.effective_on >= $1::date)`,
+          and (t.effective_on is null or t.effective_on >= $1::date)
+          -- An imported lease's months before it was brought in were billed elsewhere.
+          and (l.source <> 'import'
+               or $1::date >= date_trunc('month', coalesce(l.activated_at, now()) at time zone 'Africa/Johannesburg')::date)`,
       [periodIso],
     );
     considered += leases.length;
@@ -109,6 +136,10 @@ export const handler = async (input?: { periods?: string[] }) => {
       });
       try {
         const created = await withTransaction(async (run) => {
+          // Adding a charge locks the lease. Without the same lock here, a charge added between
+          // the pending_charge sweep below and this commit found no invoice yet, went into
+          // pending_charge after the sweep, and was never billed.
+          await run('select id from lease where id = $1 for update', [lease.id]);
           const [invoice] = await run<{ id: string }>(
             `insert into invoice (lease_id, period_start, due_on, total_cents, covers_from, covers_to)
              values ($1, $2, $2, $3, $4, $5)

@@ -43,8 +43,19 @@ export const landlordSignUpSchema = z.object({
   phone,
 });
 
+/**
+ * The invite name goes into an email sent from our domain to any address, so it is held to what
+ * a name looks like (as applicant names are, in domain/application.ts): letters in any language,
+ * spaces, apostrophes, hyphens and dots, starting with a letter, at most 80 characters. Free text
+ * here carried links and pitches in a mail that looked like ours.
+ */
 export const inviteSchema = z.object({
-  name: z.string().trim().min(2).max(120),
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Name is required.')
+    .max(80, 'Name must be 80 characters or fewer.')
+    .regex(/^\p{L}[\p{L}\p{M}' .-]*$/u, 'Name can only have letters, spaces, apostrophes and hyphens.'),
   email: z.string().trim().email().max(254),
 });
 

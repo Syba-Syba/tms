@@ -26,7 +26,7 @@ const REASONS_BY_INITIATOR: Record<'tenant' | 'landlord' | 'mutual', readonly Te
   mutual: ['mutual'],
 };
 
-/** A landlord may record a paper notice received a little while ago, not rewrite last year. */
+/** A landlord may record a tenant's paper notice received a little while ago, not rewrite last year. */
 const LANDLORD_BACKDATE_DAYS = 30;
 
 export const handler = route(async (event) => {
@@ -65,9 +65,17 @@ export const handler = route(async (event) => {
 
   const today = sastToday();
   // The tenant's notice is given the moment it is served; the clock cannot be wound back.
+  // Only a tenant's notice the landlord received on paper may carry an earlier date. The
+  // landlord's own notice, and a mutual one, is given today: dating it back shortened the
+  // notice the CPA gives the tenant by however many days it was backdated.
   const noticeGivenOn =
     access.isTenant && !access.isLandlord ? today : input.noticeGivenOn ? isoDate(input.noticeGivenOn) : today;
   if (noticeGivenOn > today) throw badRequest('The notice date cannot be in the future.');
+  if (noticeGivenOn < today && input.initiatedBy !== 'tenant') {
+    throw badRequest('A landlord’s or a mutual notice is given today. Only a tenant’s written notice can be recorded with an earlier date.', {
+      noticeGivenOn: `Use today, ${today}.`,
+    });
+  }
   if (noticeGivenOn < addDaysIso(today, -LANDLORD_BACKDATE_DAYS)) {
     throw badRequest(`A notice can be recorded up to ${LANDLORD_BACKDATE_DAYS} days after it was given, not earlier.`);
   }
@@ -126,7 +134,7 @@ export const handler = route(async (event) => {
       `insert into termination
          (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days, penalty_cents)
        values ($1, $2, $3, $4, $5, $6, $7)
-       on conflict (lease_id) do nothing
+       on conflict (lease_id) where status <> 'withdrawn' do nothing
        returning id`,
       [
         leaseId,
@@ -166,11 +174,12 @@ export const handler = route(async (event) => {
   });
 
   const [parties] = await query<{
-    unit: string; tenant_sub: string | null; tenant_email: string; tenant_phone: string;
+    unit: string; tenant_sub: string; tenant_email: string; tenant_phone: string;
     landlord_sub: string | null; landlord_email: string;
   }>(
     `select p.name || ' ' || u.code as unit,
-            a.cognito_sub as tenant_sub, a.email as tenant_email, a.phone as tenant_phone,
+            -- A tenant imported without an account is addressed by their applicant row.
+            coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub, a.email as tenant_email, a.phone as tenant_phone,
             ll.cognito_sub as landlord_sub, ll.email as landlord_email
        from lease l
        join unit u on u.id = l.unit_id

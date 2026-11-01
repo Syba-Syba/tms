@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { requireLeaseAccessVia } from '../lib/access';
 import { query } from '../lib/db';
 import { storage } from '../lib/storage';
-import { badRequest, json, parseBody, route } from '../lib/http';
+import { badRequest, conflict, json, parseBody, route } from '../lib/http';
+import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
+
+/** Unconfirmed photo uploads one ticket may have in the last hour. */
+export const MAX_PENDING_TICKET_PHOTOS = 20;
 
 const schema = z.object({
   phase: z.enum(['report', 'completion']),
@@ -13,13 +17,23 @@ const schema = z.object({
 export const handler = route(async (event) => {
   const ticketId = event.pathParameters?.id;
   if (!ticketId) throw badRequest('A ticket id is required.');
-  await requireLeaseAccessVia(
+  const access = await requireLeaseAccessVia(
     event,
     'select lease_id from ticket where id = $1',
     [ticketId],
     'Ticket',
   );
   const input = parseBody(event, schema);
+  requireUploadLinkAllowance(access.person.sub);
+  // Abandoned uploads count for an hour, until the uploads sweep deletes them.
+  const [pending] = await query<{ n: number }>(
+    `select count(*)::int as n from ticket_photo
+      where ticket_id = $1 and not uploaded and uploaded_at > now() - interval '1 hour'`,
+    [ticketId],
+  );
+  if (pending!.n >= MAX_PENDING_TICKET_PHOTOS) {
+    throw conflict('Too many photos are waiting to be confirmed on this ticket. Finish those first, or try again in an hour.');
+  }
 
   const key = `tickets/${ticketId}/${input.phase}-${crypto.randomUUID()}.${input.contentType === 'image/png' ? 'png' : 'jpg'}`;
   const uploadUrl = await storage().presignPut(key, input.contentType, 300);
@@ -28,5 +42,6 @@ export const handler = route(async (event) => {
      values ($1, $2, $3, $4, $5) returning id`,
     [ticketId, input.phase, key, input.contentType, input.sizeBytes],
   );
+  uploadLinksByAccount.record(access.person.sub);
   return json(201, { photoId: photo!.id, uploadUrl, key, expiresInSeconds: 300 });
 });

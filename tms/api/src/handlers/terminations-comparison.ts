@@ -1,6 +1,7 @@
 import { requireLeaseAccessVia } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
+import { incomingInspectionSql, outgoingInWindowSql } from '../domain/termination';
 
 interface Row {
   room: string;
@@ -29,12 +30,19 @@ export const handler = route(async (event) => {
   );
 
   const rows = await query<Row>(
+    // The move-in record comes from wherever the tenant moved in, which after a renewal is the
+    // lease it replaced; the exit record is this lease's live outgoing inspection only.
     `with insp as (
-       select i.kind, f.id, f.room, f.item, f.condition, f.note
+       select 'incoming' as kind, f.id, f.room, f.item, f.condition, f.note
+         from termination t
+         join inspection_finding f on f.inspection_id = ${incomingInspectionSql('t.lease_id')}
+        where t.id = $1
+       union all
+       select 'outgoing' as kind, f.id, f.room, f.item, f.condition, f.note
          from termination t
          join inspection i on i.lease_id = t.lease_id
          join inspection_finding f on f.inspection_id = i.id
-        where t.id = $1
+        where t.id = $1 and ${outgoingInWindowSql('i', 't')}
      ),
      photos as (
        select f.id as finding_id, array_agg(p.s3_key order by p.uploaded_at) as keys

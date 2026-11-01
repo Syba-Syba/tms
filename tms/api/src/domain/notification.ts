@@ -174,8 +174,10 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `The response target for "${d('title')}" at ${d('unit')} passed on ${d('targetBy')} and it is still ${d('status')}.`,
   },
+  // Deadline, so it cannot be switched off: an exit inspection the tenant was not told about
+  // is one they could not attend, and settlement relies on the tenant having been told.
   inspection_scheduled: {
-    category: 'inspection',
+    category: 'deadline',
     urgent: false,
     subject: (d) => `${d('kindLabel')} inspection on ${d('date')}`,
     body: (d) =>
@@ -235,8 +237,9 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `Lease ${d('reference')} for ${d('unit')} is now active. Rent invoices for it will appear in the app.`,
   },
+  // Deadline: the notice starts the clock on the lease ending and on the exit inspection.
   notice_served: {
-    category: 'lease',
+    category: 'deadline',
     urgent: false,
     subject: (d) => `Notice served, lease ends ${d('effectiveOn')}`,
     body: (d) =>
@@ -244,13 +247,23 @@ export const TEMPLATES: Record<string, Template> = {
       `The exit inspection must happen in the last three days of the lease, with both of you there. ` +
       `Skip it and the law treats the place as undamaged, so nothing can be deducted.`,
   },
+  // Deadline: the refund deadline runs from here, and the tenant has to know what was kept.
   deposit_settled: {
-    category: 'money',
+    category: 'deadline',
     urgent: false,
     subject: (d) => `Deposit statement: ${d('headline')}`,
     body: (d) =>
       `The deposit for ${d('unit')} has been reconciled.\n\n${d('breakdown')}\n\n` +
       `Payable by ${d('dueBy')}. The full statement, with move-in and move-out photos for anything charged, is in the app.`,
+  },
+  // Deadline: withdrawing a notice keeps the lease running, which the other party must know.
+  notice_withdrawn: {
+    category: 'deadline',
+    urgent: false,
+    subject: (d) => `Notice withdrawn: the lease for ${d('unit')} continues`,
+    body: (d) =>
+      `The ${d('withdrawnBy')} withdrew the notice that would have ended the lease for ${d('unit')} on ${d('effectiveOn')}.\n\n` +
+      `The lease carries on as before, and rent is billed as usual. Any exit inspection booked for that date is cancelled.`,
   },
   refund_due_soon: {
     category: 'deadline',
@@ -330,6 +343,11 @@ export const render = (kind: string, data: Record<string, string>) => {
 const SAST_OFFSET_HOURS = 2;
 export const QUIET_FROM_HOUR = 20;
 export const QUIET_UNTIL_HOUR = 7;
+
+/** An instant as South African date and time, 'YYYY-MM-DD HH:MM'. Deadlines in messages were
+    printed in UTC, two hours early to the reader. */
+export const sastDateTime = (at: Date | string) =>
+  new Date(new Date(at).getTime() + SAST_OFFSET_HOURS * 3600000).toISOString().slice(0, 16).replace('T', ' ');
 
 export const sastHour = (at: Date) => (at.getUTCHours() + SAST_OFFSET_HOURS) % 24;
 

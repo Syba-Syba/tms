@@ -4,6 +4,7 @@ import { withTransaction } from '../lib/db';
 import { badRequest, json, notFound, parseBody, route } from '../lib/http';
 import { createTicketSchema, targetBy } from '../domain/ticket';
 import { notify } from '../lib/notify';
+import { sastDateTime } from '../domain/notification';
 import { query } from '../lib/db';
 
 export const handler = route(async (event) => {
@@ -57,7 +58,8 @@ export const handler = route(async (event) => {
         unit: context.unit,
         tenant: context.tenant,
         severityLabel: input.severity.charAt(0).toUpperCase() + input.severity.slice(1),
-        targetBy: ticket.targetBy.slice(0, 16).replace('T', ' '),
+        // South African time: printed from the UTC instant it read two hours early.
+        targetBy: sastDateTime(ticket.targetBy),
       },
     });
   }

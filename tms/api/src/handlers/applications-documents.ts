@@ -1,4 +1,5 @@
 import { requireApplicationAccess } from '../lib/access';
+import { audit } from '../lib/audit';
 import { query } from '../lib/db';
 import { badRequest, json, notFound, route } from '../lib/http';
 import { storage } from '../lib/storage';
@@ -11,7 +12,7 @@ export const handler = route(async (event) => {
   // These are ID copies, payslips and bank statements. Only the applicant and the landlord
   // whose unit was applied for may read them. A 403 would confirm the application exists, so
   // an outsider gets the same 404 either way.
-  await requireApplicationAccess(event, applicationId).catch(() => {
+  const access = await requireApplicationAccess(event, applicationId).catch(() => {
     throw notFound('Application');
   });
 
@@ -39,6 +40,19 @@ export const handler = route(async (event) => {
       viewUrl: await storage().presignGet(row.s3_key!, 300),
     })),
   );
+
+  // Each link opens an ID copy, payslip or bank statement, just as /files/view does, so who was
+  // handed one, and when, goes in the log the same way: a POPIA question the log has to answer.
+  for (const row of rows as Array<(typeof rows)[number] & { s3_key?: string }>) {
+    await audit({
+      actorSub: access.person.sub,
+      actorRole: access.person.groups[0] ?? 'unknown',
+      action: 'file.viewed',
+      entity: 'application',
+      entityId: applicationId,
+      detail: { key: row.s3_key },
+    });
+  }
 
   return json(200, { items });
 });

@@ -37,7 +37,9 @@ export const handler = route(async (event) => {
     amountCents = Number(checkout.amount_cents);
   } else {
     if (!subscription.providerToken) throw badRequest('There is no monthly payment to renew.');
-    amountCents = planById(subscription.plan)?.priceCents ?? null;
+    // The provider charges the new price once the plan is changed, as PayFast does.
+    const [row] = await query<{ pending_plan: string | null }>('select pending_plan from subscription where landlord_id = $1', [landlordId]);
+    amountCents = planById(row?.pending_plan ?? subscription.plan)?.priceCents ?? null;
   }
 
   const result = await applyPaymentNotice({

@@ -34,7 +34,7 @@ export async function leasesOf(sub: string, landlordId: string | null = null): P
     `select l.status, l.end_date::text, t.effective_on::text
        from lease l
        join applicant a on a.id = l.applicant_id
-       left join termination t on t.lease_id = l.id
+       left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
        join unit u on u.id = l.unit_id
        join property p on p.id = u.property_id
       where a.cognito_sub = $1 and ($2::uuid is null or p.landlord_id = $2)`,

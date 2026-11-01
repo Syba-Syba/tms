@@ -1,5 +1,5 @@
 import { requireLeaseAccess } from '../lib/access';
-import { ensureCase } from '../lib/arrears';
+import { ensureCase, netCredit, RENT_CREDIT_SQL } from '../lib/arrears';
 import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, route } from '../lib/http';
@@ -28,17 +28,23 @@ export const handler = route(async (event) => {
   if (!access.isLandlord) throw forbidden('Only the landlord sends a letter of demand.');
 
   const today = sastToday();
-  const invoices = await query<{ period_start: string; due_on: string; owed: string }>(
+  const invoices = await query<{ period_start: string; due_on: string; owed: string; credit: string }>(
     `select i.period_start::text, i.due_on::text,
-            i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0) as owed
+            i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0) as owed,
+            ${RENT_CREDIT_SQL('i.lease_id')}::text as credit
        from invoice i
        join lease l on l.id = i.lease_id
       where i.lease_id = $1 and i.status in ('issued', 'part_paid') and i.due_on < $2::date
         and l.status in ('active', 'terminated')
-      order by i.due_on`,
+      order by i.due_on, i.period_start`,
     [leaseId, today],
   );
-  const owing = invoices.filter((row) => Number(row.owed) > 0);
+  // Credit the tenant holds on the lease comes off first: a letter of demand never asks for more
+  // than is actually owed.
+  const owing = netCredit(
+    invoices.map((row) => ({ ...row, owed: Number(row.owed) })),
+    Number(invoices[0]?.credit ?? 0),
+  );
   if (owing.length === 0) throw conflict('Nothing on this lease is overdue.');
   const daysLate = daysBetween(owing[0]!.due_on, today);
   if (daysLate < LETTER_FROM_DAY) {

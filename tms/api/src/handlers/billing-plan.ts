@@ -17,6 +17,11 @@ const schema = z.discriminatedUnion('action', [
 /**
  * Changes the plan of a running monthly payment, from the next charge on, or cancels it. A
  * cancelled plan runs to the end of the month already paid for.
+ *
+ * The new plan waits as pending until the payment at its price arrives (billing-events), and
+ * only then sets the plan and its unit allowance. Setting it at once gave an upgrade its extra
+ * units before anyone paid for them; a downgrade likewise takes effect when the month already
+ * paid for at the old price runs out.
  */
 export const handler = route(async (event) => {
   const person = requireLandlord(event);
@@ -34,7 +39,21 @@ export const handler = route(async (event) => {
   }
 
   const plan = planById(input.plan)!;
-  if (plan.id === subscription.plan) throw conflict(`You are on ${plan.name} already.`);
+  const [pending] = await query<{ pending_plan: string | null }>(
+    'select pending_plan from subscription where landlord_id = $1',
+    [landlordId],
+  );
+  if (plan.id === subscription.plan) {
+    if (!pending?.pending_plan) throw conflict(`You are on ${plan.name} already.`);
+    // Changing back before the new price was charged: the pending change is simply dropped.
+    if (driver === 'payfast') await updateSubscriptionAmount(payfastConfig(), subscription.providerToken, plan.priceCents);
+    await query('update subscription set pending_plan = null, updated_at = now() where landlord_id = $1', [landlordId]);
+    await audit({
+      actorSub: person.sub, actorRole: 'landlord', action: 'billing.plan_changed', entity: 'landlord', entityId: landlordId,
+      detail: { from: pending.pending_plan, to: plan.id, pending: false },
+    });
+    return json(200, { plan: plan.id });
+  }
   const [count] = await query<{ units: string }>(
     'select count(*)::text as units from unit u join property p on p.id = u.property_id where p.landlord_id = $1',
     [landlordId],
@@ -43,10 +62,10 @@ export const handler = route(async (event) => {
     throw badRequest(`You have ${count!.units} units. ${plan.name} covers ${plan.maxUnits}. Remove units first.`);
   }
   if (driver === 'payfast') await updateSubscriptionAmount(payfastConfig(), subscription.providerToken, plan.priceCents);
-  await query('update subscription set plan = $2, updated_at = now() where landlord_id = $1', [landlordId, plan.id]);
+  await query('update subscription set pending_plan = $2, updated_at = now() where landlord_id = $1', [landlordId, plan.id]);
   await audit({
     actorSub: person.sub, actorRole: 'landlord', action: 'billing.plan_changed', entity: 'landlord', entityId: landlordId,
-    detail: { from: subscription.plan, to: plan.id },
+    detail: { from: subscription.plan, to: plan.id, pending: true },
   });
   return json(200, { plan: plan.id });
 });

@@ -3,6 +3,7 @@ import { audit } from '../lib/audit';
 import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
 import { conflict, json, parseBody, route } from '../lib/http';
+import { recordInvite, requireInviteAllowance } from '../lib/tenant-invite';
 import { appUrl, hashResetToken, newResetToken, requireLocalDriver } from '../lib/password-reset';
 import { INVITE_TTL_DAYS, inviteSchema } from '../domain/landlord';
 
@@ -17,6 +18,7 @@ export const handler = route(async (event) => {
   const input = parseBody(event, inviteSchema);
   const email = input.email.toLowerCase();
   const base = appUrl();
+  requireInviteAllowance(landlordId, email);
 
   const [existing] = await query('select 1 from local_credential where email = $1', [email]);
   // One sign-in works for one landlord, and a tenant's sign-in is a tenant's. Moving a person
@@ -51,6 +53,7 @@ export const handler = route(async (event) => {
     );
     return row!;
   });
+  recordInvite(landlordId, email);
 
   await audit({
     actorSub: person.sub,
@@ -62,3 +65,4 @@ export const handler = route(async (event) => {
   });
   return json(201, { id: invite.id, expiresAt: invite.expires_at });
 });
+

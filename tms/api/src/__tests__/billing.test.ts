@@ -168,6 +168,12 @@ describe('a landlord account over its life', () => {
 
   it('changes plan on the running payment, and refuses a plan too small', async () => {
     expect((await call('POST', '/billing/plan', OWNER, { action: 'change', plan: 'standard' })).body).toEqual({ plan: 'standard' });
+    // The screen shows the change as waiting for its first payment.
+    expect((await call('GET', '/billing', OWNER)).body).toMatchObject({ pendingPlan: 'standard' });
+    // The bigger allowance comes with the payment at the new price, not before.
+    expect((await addUnit()).status).toBe(402);
+    expect((await call('POST', '/billing/simulate', OWNER, { outcome: 'paid' })).body).toEqual({ applied: true });
+    expect((await call('GET', '/billing', OWNER)).body).toMatchObject({ plan: 'standard', allowance: 20 });
     expect((await addUnit()).status).toBe(201);
     const down = await call('POST', '/billing/plan', OWNER, { action: 'change', plan: 'starter' });
     expect(down.status).toBe(400);
@@ -175,7 +181,8 @@ describe('a landlord account over its life', () => {
 
   it('renews a month at a time, marks a failed payment, and keeps paid time after cancelling', async () => {
     await call('POST', '/billing/simulate', OWNER, { outcome: 'paid' });
-    expect((await call('GET', '/billing', OWNER)).body.paidUntil).toBe(addMonth(addMonth(today)));
+    // The checkout, the payment for the change of plan, and this one.
+    expect((await call('GET', '/billing', OWNER)).body.paidUntil).toBe(addMonth(addMonth(addMonth(today))));
     await call('POST', '/billing/simulate', OWNER, { outcome: 'failed' });
     expect((await call('GET', '/billing', OWNER)).body.standing).toBe('past_due');
     expect((await addUnit()).status).toBe(201);

@@ -106,7 +106,8 @@ export const handler = route(async (event) => {
   });
 
   const [tenant] = await query<{ sub: string | null; email: string; phone: string; unit: string }>(
-    `select a.cognito_sub as sub, a.email, a.phone, p.name || ' ' || u.code as unit
+    // A tenant imported without an account is addressed by their applicant row.
+    `select coalesce(a.cognito_sub, 'applicant:' || a.id) as sub, a.email, a.phone, p.name || ' ' || u.code as unit
        from lease l
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id

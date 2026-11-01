@@ -247,7 +247,8 @@ describe('deduction evidence', () => {
     expect(refused.body.error.message).toMatch(/not a JPEG or PNG/);
 
     const notice = await call('POST', `/leases/${LEASE}/termination`, {
-      body: { initiatedBy: 'landlord', reason: 'end_of_term', noticeGivenOn: today() },
+      // The landlord's notice is dated today in South Africa; the UTC date is yesterday before 02:00.
+      body: { initiatedBy: 'landlord', reason: 'end_of_term', noticeGivenOn: new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10) },
     });
     expect(notice.status).toBe(201);
     terminationId = notice.body.id;

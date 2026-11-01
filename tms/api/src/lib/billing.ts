@@ -44,9 +44,11 @@ export function billableUntil(lease: {
  * and the difference came straight off their deposit as "arrears". A month nobody occupies
  * is voided; a month partly occupied is re-rated on the days actually there.
  *
- * Paid invoices are re-rated too. Rent paid for days after the tenant leaves stays recorded
- * against the invoice, now above its total, and that excess is the tenant's credit at
- * settlement; it is logged so a person sees it. Runs inside the caller's transaction.
+ * Paid invoices are re-rated too. Rent paid for days after the tenant leaves is credit: it
+ * moves onto the lease's open invoices, oldest first, so reminders and a letter of demand do
+ * not chase rent the tenant has in effect paid. What no open invoice takes stays recorded
+ * against the invoice, above its total, and is the tenant's credit at settlement; it is logged
+ * so a person sees it. Runs inside the caller's transaction.
  */
 export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: string): Promise<number> {
   const invoices = await run<{
@@ -77,6 +79,7 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
   );
 
   let changed = 0;
+  let credit = false;
   for (const invoice of invoices) {
     const window = billingWindow({
       periodStart: dateFromIso(invoice.period_start),
@@ -119,7 +122,8 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
     }
     if (total === Number(invoice.total_cents)) continue;
     if (paid > total) {
-      logger.warn('Invoice is paid above its re-rated total; the excess is a credit at settlement.', {
+      credit = true;
+      logger.warn('Invoice is paid above its re-rated total; the excess is credit for the open invoices.', {
         invoiceId: invoice.id,
         creditCents: paid - total,
       });
@@ -149,7 +153,61 @@ export async function trimInvoicesAfter(run: Run, leaseId: string, effectiveOn: 
     );
     changed += 1;
   }
+  if (credit) await moveCreditToOpenInvoices(run, leaseId);
   return changed;
+}
+
+/**
+ * Moves rent paid above an invoice's total onto the lease's open invoices, oldest due first,
+ * by re-pointing (or splitting) the payments behind the excess. Runs inside the caller's
+ * transaction. Whatever no open invoice takes stays where it is, as credit.
+ */
+export async function moveCreditToOpenInvoices(run: Run, leaseId: string): Promise<void> {
+  const balances = await run<{ id: string; total: string; paid: string; status: string }>(
+    `select i.id, i.total_cents::text as total, i.status,
+            coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid
+       from invoice i
+      where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
+      order by i.due_on, i.period_start
+      for update`,
+    [leaseId],
+  );
+  const open = balances
+    .filter((row) => row.status !== 'paid' && Number(row.total) > Number(row.paid))
+    .map((row) => ({ id: row.id, owing: Number(row.total) - Number(row.paid) }));
+  for (const source of balances.filter((row) => Number(row.paid) > Number(row.total))) {
+    let excess = Number(source.paid) - Number(source.total);
+    const payments = await run<{ id: string; amount_cents: string }>(
+      'select id, amount_cents::text from payment where invoice_id = $1 order by received_on desc, created_at desc',
+      [source.id],
+    );
+    for (const target of open) {
+      while (excess > 0 && target.owing > 0 && payments.length > 0) {
+        const payment = payments[0]!;
+        const move = Math.min(Number(payment.amount_cents), excess, target.owing);
+        if (move === Number(payment.amount_cents)) {
+          await run('update payment set invoice_id = $2 where id = $1', [payment.id, target.id]);
+          payments.shift();
+        } else {
+          await run('update payment set amount_cents = amount_cents - $2 where id = $1', [payment.id, move]);
+          // The split keeps its slip and bank line, so neither is matched a second time.
+          await run(
+            `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by,
+                                  proof_id, bank_line_id)
+             select lease_id, $2, $3, method, coalesce(reference, '') || ' (credit moved)', received_on, recorded_by,
+                    proof_id, bank_line_id
+               from payment where id = $1`,
+            [payment.id, target.id, move],
+          );
+          payment.amount_cents = String(Number(payment.amount_cents) - move);
+        }
+        excess -= move;
+        target.owing -= move;
+        await run('update invoice set status = $2 where id = $1', [target.id, target.owing === 0 ? 'paid' : 'part_paid']);
+      }
+      if (excess === 0) break;
+    }
+  }
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];

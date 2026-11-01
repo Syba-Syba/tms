@@ -86,9 +86,17 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
   }
 
   const current = await subscriptionOf(landlordId);
-  const plan = planById(byToken ? current.plan : checkout?.plan) ?? planById(checkout?.plan);
+  // A plan change waits until a payment at its price arrives; that payment applies it.
+  const [pendingRow] = byToken
+    ? await query<{ pending_plan: string | null }>('select pending_plan from subscription where landlord_id = $1', [landlordId])
+    : [];
+  const pending = planById(pendingRow?.pending_plan);
+  const paysPending = Boolean(pending && notice.outcome === 'paid' && notice.amountCents === pending.priceCents);
+  const plan = paysPending ? pending : planById(byToken ? current.plan : checkout?.plan) ?? planById(checkout?.plan);
   if (notice.outcome === 'paid') {
-    const expected = new Set([plan?.priceCents, checkout ? Number(checkout.amount_cents) : undefined].filter((v) => v !== undefined));
+    const expected = new Set(
+      [plan?.priceCents, pending?.priceCents, checkout ? Number(checkout.amount_cents) : undefined].filter((v) => v !== undefined),
+    );
     if (notice.amountCents === null || !expected.has(notice.amountCents)) {
       await recordRejected(notice, `Amount ${notice.amountCents} is not what the plan costs.`);
       return { applied: false, problem: 'amount' };
@@ -117,9 +125,10 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
       const paidUntil = addMonth(from);
       await run(
         `update subscription set status = 'active', plan = $2, provider = $3,
-                provider_token = coalesce($4, provider_token), current_period_end = $5, updated_at = now()
+                provider_token = coalesce($4, provider_token), current_period_end = $5, updated_at = now(),
+                pending_plan = case when $6 then null else pending_plan end
           where landlord_id = $1`,
-        [landlordId, plan!.id, notice.provider, notice.token, paidUntil],
+        [landlordId, plan!.id, notice.provider, notice.token, paidUntil, paysPending],
       );
       await issueInvoice(run, {
         landlordId, eventId: inserted[0]!.id, plan: plan!, amountCents: notice.amountCents!, from,

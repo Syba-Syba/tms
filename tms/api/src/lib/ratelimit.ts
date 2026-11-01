@@ -1,3 +1,5 @@
+import { tooManyRequests } from './http';
+
 /**
  * Counts attempts per key inside a sliding window and refuses once the limit is reached.
  *
@@ -76,3 +78,37 @@ export const secondStepsByAccount = new AttemptLimiter(5, 15 * MINUTE);
 
 /** Guesses at a reset token. 256 bits cannot be guessed, but each attempt still costs scrypt. */
 export const resetConfirmsByAddress = new AttemptLimiter(20, 15 * MINUTE);
+
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Applications per connection per day. Each one holds a vacant unit, so a loop of free tenant
+ * accounts from one machine could otherwise empty a landlord's listings in minutes.
+ */
+export const applicationsByAddress = new AttemptLimiter(10, DAY);
+
+/**
+ * Invitation emails (team invites and tenant re-invites) per landlord account, by the hour and
+ * by the day. Each one is an email from our domain to any address the landlord types, carrying
+ * the trading name they chose, so without a cap the app is a free mailer.
+ */
+export const invitesByLandlordHourly = new AttemptLimiter(10, HOUR);
+export const invitesByLandlordDaily = new AttemptLimiter(30, DAY);
+
+/** Invitation emails to one recipient per day, whoever sends them, so nobody's inbox is flooded. */
+export const invitesByRecipient = new AttemptLimiter(3, DAY);
+
+/**
+ * Upload links per account per hour, across documents, ticket and inspection photos and payment
+ * slips. Each link lets the holder write up to 15 MB; the per-record pending caps stop piling up
+ * on one record and this stops spreading the same across many.
+ */
+export const uploadLinksByAccount = new AttemptLimiter(120, HOUR);
+
+/** Refuses an upload link once the account has had its hourly share. Record after issuing one. */
+export function requireUploadLinkAllowance(sub: string) {
+  if (!uploadLinksByAccount.allows(sub)) {
+    throw tooManyRequests('Too many uploads started in the last hour. Finish the ones in progress, or try again later.');
+  }
+}

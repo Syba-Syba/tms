@@ -1,5 +1,6 @@
 import { landlordIdFor } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
+import { netCredit, RENT_CREDIT_SQL } from '../lib/arrears';
 import { query } from '../lib/db';
 import { json, route } from '../lib/http';
 import { ageBucket, type AgeBucket } from '../domain/money';
@@ -16,22 +17,29 @@ export const handler = route(async (event) => {
   const landlordId = await landlordIdFor(requireLandlord(event));
   const open = await query<{
     lease_id: string; lease_ref: string; tenant: string; unit: string; due_on: string; outstanding: string;
-    proof_pending: boolean;
+    proof_pending: boolean; credit: string;
   }>(
     `select l.id as lease_id, 'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref,
             a.first_name || ' ' || a.last_name as tenant, pr.name || ' ' || u.code as unit,
             i.due_on::text,
             (i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0))::text
               as outstanding,
-            exists (select 1 from payment_proof pp where pp.lease_id = l.id and pp.status = 'pending') as proof_pending
+            exists (select 1 from payment_proof pp where pp.lease_id = l.id and pp.status = 'pending') as proof_pending,
+            ${RENT_CREDIT_SQL('l.id')}::text as credit
        from invoice i
        join lease l on l.id = i.lease_id
        join applicant a on a.id = l.applicant_id
        join unit u on u.id = l.unit_id
        join property pr on pr.id = u.property_id
       where pr.landlord_id = $1 and i.status in ('issued', 'part_paid')
-      order by pr.name, u.code, i.due_on`,
+      order by pr.name, u.code, i.due_on, i.period_start`,
     [landlordId],
+  );
+  // Credit on a lease comes off its oldest invoices first, as in the reminders and the letter.
+  const rowsOf = new Map<string, typeof open>();
+  for (const row of open) rowsOf.set(row.lease_id, [...(rowsOf.get(row.lease_id) ?? []), row]);
+  const netted = [...rowsOf.values()].flatMap((rows) =>
+    netCredit(rows.map((row) => ({ ...row, owed: Number(row.outstanding) })), Number(rows[0]!.credit)),
   );
 
   // Today in South Africa, as a date: the UTC instant still said yesterday until 02:00.
@@ -41,8 +49,8 @@ export const handler = route(async (event) => {
     proofPending: boolean; ageing: Record<AgeBucket, number>; totalCents: number;
   }>();
   const totals = empty();
-  for (const row of open) {
-    const amount = Number(row.outstanding);
+  for (const row of netted) {
+    const amount = row.owed;
     if (amount <= 0) continue;
     const bucket = ageBucket(dateFromIso(row.due_on), today);
     const lease = byLease.get(row.lease_id) ?? {

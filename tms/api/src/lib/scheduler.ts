@@ -5,6 +5,7 @@ import { handler as notificationsDispatch } from '../handlers/notifications-disp
 import { handler as notificationsSweep } from '../handlers/notifications-sweep';
 import { handler as privacySweep } from '../handlers/privacy-sweep';
 import { handler as arrearsRun } from '../handlers/arrears-run';
+import { handler as uploadsSweep } from '../handlers/uploads-sweep';
 import { sastToday } from '../domain/dates';
 import { audit } from './audit';
 import { logger } from './logger';
@@ -39,6 +40,8 @@ export interface Job {
 
 export const JOBS: Job[] = [
   { name: 'notifications-dispatch', run: notificationsDispatch, everyMinutes: 5 },
+  // Uploads started and never confirmed, older than an hour: the object and its row go.
+  { name: 'uploads-sweep', run: uploadsSweep, everyMinutes: 60 },
   { name: 'leases-activate', run: leasesActivate, dailyAt: '03:10' },
   { name: 'privacy-sweep', run: privacySweep, dailyAt: '04:30' },
   { name: 'notifications-sweep', run: notificationsSweep, dailyAt: '05:00' },

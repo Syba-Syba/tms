@@ -189,3 +189,9 @@ functions:
     handler: src/handlers/privacy-sweep.handler
     events:
       - schedule: cron(30 2 * * ? *)
+
+  uploadsSweep:
+    handler: src/handlers/uploads-sweep.handler
+    events:
+      # Uploads started and never confirmed, older than an hour.
+      - schedule: rate(1 hour)

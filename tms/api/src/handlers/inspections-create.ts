@@ -39,6 +39,7 @@ export const handler = route(async (event) => {
     }
 
     // The outgoing inspection is only valid in the statutory 3 day window before the tenancy ends.
+    let window: ReturnType<typeof outgoingWindow> | null = null;
     if (input.kind === 'outgoing') {
       // Booked ahead, so the tenant can be there. One "scheduled" after the day had passed
       // let a landlord sign it alone and keep deductions the law forfeits when nobody inspects.
@@ -46,7 +47,7 @@ export const handler = route(async (event) => {
       if (isoDate(input.scheduledFor) < today) {
         throw badRequest(`An outgoing inspection cannot be booked in the past. Pick a day from ${today}.`);
       }
-      const window = outgoingWindow(new Date(`${lease.last_day}T00:00:00Z`));
+      window = outgoingWindow(new Date(`${lease.last_day}T00:00:00Z`));
       if (input.scheduledFor < window.opens || input.scheduledFor > window.closes) {
         throw badRequest(
           `The outgoing inspection must fall in the final 3 days of the tenancy, ${window.opens.toISOString().slice(0, 10)} to ${window.closes.toISOString().slice(0, 10)}.`,
@@ -54,10 +55,45 @@ export const handler = route(async (event) => {
       }
     }
 
-    const [inspection] = await run<{ id: string }>(
-      `insert into inspection (lease_id, kind, scheduled_for) values ($1, $2, $3) returning id`,
-      [leaseId, input.kind, input.scheduledFor],
+    // One inspection of each kind stands at a time. The end date moves (a lease running month
+    // to month is then given notice, or notice follows a booking for the end date), so an exit
+    // inspection booked for the old final window is replaced: marked missed, kept for the
+    // record, and a new one booked. A completed one inside the current window is the exit
+    // inspection, so it stays. A second move-in inspection is refused.
+    const [existing] = await run<{ id: string; status: string; scheduled_for: string }>(
+      `select id, status, scheduled_for::text from inspection
+        where lease_id = $1 and kind = $2 and status <> 'missed' for update`,
+      [leaseId, input.kind],
     );
+    let replaced: string | null = null;
+    if (existing) {
+      const inWindow =
+        window !== null &&
+        existing.scheduled_for >= isoDate(window.opens) &&
+        existing.scheduled_for <= isoDate(window.closes);
+      if (input.kind === 'incoming') {
+        throw conflict('This lease already has a move-in inspection.');
+      }
+      if (existing.status === 'completed' && inWindow) {
+        throw conflict('The exit inspection for this end date has already been completed.');
+      }
+      await run(`update inspection set status = 'missed' where id = $1`, [existing.id]);
+      replaced = existing.id;
+    }
+
+    let inspection: { id: string } | undefined;
+    try {
+      [inspection] = await run<{ id: string }>(
+        `insert into inspection (lease_id, kind, scheduled_for) values ($1, $2, $3) returning id`,
+        [leaseId, input.kind, input.scheduledFor],
+      );
+    } catch (error) {
+      // Two bookings at once: the other one won.
+      if ((error as { code?: string }).code === '23505') {
+        throw conflict(`This lease already has an ${input.kind} inspection.`);
+      }
+      throw error;
+    }
 
     // Seed the walkthrough: one bedroom and bathroom block per unit count.
     const rows: [string, string][] = [];
@@ -75,7 +111,7 @@ export const handler = route(async (event) => {
       );
     }
 
-    return { id: inspection!.id, seeded: rows.length };
+    return { id: inspection!.id, seeded: rows.length, replaced };
   });
 
   // A tenant imported without an account is addressed by their applicant row, so the email
@@ -113,6 +149,7 @@ export const handler = route(async (event) => {
     action: `inspection.${input.kind}.created`,
     entity: 'inspection',
     entityId: created.id,
+    detail: created.replaced ? { replaced: created.replaced } : undefined,
   });
 
   return json(201, created);
