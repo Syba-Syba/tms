@@ -17,6 +17,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   { options, placeholder, invalid, className, ...props },
   ref,
 ) {
+  // A controlled select with no value shows its first option, while the form holds nothing:
+  // "Employed" on screen, "Required" on submit. With nothing chosen, say so instead.
+  const prompt =
+    placeholder ?? (props.value === '' && !options.some((o) => o.value === '') ? 'Choose…' : undefined);
   return (
     <select
       ref={ref}
@@ -28,9 +32,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       )}
       {...props}
     >
-      {placeholder ? (
+      {prompt ? (
         <option value="" disabled>
-          {placeholder}
+          {prompt}
         </option>
       ) : null}
       {options.map((o) => (

@@ -300,3 +300,38 @@ describe('input and sign-in', () => {
     expect(await db.query(`select 1 from audit_log where detail::text like '%old@example.co.za%'`)).toHaveLength(0);
   });
 });
+
+describe('an applicant\'s own applications', () => {
+  it('lists what they applied for and where it stands, and nobody else\'s', async () => {
+    const as = await register('Status Seeker', 'status@example.co.za');
+    const made = await apply(as, { email: 'status@example.co.za', firstName: 'Status', lastName: 'Seeker', unitId: otherUnit2 });
+    expect(made.status).toBe(201);
+    const mine = await call('GET', '/me/applications', as);
+    expect(mine.status).toBe(200);
+    expect(mine.body.items).toHaveLength(1);
+    expect(mine.body.items[0]).toMatchObject({ id: made.body.id, status: 'submitted', landlord: 'Other Lets', unit: 'Other Court O2', leaseId: null });
+    const someoneElse = await register('Someone Else', 'someone@example.co.za');
+    expect((await call('GET', '/me/applications', someoneElse)).body.items).toHaveLength(0);
+  });
+});
+
+describe('the deposit a tenant still owes', () => {
+  it('shows on their lease until it is received', async () => {
+    const as = await register('Deposit Due', 'deposit-due@example.co.za');
+    const [unit] = await db.query<{ id: string }>(
+      `insert into unit (property_id, code, bedrooms, bathrooms, monthly_rent_cents, deposit_cents, status)
+       values ((select id from property where name = 'Other Court'), 'O3', 1, 1, 500000, 500000, 'vacant') returning id`,
+    );
+    const made = await apply(as, { email: 'deposit-due@example.co.za', firstName: 'Deposit', lastName: 'Due', unitId: unit!.id });
+    const [{ applicant_id }] = (await db.query<{ applicant_id: string }>('select applicant_id from application where id = $1', [made.body.id])) as [{ applicant_id: string }];
+    const [lease] = await db.query<{ id: string }>(
+      `insert into lease (application_id, unit_id, applicant_id, start_date, end_date, monthly_rent_cents, deposit_cents, status)
+       values ($1, $2, $3, current_date, current_date + 365, 500000, 500000, 'active') returning id`,
+      [made.body.id, unit!.id, applicant_id],
+    );
+    const owing = async () => (await call('GET', '/leases', as)).body.items.find((i: { id: string }) => i.id === lease!.id).depositOwingCents;
+    expect(await owing()).toBe(500000);
+    await db.query(`insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on) values ($1, 'received', 500000, current_date)`, [lease!.id]);
+    expect(await owing()).toBe(0);
+  });
+});

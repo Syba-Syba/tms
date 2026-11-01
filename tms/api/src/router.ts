@@ -78,6 +78,7 @@ import { handler as reports_income_expense } from './handlers/reports-income-exp
 import { handler as reports_arrears } from './handlers/reports-arrears';
 import { handler as me_privacy } from './handlers/me-privacy';
 import { handler as me_data_export } from './handlers/me-data-export';
+import { handler as me_applications } from './handlers/me-applications';
 import { handler as me_erasure } from './handlers/me-erasure';
 import { handler as privacy_requests_list } from './handlers/privacy-requests-list';
 import { handler as privacy_requests_decide } from './handlers/privacy-requests-decide';
@@ -202,6 +203,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/expenses/{id}/slip/confirm', expenses_slip_confirm],
   ['GET', '/reports/income-expense', reports_income_expense],
   ['GET', '/reports/arrears', reports_arrears],
+  ['GET', '/me/applications', me_applications],
   ['GET', '/me/privacy', me_privacy],
   ['POST', '/me/consents', me_privacy],
   ['GET', '/me/data-export', me_data_export],

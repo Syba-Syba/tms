@@ -23,9 +23,8 @@ export function Stepper({
         const active = index === current;
         return (
           <li key={step.title} className="grid grid-cols-[52px_20px_1fr] gap-x-2 pb-5 last:pb-0">
-            <span className="pt-0.5 text-right font-mono text-2xs text-ink-muted">
-              {step.at ?? '--:--'}
-            </span>
+            {/* No time yet is blank: '--:--' beside a step already done read as broken. */}
+            <span className="pt-0.5 text-right font-mono text-2xs text-ink-muted">{step.at ?? ''}</span>
             <span className="relative flex justify-center">
               <span
                 className={cn(

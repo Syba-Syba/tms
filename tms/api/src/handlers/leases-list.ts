@@ -21,6 +21,7 @@ export const handler = route(async (event) => {
     unit: string;
     tenant: string;
     deposit_balance: string;
+    deposit_owing: string;
     outstanding: string;
     open_tickets: string;
     termination_effective_on: string | null;
@@ -37,6 +38,10 @@ export const handler = route(async (event) => {
                        when 'interest' then d.amount_cents
                        else -d.amount_cents end)
                         from deposit_ledger d where d.lease_id = l.id), 0)::text as deposit_balance,
+            -- The deposit asked for less what has come in. Until it is paid the tenant owes it,
+            -- and their home screen used to say "You owe nothing".
+            greatest(0, l.deposit_cents - coalesce((select sum(d.amount_cents) from deposit_ledger d
+                                                     where d.lease_id = l.id and d.entry_type = 'received'), 0))::text as deposit_owing,
             -- Each open invoice less the payments made against it. Subtracting every payment
             -- the lease ever received from only the unpaid invoices made arrears vanish as
             -- soon as any earlier invoice had been paid.
@@ -77,6 +82,7 @@ export const handler = route(async (event) => {
       monthlyRentCents: Number(row.monthly_rent_cents),
       escalationPct: Number(row.escalation_pct),
       depositBalanceCents: Number(row.deposit_balance),
+      depositOwingCents: row.status === 'active' ? Number(row.deposit_owing) : 0,
       outstandingCents: Math.max(0, Number(row.outstanding)),
       openTickets: Number(row.open_tickets),
       terminationEffectiveOn: row.termination_effective_on,

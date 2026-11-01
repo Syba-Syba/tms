@@ -38,6 +38,7 @@ export function Documents() {
     if (list.isSuccess && !leaseId) {
       return (
         <main className={PAGE.narrow}>
+          <PageHeader title="Documents" />
           <EmptyState title="Nothing filed yet" description="Documents appear as your tenancy produces them." />
         </main>
       );

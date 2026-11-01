@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { Alert, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
@@ -11,7 +11,7 @@ import { PAGE } from '../lib/layout';
 
 interface LeaseRow {
   id: string; ref: string; status: string; unit: string; startDate: string; endDate: string;
-  monthlyRentCents: number; depositBalanceCents: number; outstandingCents: number;
+  monthlyRentCents: number; depositBalanceCents: number; depositOwingCents: number; outstandingCents: number;
   openTickets: number; terminationEffectiveOn: string | null; renewalOffered: boolean;
 }
 
@@ -36,18 +36,32 @@ export function TenantHome() {
   // take over the home screen, with a zero deposit and none of the current lease's invoices.
   const lease = data.items.find((item) => item.status === 'active') ?? data.items[0];
   const upcoming = data.items.find((item) => item.status === 'scheduled' && item.id !== lease?.id);
-  if (!lease) {
+  if (!lease) return <NoLeaseYet />;
+
+  // Generated but not yet signed: the one thing to do is sign. Showing "You owe nothing" and a
+  // R0 deposit here read as if they had moved in, and the lease to sign was three taps away.
+  if (lease.status === 'out_for_signature') {
     return (
       <main className={PAGE.narrow}>
-        <EmptyState
-          title="No active lease"
-          description="When your landlord issues a lease it appears here, along with everything attached to it."
-        />
+        <p className="text-lead text-ink-muted">{currentUser()?.name.split(' ')[0] ? `Hi ${currentUser()!.name.split(' ')[0]}` : 'Hi'}</p>
+        <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
+        <Card>
+          <div className="space-y-3 p-5">
+            <h2 className="text-title font-semibold text-ink">Your lease is ready to sign</h2>
+            <p className="text-body text-ink-muted">
+              {lease.ref}, from {formatDate(lease.startDate)} to {formatDate(lease.endDate)}. Read it, then sign
+              on your phone. It starts once you and your landlord have both signed.
+            </p>
+            <Button block size="lg" onClick={() => navigate(`/lease/${lease.id}`)}>Read and sign the lease</Button>
+          </div>
+        </Card>
       </main>
     );
   }
 
-  const settled = lease.outstandingCents === 0;
+  // Rent and charges invoiced, plus a deposit not yet received: both are what they owe.
+  const owing = lease.outstandingCents + (lease.depositOwingCents ?? 0);
+  const settled = owing === 0;
   const endingIn = daysUntil(lease.endDate);
 
   const firstName = currentUser()?.name.split(' ')[0];
@@ -77,7 +91,12 @@ export function TenantHome() {
         }`}
       >
         <p className="text-body text-ink-muted">{settled ? 'You owe nothing' : 'You owe'}</p>
-        <Money cents={lease.outstandingCents} className={`block text-hero leading-tight ${settled ? '' : 'text-danger'}`} />
+        <Money cents={owing} className={`block text-hero leading-tight ${settled ? '' : 'text-danger'}`} />
+        {lease.depositOwingCents > 0 ? (
+          <p className="text-body text-ink">
+            Including your deposit of <Money cents={lease.depositOwingCents} />, due within 7 days of signing.
+          </p>
+        ) : null}
         {settled ? (
           <p className="mt-1 text-body text-brand-600">Fully paid up. Thank you.</p>
         ) : (
@@ -150,6 +169,70 @@ export function TenantHome() {
       </Card>
       </div>
       </div>
+    </main>
+  );
+}
+
+interface MyApplication {
+  id: string; status: string; submittedAt: string | null; unit: string; landlord: string;
+  documents: number; leaseId: string | null; leaseStatus: string | null;
+}
+
+const APPLICATION_STATUS: Record<string, { label: string; tone: 'info' | 'success' | 'danger' | 'neutral'; next: string }> = {
+  draft: { label: 'Not sent', tone: 'neutral', next: 'Finish the form and upload your documents to send it.' },
+  submitted: { label: 'Waiting for the landlord', tone: 'info', next: 'The unit is held for you while the landlord decides. You get an email either way.' },
+  screening: { label: 'Being checked', tone: 'info', next: 'The landlord is checking your details. You get an email either way.' },
+  approved: { label: 'Approved', tone: 'success', next: 'Your landlord is preparing the lease. It appears here to sign.' },
+  declined: { label: 'Declined', tone: 'danger', next: 'The landlord chose not to go ahead. Your documents are deleted after twelve months.' },
+  withdrawn: { label: 'Withdrawn', tone: 'neutral', next: 'This application is closed.' },
+};
+
+/** Before there is a lease: what they applied for and where it stands, rather than an empty page. */
+function NoLeaseYet() {
+  const { data } = useQuery({
+    queryKey: ['my-applications'],
+    queryFn: () => api.get<{ items: MyApplication[] }>('/me/applications'),
+  });
+  const items = data?.items ?? [];
+  if (items.length === 0) {
+    return (
+      <main className={PAGE.narrow}>
+        <EmptyState
+          title="No lease yet"
+          description="When you apply for a place, or your landlord issues a lease, it appears here. To apply, open the link your landlord shared."
+        />
+      </main>
+    );
+  }
+  return (
+    <main className={PAGE.narrow}>
+      <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">Your applications</h1>
+      <ul className="space-y-3">
+        {items.map((item) => {
+          const status = APPLICATION_STATUS[item.status] ?? { label: item.status, tone: 'neutral' as const, next: '' };
+          return (
+            <li key={item.id}>
+              <Card>
+                <div className="space-y-2 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-lead font-semibold text-ink">{item.unit}</p>
+                    <Badge tone={status.tone}>{status.label}</Badge>
+                  </div>
+                  <p className="text-meta text-ink-muted">
+                    {item.landlord}{item.submittedAt ? `, sent ${formatDate(item.submittedAt.slice(0, 10))}` : ''}
+                  </p>
+                  <p className="text-body text-ink">{status.next}</p>
+                  {item.status === 'draft' || (item.status === 'submitted' && item.documents < 4) ? (
+                    <Link className="inline-block text-body font-semibold text-brand-600" to={`/apply/${item.id}/documents`}>
+                      Upload documents
+                    </Link>
+                  ) : null}
+                </div>
+              </Card>
+            </li>
+          );
+        })}
+      </ul>
     </main>
   );
 }
