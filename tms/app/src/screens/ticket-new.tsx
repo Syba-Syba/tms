@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { Button, Card, CardBody, PageHeader, SegmentedControl, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
-import { TextField } from '@hlonie/toolbox/forms';
+import { TextAreaField, TextField } from '@hlonie/toolbox/forms';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
 import { pickPhoto, putFile, type PickedPhoto } from '../lib/photos';
@@ -106,6 +106,7 @@ export function TicketNew() {
                 key={item.value}
                 size="sm"
                 variant={category === item.value ? 'secondary' : 'outline'}
+                aria-pressed={category === item.value}
                 onClick={() => setCategory(item.value)}
               >
                 {item.label}
@@ -125,7 +126,7 @@ export function TicketNew() {
             <p className="mt-2 text-xs text-ink-muted">{SLA_COPY[severity]}</p>
           </div>
           <TextField control={control} name="title" label="What is it" required rules={{ required: 'A short title is needed.' }} />
-          <TextField
+          <TextAreaField
             control={control}
             name="description"
             label="Details"

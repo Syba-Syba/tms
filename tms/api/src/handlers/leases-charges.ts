@@ -98,9 +98,10 @@ export const handler = route(async (event) => {
     const currentMonth = today.slice(0, 7);
     let target = input.period;
     let invoice = await openInvoice(target);
-    if ((invoice && invoice.due_on < today) || (!invoice && target < currentMonth)) {
+    // Due today counts as due: a tenant paying on the due date paid the amount they were shown.
+    if ((invoice && invoice.due_on <= today) || (!invoice && target < currentMonth)) {
       const current = await openInvoice(currentMonth);
-      target = current && current.due_on >= today ? currentMonth : nextMonthStart(`${currentMonth}-01`).slice(0, 7);
+      target = current && current.due_on > today ? currentMonth : nextMonthStart(`${currentMonth}-01`).slice(0, 7);
       invoice = await openInvoice(target);
     }
     // A lease that is ending has no invoice after its last month, and the run will never make

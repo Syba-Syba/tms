@@ -8,6 +8,7 @@ import { api, humanError } from '../api/client';
 import { Money } from '../components/money';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { incomeCents } from '../lib/income';
+import { currentUser } from '../lib/session';
 
 interface AvailableUnit {
   id: string;
@@ -34,7 +35,15 @@ interface FormValues {
 }
 
 export function ApplyStart() {
-  const { control, handleSubmit, formState } = useForm<FormValues>();
+  // The account was made a minute ago with a name and an email; asking for them again lost
+  // people who missed the empty email field at the top of a long form on a phone.
+  const { control, handleSubmit, formState } = useForm<FormValues>({
+    defaultValues: (() => {
+      const user = currentUser();
+      const [firstName = '', ...rest] = (user?.name ?? '').trim().split(/\s+/);
+      return { email: user?.email ?? '', firstName, lastName: rest.join(' ') };
+    })(),
+  });
   const navigate = useNavigate();
   const toast = useToast();
   const [consent, setConsent] = useState(false);

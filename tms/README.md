@@ -247,6 +247,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /expenses/{id}/slip/confirm | landlord | after the slip's upload: checks its bytes and keeps a copy |
 | GET | /reports/income-expense | landlord | rent invoiced, collected, expenses and net per property, tax year by default |
 | GET | /reports/arrears | landlord | what each lease owes, aged 0, 30, 60, 90 and 90+ days |
+| GET | /me/applications | signed in | the caller's own applications, with status and any lease |
 | GET, POST | /me/privacy, /me/consents | signed in | notice version accepted; accept the current one |
 | GET | /me/data-export | signed in | everything held about the caller, as JSON |
 | POST | /me/erasure-request | tenant | ask for erasure; immediate when there is nothing to keep |
@@ -278,7 +279,7 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/reopen | both | back to in progress to fix a disputed finding; withdraws any signature, refused once both have signed |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and eight routes in all; the table lists the shape of each family rather than every verb.
+One hundred and nine routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
