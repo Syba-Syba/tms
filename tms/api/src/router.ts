@@ -92,6 +92,7 @@ import { handler as terminations_comparison } from './handlers/terminations-comp
 import { handler as terminations_deduction } from './handlers/terminations-deduction';
 import { handler as terminations_serve } from './handlers/terminations-serve';
 import { handler as terminations_settle } from './handlers/terminations-settle';
+import { handler as terminations_settlement_preview } from './handlers/terminations-settlement-preview';
 import { handler as terminations_withdraw } from './handlers/terminations-withdraw';
 import { handler as tickets_action } from './handlers/tickets-action';
 import { handler as tickets_close } from './handlers/tickets-close';
@@ -168,6 +169,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/terminations/{id}/comparison', terminations_comparison],
   ['POST', '/terminations/{id}/deductions', terminations_deduction],
   ['DELETE', '/terminations/{id}/deductions/{deductionId}', terminations_deduction],
+  ['GET', '/terminations/{id}/settlement', terminations_settlement_preview],
   ['POST', '/terminations/{id}/settle', terminations_settle],
   ['POST', '/terminations/{id}/withdraw', terminations_withdraw],
   ['GET', '/notifications/preferences', notifications_preferences],

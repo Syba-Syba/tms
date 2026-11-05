@@ -73,10 +73,14 @@ describe('settling the deposit', () => {
     expect(screen.getByText(/Deducted/)).toBeTruthy();
   });
 
-  it('asks before settling, showing the deductions, and settles only on confirmation', async () => {
+  it('asks before settling, showing the exact refund, and settles only on confirmation', async () => {
     on('GET /terminations/t1/comparison', comparison([
       { id: 'd1', description: 'Lounge · Wall', amountCents: 40000, findingId: 'f1', evidenceKey: null },
     ]));
+    on('GET /terminations/t1/settlement', {
+      heldCents: 900000, deductionsCents: 40000, arrearsCents: 0, penaltyCents: 0, rentCreditCents: 0,
+      refundCents: 860000, tenantOwesCents: 0, refundRule: 'with_deductions', refundDueBy: '2026-11-20', blocker: null,
+    });
     on('POST /terminations/t1/settle', {
       depositCents: 900000, interestCents: 0, heldCents: 900000, deductionsCents: 40000, arrearsCents: 0,
       penaltyCents: 0, refundCents: 860000, tenantOwesCents: 0, refundRule: 'with_deductions',
@@ -86,7 +90,9 @@ describe('settling the deposit', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Settle the deposit' }));
     const dialog = await screen.findByRole('dialog');
     expect(callsTo('POST /terminations/t1/settle')).toBe(0);
-    expect(within(dialog).getByText('Lounge · Wall')).toBeTruthy();
+    expect(await within(dialog).findByText('Refund to the tenant')).toBeTruthy();
+    expect(within(dialog).getByText('Less Lounge · Wall')).toBeTruthy();
+    expect(within(dialog).getByText(/8\s?600/)).toBeTruthy();
     expect(within(dialog).getByText(/cannot be undone/i)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Settle and end the lease' }));
     await screen.findByText('Deposit settled');

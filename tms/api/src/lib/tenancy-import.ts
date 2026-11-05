@@ -3,6 +3,8 @@ import { encryptIdNumber } from './idcrypt';
 import { audit } from './audit';
 import { billableUntil } from './billing';
 import { sendTenantInvite } from './tenant-invite';
+import { importInvitesByLandlord as importInviteBudget } from './ratelimit';
+import { tooManyRequests } from './http';
 import { assertUnitRoom } from './subscription';
 import { importRowSchema, lastAnniversary, rowProblems, type ImportRow } from '../domain/tenancy-import';
 import { billingWindow, describeWindow, rentForWindow } from '../domain/renewal';
@@ -220,12 +222,26 @@ export async function importTenancies(
   }
   // Units the import adds count against the plan like any other.
   await assertUnitRoom(landlordId, ready.filter((item) => !item.unitId).length);
+  // Every invited row is an email from our domain. All or none, like the rows themselves.
+  if (options.invite) {
+    const left = importInviteBudget.remaining(landlordId);
+    if (ready.length > left) {
+      throw tooManyRequests(
+        left === 0
+          ? 'This account has sent its invitations for today. Import without invitations, or try again tomorrow.'
+          : `This account can send ${left} more invitation${left === 1 ? "" : "s"} today. Import fewer tenants, or import without invitations.`,
+      );
+    }
+  }
 
   const leaseIds = await withTransaction(async (run) => {
     const ids: string[] = [];
     for (const item of ready) {
       const leaseId = await writeTenancy(run, item, options.actorSub, today);
-      if (options.invite) await sendTenantInvite(run, { leaseId, invitedBy: options.actorSub });
+      if (options.invite) {
+        await sendTenantInvite(run, { leaseId, invitedBy: options.actorSub });
+        importInviteBudget.record(landlordId);
+      }
       ids.push(leaseId);
     }
     return ids;

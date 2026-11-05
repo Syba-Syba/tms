@@ -19,6 +19,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Real Postgres for the tests that need two transactions at once (PGlite runs one at a time).
+    # Everything else runs on in-process PGlite.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +42,7 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
-      # Copies .env.example files. Tests run against in-process PGlite, so nothing else is needed.
+      # Copies .env.example files. Tests run against in-process PGlite, apart from the race tests.
       - name: Environment
         run: npm run env
 
@@ -44,6 +54,8 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          TEST_PG_HOST: localhost
 
       - name: Build self-hosted web app
         run: npm run selfhost:build

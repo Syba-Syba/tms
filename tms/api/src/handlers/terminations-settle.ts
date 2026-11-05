@@ -37,19 +37,12 @@ const photoOrNull = async (key: string | null): Promise<InspectionPhoto | null> 
   }
 };
 
-export const handler = route(async (event) => {
-  const terminationId = event.pathParameters?.id;
-  if (!terminationId) throw badRequest('A termination id is required.');
-  const access = await requireLeaseAccessVia(
-    event,
-    'select lease_id from termination where id = $1',
-    [terminationId],
-    'Termination',
-  );
-  if (!access.isLandlord) throw forbidden('Only the landlord settles the deposit.');
-  const input = parseBody(event, settleSchema);
-  const today = sastToday();
-
+/**
+ * The figures a settlement rests on: the deposit held, the claims against it, the refund rule
+ * and its due date. Shared by the settlement and its preview, so the dialog shows the landlord
+ * the exact amount the statement will carry.
+ */
+export async function settlementFigures(terminationId: string, today: string, restoredOn?: Date) {
   const [context] = await query<{
     lease_id: string;
     status: string;
@@ -98,13 +91,6 @@ export const handler = route(async (event) => {
   if (!context) throw notFound('Termination');
   if (context.status === 'settled') throw conflict('This deposit is already settled.');
   if (context.status === 'withdrawn') throw conflict('This notice was withdrawn, so the lease carries on.');
-  // Settling terminates the lease and vacates the unit, so doing it early would end a
-  // tenancy that is still running. The deposit is reconciled once the tenant has moved out.
-  if (today < context.effective_on) {
-    throw conflict(
-      `The lease runs until ${context.effective_on}. The deposit is settled after the tenant has moved out.`,
-    );
-  }
 
   const deductions = await query<{ description: string; amount_cents: string; finding_id: string | null }>(
     'select description, amount_cents, finding_id from deposit_deduction where termination_id = $1 order by created_at',
@@ -117,11 +103,6 @@ export const handler = route(async (event) => {
     outgoingInspectionCompleted: context.outgoing_completed,
     deductionCount: deductions.length,
   });
-  if (rule === 'no_inspection' && deductions.length > 0) {
-    throw conflict(
-      'No outgoing inspection was completed, so nothing may be deducted. Remove the deductions or hold the inspection.',
-    );
-  }
 
   // A rent credit first offsets arrears; whatever is left goes back to the tenant.
   const balances = await readBalances(query, context.lease_id);
@@ -140,8 +121,38 @@ export const handler = route(async (event) => {
   });
 
   // 14 days runs from restoration, the other two from the lease ending.
-  const anchorIso = rule === 'with_deductions' ? (input.restoredOn ? isoDate(input.restoredOn) : today) : context.effective_on;
+  const anchorIso = rule === 'with_deductions' ? (restoredOn ? isoDate(restoredOn) : today) : context.effective_on;
   const dueBy = refundDueBy(rule, dateFromIso(anchorIso));
+  const blocker =
+    rule === 'no_inspection' && deductions.length > 0
+      ? 'No outgoing inspection was completed, so nothing may be deducted. Remove the deductions or hold the inspection.'
+      : null;
+  return { context, deductions, rule, balances, grossArrears, rentCredit, alreadyOut, summary, anchorIso, dueBy, blocker };
+}
+
+export const handler = route(async (event) => {
+  const terminationId = event.pathParameters?.id;
+  if (!terminationId) throw badRequest('A termination id is required.');
+  const access = await requireLeaseAccessVia(
+    event,
+    'select lease_id from termination where id = $1',
+    [terminationId],
+    'Termination',
+  );
+  if (!access.isLandlord) throw forbidden('Only the landlord settles the deposit.');
+  const input = parseBody(event, settleSchema);
+  const today = sastToday();
+
+  const { context, deductions, rule, balances, grossArrears, rentCredit, alreadyOut, summary, anchorIso, dueBy, blocker } =
+    await settlementFigures(terminationId, today, input.restoredOn);
+  // Settling terminates the lease and vacates the unit, so doing it early would end a
+  // tenancy that is still running. The deposit is reconciled once the tenant has moved out.
+  if (today < context.effective_on) {
+    throw conflict(
+      `The lease runs until ${context.effective_on}. The deposit is settled after the tenant has moved out.`,
+    );
+  }
+  if (blocker) throw conflict(blocker);
 
   const comparisons = await query<{
     room: string;

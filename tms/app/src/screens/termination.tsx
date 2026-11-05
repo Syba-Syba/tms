@@ -40,6 +40,12 @@ interface Comparison {
   summary: { unchanged: number; wearAndTear: number; deductible: number; noBaseline: number; notReinspected: number };
 }
 
+interface SettlementFigures {
+  heldCents: number; deductionsCents: number; arrearsCents: number; penaltyCents: number;
+  rentCreditCents: number; refundCents: number; tenantOwesCents: number;
+  refundRule: string; refundDueBy: string; blocker: string | null;
+}
+
 interface Settlement {
   depositCents: number; interestCents: number; heldCents: number;
   deductionsCents: number; arrearsCents: number; penaltyCents: number;
@@ -67,6 +73,7 @@ export function Termination() {
     queryKey: ['comparison', terminationId],
     queryFn: () => api.get<Comparison>(`/terminations/${terminationId}/comparison`),
   });
+  const preview = useSettlementPreview(terminationId!, confirming);
 
   // Settling moves money, so nothing here runs twice at once.
   const guarded = async (fn: () => Promise<void>) => {
@@ -142,7 +149,6 @@ export function Termination() {
       deductedFor.set(deduction.findingId, (deductedFor.get(deduction.findingId) ?? 0) + deduction.amountCents);
     }
   }
-  const deductionsTotal = data.deductions.reduce((sum, deduction) => sum + deduction.amountCents, 0);
 
   return (
     <main className={PAGE.reading}>
@@ -312,31 +318,10 @@ export function Termination() {
         description="This ends the lease, frees the unit and fixes the refund. It cannot be undone."
         confirmLabel="Settle and end the lease"
         loading={busy}
+        disabled={!preview.data || !!preview.data.blocker}
         onConfirm={settle}
       >
-        <div className="space-y-2 text-meta">
-          <p className="label">Deductions</p>
-          {data.deductions.length === 0 ? (
-            <p className="text-ink-muted">None. The whole deposit and its interest go back to the tenant.</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.deductions.map((deduction) => (
-                <li key={deduction.id} className="flex justify-between gap-3">
-                  <span>{deduction.description}</span>
-                  <Money cents={deduction.amountCents} />
-                </li>
-              ))}
-              <li className="flex justify-between gap-3 border-t border-line-soft pt-1 font-semibold">
-                <span>Total deducted</span>
-                <Money cents={deductionsTotal} />
-              </li>
-            </ul>
-          )}
-          <p className="text-ink-muted">
-            The refund is the deposit and its interest, less these deductions, any unpaid rent and
-            any cancellation penalty. The exact figure and the statement follow once it is settled.
-          </p>
-        </div>
+        <SettlementPreview terminationId={terminationId!} open={confirming} deductions={data.deductions} />
       </ConfirmDialog>
 
       {settled?.statementKey ? (
@@ -345,5 +330,70 @@ export function Termination() {
         </Button>
       ) : null}
     </main>
+  );
+}
+
+/** Fetched each time the dialog opens, so it reflects payments and deductions made since. */
+const useSettlementPreview = (terminationId: string, open: boolean) =>
+  useQuery({
+    queryKey: ['settlement-preview', terminationId],
+    queryFn: () => api.get<SettlementFigures>(`/terminations/${terminationId}/settlement`),
+    enabled: open,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+/** The settlement in figures before it happens: the same numbers the statement will carry. */
+function SettlementPreview({ terminationId, open, deductions }: { terminationId: string; open: boolean; deductions: Deduction[] }) {
+  const { data, isLoading, isError, error } = useSettlementPreview(terminationId, open);
+  if (isLoading) return <p className="text-meta text-ink-muted">Working out the refund…</p>;
+  if (isError || !data) {
+    return <Alert tone="danger" title="The figures could not be loaded">{humanError(error)}</Alert>;
+  }
+  const owes = data.tenantOwesCents > 0;
+  return (
+    <div className="space-y-3 text-meta">
+      <ul className="space-y-1">
+        <li className="flex justify-between gap-3">
+          <span>Deposit and interest held</span>
+          <Money cents={data.heldCents} />
+        </li>
+        {deductions.map((deduction) => (
+          <li key={deduction.id} className="flex justify-between gap-3 text-danger">
+            <span>Less {deduction.description}</span>
+            <Money cents={-deduction.amountCents} />
+          </li>
+        ))}
+        {data.arrearsCents > 0 ? (
+          <li className="flex justify-between gap-3 text-danger">
+            <span>Less unpaid rent</span>
+            <Money cents={-data.arrearsCents} />
+          </li>
+        ) : null}
+        {data.penaltyCents > 0 ? (
+          <li className="flex justify-between gap-3 text-danger">
+            <span>Less cancellation penalty</span>
+            <Money cents={-data.penaltyCents} />
+          </li>
+        ) : null}
+        {data.rentCreditCents > 0 ? (
+          <li className="flex justify-between gap-3">
+            <span>Plus rent paid in advance</span>
+            <Money cents={data.rentCreditCents} />
+          </li>
+        ) : null}
+        <li className="flex justify-between gap-3 border-t border-line pt-1 font-semibold">
+          <span>{owes ? 'Owed by the tenant' : 'Refund to the tenant'}</span>
+          <Money cents={owes ? data.tenantOwesCents : data.refundCents} />
+        </li>
+      </ul>
+      {data.blocker ? (
+        <Alert tone="danger" title="Cannot settle yet">{data.blocker}</Alert>
+      ) : (
+        <p className="text-ink-muted">
+          {owes ? 'The statement records this as owed.' : `Payable by ${formatDate(data.refundDueBy)}.`} {RULE_COPY[data.refundRule]}
+        </p>
+      )}
+    </div>
   );
 }

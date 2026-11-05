@@ -150,11 +150,25 @@ export const handler = route(async (event) => {
 
     // An offer to renew a lease that is ending lapses with the notice; accepting it afterwards
     // would start a new lease the tenant has just said they are leaving.
-    await run(`update renewal set status = 'lapsed' where lease_id = $1 and status = 'offered'`, [leaseId]);
+    // Both are recorded on the notice, so withdrawing it can put them back.
+    const lapsed = await run<{ id: string }>(
+      `update renewal set status = 'lapsed' where lease_id = $1 and status = 'offered' returning id`,
+      [leaseId],
+    );
     if (renewed) {
       await run(`update lease set status = 'cancelled' where id = $1`, [renewed.id]);
-      await run(`update renewal set status = 'lapsed' where new_lease_id = $1 and status = 'accepted'`, [renewed.id]);
+      lapsed.push(
+        ...(await run<{ id: string }>(
+          `update renewal set status = 'lapsed' where new_lease_id = $1 and status = 'accepted' returning id`,
+          [renewed.id],
+        )),
+      );
     }
+    await run('update termination set lapsed_renewal_ids = $2, cancelled_lease_id = $3 where id = $1', [
+      termination.id,
+      lapsed.map((row) => row.id),
+      renewed?.id ?? null,
+    ]);
 
     // Next month's rent may already have been invoiced in full on the 25th.
     const trimmed = await trimInvoicesAfter(run, leaseId, isoDate(effective));

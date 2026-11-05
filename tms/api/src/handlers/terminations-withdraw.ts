@@ -33,8 +33,16 @@ export const handler = route(async (event) => {
   const today = sastToday();
 
   const result = await withTransaction(async (run) => {
-    const [termination] = await run<{ lease_id: string; status: string; effective_on: string; lease_status: string }>(
-      `select t.lease_id, t.status, t.effective_on::text, l.status as lease_status
+    const [termination] = await run<{
+      lease_id: string;
+      status: string;
+      effective_on: string;
+      lease_status: string;
+      lapsed_renewal_ids: string[];
+      cancelled_lease_id: string | null;
+    }>(
+      `select t.lease_id, t.status, t.effective_on::text, l.status as lease_status,
+              t.lapsed_renewal_ids, t.cancelled_lease_id
          from termination t join lease l on l.id = t.lease_id
         where t.id = $1
         for update of t, l`,
@@ -51,6 +59,8 @@ export const handler = route(async (event) => {
     }
 
     await run(`update termination set status = 'withdrawn' where id = $1`, [terminationId]);
+    // Before the invoices: a revived renewal sets where this lease's billing stops.
+    const renewalsRestored = await restoreRenewals(run, termination, today);
     const invoicesRestored = await restoreInvoicesAfter(run, termination.lease_id, termination.effective_on);
     // An exit inspection booked for the old end date would otherwise be reminded and held.
     const inspections = await run<{ id: string }>(
@@ -64,6 +74,7 @@ export const handler = route(async (event) => {
       effectiveOn: termination.effective_on,
       invoicesRestored,
       inspectionsCancelled: inspections.length,
+      renewalsRestored,
     };
   });
 
@@ -99,6 +110,7 @@ export const handler = route(async (event) => {
       effectiveOn: result.effectiveOn,
       invoicesRestored: result.invoicesRestored,
       inspectionsCancelled: result.inspectionsCancelled,
+      renewalsRestored: result.renewalsRestored,
     },
   });
 
@@ -107,6 +119,7 @@ export const handler = route(async (event) => {
     status: 'withdrawn',
     invoicesRestored: result.invoicesRestored,
     inspectionsCancelled: result.inspectionsCancelled,
+    renewalsRestored: result.renewalsRestored,
   });
 });
 
@@ -213,4 +226,46 @@ async function restoreInvoicesAfter(run: Run, leaseId: string, effectiveOn: stri
     changed += 1;
   }
   return changed;
+}
+
+/**
+ * Puts back what serving the notice undid, where it still stands. An offer comes back while
+ * its reply date has not passed. An accepted renewal comes back with its scheduled lease while
+ * that lease has not started and the unit has no other lease scheduled. Anything else stays
+ * lapsed: the landlord makes a new offer.
+ */
+async function restoreRenewals(
+  run: Run,
+  termination: { lapsed_renewal_ids: string[]; cancelled_lease_id: string | null },
+  today: string,
+): Promise<number> {
+  let restored = 0;
+  if (termination.cancelled_lease_id) {
+    const revived = await run<{ id: string }>(
+      `update lease set status = 'scheduled'
+        where id = $1 and status = 'cancelled' and start_date > $2::date
+          and not exists (select 1 from lease other
+                           where other.unit_id = lease.unit_id and other.status = 'scheduled')
+        returning id`,
+      [termination.cancelled_lease_id, today],
+    );
+    if (revived.length > 0) {
+      const renewals = await run<{ id: string }>(
+        `update renewal set status = 'accepted'
+          where new_lease_id = $1 and status = 'lapsed' and id = any($2::uuid[])
+          returning id`,
+        [termination.cancelled_lease_id, termination.lapsed_renewal_ids],
+      );
+      restored += renewals.length;
+    }
+  }
+  const offers = await run<{ id: string }>(
+    `update renewal set status = 'offered'
+      where id = any($1::uuid[]) and status = 'lapsed' and new_lease_id is null and respond_by >= $2::date
+        and not exists (select 1 from renewal other
+                         where other.lease_id = renewal.lease_id and other.status = 'offered')
+      returning id`,
+    [termination.lapsed_renewal_ids, today],
+  );
+  return restored + offers.length;
 }

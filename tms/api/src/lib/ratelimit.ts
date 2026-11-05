@@ -41,6 +41,11 @@ export class AttemptLimiter {
     return Math.max(1, Math.ceil((oldest + this.windowMs - this.now()) / 1000));
   }
 
+  /** Attempts the key may still make inside the window. */
+  remaining(key: string): number {
+    return Math.max(0, this.limit - this.recent(key).length);
+  }
+
   clear(key: string): void {
     this.attempts.delete(key);
   }
@@ -112,3 +117,15 @@ export function requireUploadLinkAllowance(sub: string) {
     throw tooManyRequests('Too many uploads started in the last hour. Finish the ones in progress, or try again later.');
   }
 }
+
+/**
+ * Tenancy imports per landlord account per hour, previews included. Each call parses up to
+ * 2 MB of spreadsheet and looks up every unit, so a loop of them is real load on the database.
+ */
+export const importsByLandlord = new AttemptLimiter(30, HOUR);
+
+/**
+ * Invitation emails sent by imports per landlord account per day. Enough to bring a 500-unit
+ * portfolio across in one go, while keeping an account from using imports as a mailer.
+ */
+export const importInvitesByLandlord = new AttemptLimiter(500, DAY);

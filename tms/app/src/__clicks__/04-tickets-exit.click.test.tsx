@@ -126,9 +126,11 @@ describe('the exit, clicked', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Settle the deposit' }));
     // Settling is final, so it asks first.
+    // The lease has not ended, and the dialog says so before anything is clicked.
     const confirm = await screen.findByRole('dialog');
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Settle and end the lease' }));
-    await screen.findByText('Cannot settle yet');
+    await within(confirm).findByText('Cannot settle yet');
+    expect(within(confirm).getByText(/The lease runs until/)).toBeTruthy();
+    expect((within(confirm).getByRole('button', { name: 'Settle and end the lease' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

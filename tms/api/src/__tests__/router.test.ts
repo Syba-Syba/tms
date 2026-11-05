@@ -3,7 +3,7 @@ import { match, routeCount } from '../router';
 
 describe('router', () => {
   it('carries every route', () => {
-    expect(routeCount).toBe(110);
+    expect(routeCount).toBe(111);
   });
 
   it('matches a static route', () => {
