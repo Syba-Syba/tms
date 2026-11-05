@@ -96,6 +96,30 @@ export const handler = route(async (event) => {
           // The tenant was told when the slip was accepted; nothing new to say.
           return null;
         }
+        // The same for a deposit slip already accepted: the deposit is on the ledger, and this
+        // line is that transfer arriving. Recorded again it went onto the rent, so one payment
+        // counted as both deposit and rent.
+        const [deposited] = await run<{ id: string }>(
+          `select pp.id from payment_proof pp
+            where pp.lease_id = $1 and pp.status = 'accepted' and pp.target = 'deposit'
+              and pp.paid_on between $3::date - 14 and $3::date + 3
+              and $2::bigint = coalesce((select sum(d.amount_cents) from deposit_ledger d where d.proof_id = pp.id),
+                                        pp.amount_cents)
+              and not exists (select 1 from bank_line b where b.proof_id = pp.id)
+              and not exists (select 1 from deposit_ledger d where d.proof_id = pp.id and d.bank_line_id is not null)
+            order by abs(pp.paid_on - $3::date) limit 1
+            for update`,
+          [lease.id, amountCents, line.posted_on],
+        );
+        if (deposited) {
+          await run('update deposit_ledger set bank_line_id = $2 where proof_id = $1', [deposited.id, line.id]);
+          await run(
+            `update bank_line set status = 'matched', lease_id = $2, proof_id = $4, resolved_by = $3, resolved_at = now()
+              where id = $1`,
+            [line.id, lease.id, person.sub, deposited.id],
+          );
+          return null;
+        }
         const [proof] = await run<{ id: string; target: string; invoice_id: string | null }>(
           `select id, target, invoice_id from payment_proof
             where lease_id = $1 and status = 'pending' and amount_cents = $2
@@ -107,9 +131,9 @@ export const handler = route(async (event) => {
         let balanceLine: string;
         if (proof?.target === 'deposit') {
           await run(
-            `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
-             values ($1, 'received', $2, $3, $4)`,
-            [lease.id, amountCents, line.posted_on, line.description.slice(0, 60)],
+            `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note, proof_id, bank_line_id)
+             values ($1, 'received', $2, $3, $4, $5, $6)`,
+            [lease.id, amountCents, line.posted_on, line.description.slice(0, 60), proof.id, line.id],
           );
           balanceLine = 'It has been added to your deposit.';
         } else {

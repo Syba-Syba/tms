@@ -277,9 +277,10 @@ Apple developer fee, and the service worker gives them offline reads.
 | GET | /inspections/{id} | both | full inspection state: findings, photos, signatures, draft |
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /inspections/{id}/reopen | both | back to in progress to fix a disputed finding; withdraws any signature, refused once both have signed |
+| POST | /terminations/{id}/withdraw | both | withdraw a notice before its end date and before settlement; restores the invoices it trimmed, cancels the booked exit inspection, tells the other party |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and nine routes in all; the table lists the shape of each family rather than every verb.
+One hundred and ten routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 

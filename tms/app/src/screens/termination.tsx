@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, PageHeader, useToast,
+  Alert, Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { Money } from '../components/money';
@@ -61,6 +61,7 @@ export function Termination() {
   const [draft, setDraft] = useState({ description: '', amountCents: 0, findingId: '' });
   const [settled, setSettled] = useState<Settlement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['comparison', terminationId],
@@ -104,6 +105,7 @@ export function Termination() {
     guarded(async () => {
       try {
         const result = await api.post<Settlement>(`/terminations/${terminationId}/settle`, {});
+        setConfirming(false);
         setSettled(result);
         toast.show({ title: 'Deposit settled', tone: 'success' });
         changed();
@@ -112,6 +114,7 @@ export function Termination() {
         void invalidateMoneyCaches(queryClient);
         queryClient.invalidateQueries({ queryKey: ['properties'] });
       } catch (error) {
+        setConfirming(false);
         toast.show({ title: 'Cannot settle yet', description: humanError(error), tone: 'danger' });
       }
     });
@@ -130,6 +133,16 @@ export function Termination() {
   if (!data) {
     return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This settlement" />;
   }
+
+  // One deduction per finding: the card used to keep offering Deduct, so the same damage
+  // could be charged twice.
+  const deductedFor = new Map<string, number>();
+  for (const deduction of data.deductions) {
+    if (deduction.findingId) {
+      deductedFor.set(deduction.findingId, (deductedFor.get(deduction.findingId) ?? 0) + deduction.amountCents);
+    }
+  }
+  const deductionsTotal = data.deductions.reduce((sum, deduction) => sum + deduction.amountCents, 0);
 
   return (
     <main className={PAGE.reading}>
@@ -255,7 +268,12 @@ export function Termination() {
                 </p>
               ) : null}
 
-              {item.deductible ? (
+              {item.deductible && item.findingId && deductedFor.has(item.findingId) ? (
+                <p className="text-meta">
+                  Deducted <Money cents={deductedFor.get(item.findingId)!} className="font-semibold" />. Remove it
+                  above to change the amount.
+                </p>
+              ) : item.deductible ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[160px] flex-1">
                     <CurrencyInput
@@ -281,10 +299,45 @@ export function Termination() {
       </div>
 
       {!settled && data.status !== 'settled' ? (
-        <Button className="mt-5" loading={busy} onClick={settle}>
+        <Button className="mt-5" loading={busy} onClick={() => setConfirming(true)}>
           Settle the deposit
         </Button>
       ) : null}
+
+      {/* Settling ends the lease and fixes the money for good, so it is never one tap. */}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={(next) => !busy && setConfirming(next)}
+        title="Settle the deposit?"
+        description="This ends the lease, frees the unit and fixes the refund. It cannot be undone."
+        confirmLabel="Settle and end the lease"
+        loading={busy}
+        onConfirm={settle}
+      >
+        <div className="space-y-2 text-meta">
+          <p className="label">Deductions</p>
+          {data.deductions.length === 0 ? (
+            <p className="text-ink-muted">None. The whole deposit and its interest go back to the tenant.</p>
+          ) : (
+            <ul className="space-y-1">
+              {data.deductions.map((deduction) => (
+                <li key={deduction.id} className="flex justify-between gap-3">
+                  <span>{deduction.description}</span>
+                  <Money cents={deduction.amountCents} />
+                </li>
+              ))}
+              <li className="flex justify-between gap-3 border-t border-line-soft pt-1 font-semibold">
+                <span>Total deducted</span>
+                <Money cents={deductionsTotal} />
+              </li>
+            </ul>
+          )}
+          <p className="text-ink-muted">
+            The refund is the deposit and its interest, less these deductions, any unpaid rent and
+            any cancellation penalty. The exact figure and the statement follow once it is settled.
+          </p>
+        </div>
+      </ConfirmDialog>
 
       {settled?.statementKey ? (
         <Button variant="outline" className="ml-2 mt-5" onClick={() => openDocument(settled.statementKey!)}>

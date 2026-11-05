@@ -180,7 +180,7 @@ export function SettingsBilling() {
                   <CardBody className="flex h-full flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <p className="text-lead font-semibold">{plan.name}</p>
-                      {current ? <Badge tone="success">Current</Badge> : data.recommended === plan.id ? <Badge tone="info">Fits you</Badge> : null}
+                      {current ? <Badge tone="success">Current</Badge> : data.pendingPlan === plan.id ? <Badge tone="info">From your next payment</Badge> : data.recommended === plan.id ? <Badge tone="info">Fits you</Badge> : null}
                     </div>
                     <p className="font-display text-figure font-medium tabular-nums">
                       <Money whole cents={plan.priceCents} />

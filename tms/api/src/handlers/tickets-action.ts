@@ -93,7 +93,7 @@ export const handler = route(async (event) => {
     }>(
       `select t.lease_id, t.title, p.name || ' ' || u.code as unit,
               c.name as contractor, c.trade, c.phone,
-              a.cognito_sub as tenant_sub, a.email as tenant_email, a.phone as tenant_phone
+              coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub, a.email as tenant_email, a.phone as tenant_phone
          from ticket t
          join lease l on l.id = t.lease_id
          join unit u on u.id = l.unit_id

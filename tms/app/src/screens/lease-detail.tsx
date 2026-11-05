@@ -54,6 +54,12 @@ export function noticeRules(
   };
 }
 
+/** The invoices a payment can be recorded against. A void invoice is cancelled, and
+    excluding only paid ones used to offer it. */
+export function payableInvoices<T extends { status: string }>(invoices: T[]): T[] {
+  return invoices.filter((invoice) => invoice.status === 'issued' || invoice.status === 'part_paid');
+}
+
 export function LeaseDetail() {
   const { leaseId } = useParams();
   const toast = useToast();
@@ -103,7 +109,7 @@ export function LeaseDetail() {
     return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="This lease" />;
   }
   const landlord = data.viewer.isLandlord;
-  const open = data.invoices.filter((i) => i.status !== 'paid');
+  const open = payableInvoices(data.invoices);
   const today = localToday();
   const openNotice = (reason: string) => {
     setNotice({ reason, givenOn: today, effectiveOn: '', penaltyCents: 0 });
@@ -557,6 +563,7 @@ export function LeaseDetail() {
       >
         <div className="space-y-3">
           <Select
+            aria-label="Reason"
             value={notice.reason}
             onChange={(e) => setNotice({ ...notice, reason: e.target.value })}
             options={noticeReasons}

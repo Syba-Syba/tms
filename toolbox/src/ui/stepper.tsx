@@ -4,6 +4,9 @@ export interface Step {
   title: string;
   detail?: string;
   at?: string;
+  /** Overrides the default "everything before `current` is done", for steps that can finish
+      out of order, such as two signatures. */
+  done?: boolean;
 }
 
 /** Timestamps sit in a mono gutter like a logbook, because a job history is a record, not a wizard. */
@@ -19,7 +22,7 @@ export function Stepper({
   return (
     <ol className={cn('relative', className)}>
       {steps.map((step, index) => {
-        const done = index < current;
+        const done = step.done ?? index < current;
         const active = index === current;
         return (
           <li key={step.title} className="grid grid-cols-[52px_20px_1fr] gap-x-2 pb-5 last:pb-0">

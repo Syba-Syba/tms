@@ -58,11 +58,37 @@ export const handler = route(async (event) => {
     const amountCents = input.amountCents ?? Number(proof.amount_cents);
     const reference = proof.reference ?? 'Proof of payment';
     let allocations: Awaited<ReturnType<typeof allocatePayment>> = [];
+    // The bank line for this money may have been confirmed first, and its payment recorded.
+    // Accepting the slip as well counted the same rent twice. Link the slip to that payment
+    // instead: the same window as the bank import uses the other way round. (The bank import
+    // only records a deposit together with a pending slip, so a deposit line is never left
+    // unlinked for a later deposit slip to find.)
+    const [banked] = proof.target === 'invoice'
+      ? await run<{ id: string }>(
+          `select b.id from bank_line b
+            where b.lease_id = $1 and b.status = 'matched' and b.amount_cents = $2
+              and b.posted_on between $3::date - 3 and $3::date + 14
+              and exists (select 1 from payment p where p.bank_line_id = b.id)
+              and not exists (select 1 from payment p where p.bank_line_id = b.id and p.proof_id is not null)
+            order by abs(b.posted_on - $3::date) limit 1
+            for update`,
+          [access.leaseId, amountCents, proof.paid_on],
+        )
+      : [];
+    if (banked) {
+      await run('update payment set proof_id = $2 where bank_line_id = $1', [banked.id, proofId]);
+      await run(
+        `update payment_proof set status = 'accepted', reviewed_by = $2, reviewed_at = now() where id = $1`,
+        [proofId, access.person.sub],
+      );
+      // The tenant was told when the bank line was recorded; nothing new to say.
+      return { decision: 'accept' as const, amountCents, paidOn: proof.paid_on, target: proof.target, allocations, linked: true };
+    }
     if (proof.target === 'deposit') {
       await run(
-        `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
-         values ($1, 'received', $2, $3, $4)`,
-        [access.leaseId, amountCents, proof.paid_on, reference],
+        `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note, proof_id)
+         values ($1, 'received', $2, $3, $4, $5)`,
+        [access.leaseId, amountCents, proof.paid_on, reference, proofId],
       );
     } else {
       allocations = await allocatePayment(run, {
@@ -80,16 +106,18 @@ export const handler = route(async (event) => {
       `update payment_proof set status = 'accepted', reviewed_by = $2, reviewed_at = now() where id = $1`,
       [proofId, access.person.sub],
     );
-    return { decision: 'accept' as const, amountCents, paidOn: proof.paid_on, target: proof.target, allocations };
+    return { decision: 'accept' as const, amountCents, paidOn: proof.paid_on, target: proof.target, allocations, linked: false };
   });
 
   if (outcome.decision === 'accept') {
-    await notifyPaymentReceived(
-      access.leaseId,
-      outcome.amountCents,
-      outcome.paidOn,
-      outcome.target === 'deposit' ? 'It has been added to your deposit.' : balanceLineFor(outcome.allocations),
-    );
+    if (!outcome.linked) {
+      await notifyPaymentReceived(
+        access.leaseId,
+        outcome.amountCents,
+        outcome.paidOn,
+        outcome.target === 'deposit' ? 'It has been added to your deposit.' : balanceLineFor(outcome.allocations),
+      );
+    }
   } else {
     const [tenant] = await query<{ sub: string | null; email: string; phone: string; unit: string }>(
       `select a.cognito_sub as sub, a.email, a.phone, p.name || ' ' || u.code as unit

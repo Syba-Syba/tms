@@ -2,7 +2,7 @@ import { requireLeaseAccessVia } from '../lib/access';
 import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
-import { addDeductionSchema } from '../domain/termination';
+import { addDeductionSchema, incomingInspectionSql, outgoingInWindowSql } from '../domain/termination';
 
 export const handler = route(async (event) => {
   const terminationId = event.pathParameters?.id;
@@ -46,23 +46,33 @@ export const handler = route(async (event) => {
     );
     if (!termination) throw notFound('Termination');
     if (termination.status === 'settled') throw conflict('This deposit is already settled.');
+    if (termination.status === 'withdrawn') throw conflict('This notice was withdrawn, so there is no deposit to reconcile.');
 
     // A deduction with no outgoing finding behind it is exactly what tenants win disputes over.
     if (input.findingId) {
+      // The baseline is the move-in inspection, which after a renewal sits on the lease the
+      // renewal replaced: looking only at this lease found none, and nothing could be deducted.
+      // The finding must be on the exit inspection that counts: not one replaced by a rebooking,
+      // and inside the final window for the current end date.
       const [finding] = await run<{ id: string; condition: string; baseline: string | null }>(
         `select f.id, f.condition,
                 (select inc.condition
                    from inspection_finding inc
-                   join inspection ii on ii.id = inc.inspection_id
-                  where ii.lease_id = i.lease_id and ii.kind = 'incoming'
+                  where inc.inspection_id = ${incomingInspectionSql('i.lease_id')}
                     and inc.room = f.room and inc.item = f.item) as baseline
            from inspection_finding f
            join inspection i on i.id = f.inspection_id
            join termination t on t.lease_id = i.lease_id
-          where f.id = $1 and t.id = $2 and i.kind = 'outgoing'`,
+          where f.id = $1 and t.id = $2 and ${outgoingInWindowSql('i', 't')}`,
         [input.findingId, terminationId],
       );
       if (!finding) throw badRequest('That finding is not on this lease’s outgoing inspection.');
+      // The same damage is charged once. Two rows for one finding took it off the deposit twice.
+      const [already] = await run<{ id: string }>(
+        'select id from deposit_deduction where termination_id = $1 and finding_id = $2',
+        [terminationId, input.findingId],
+      );
+      if (already) throw conflict('That finding already has a deduction. Remove it first to change the amount.');
       if (!['poor', 'damaged', 'missing'].includes(finding.condition)) {
         throw badRequest('Only a poor, damaged or missing item supports a deduction.');
       }
@@ -103,11 +113,19 @@ export const handler = route(async (event) => {
       if (!evidence?.ok) throw badRequest('Evidence must be a photo on this lease.', { evidenceS3Key: 'Not a photo on this lease.' });
     }
 
-    const [row] = await run<{ id: string }>(
-      `insert into deposit_deduction (termination_id, finding_id, description, amount_cents, evidence_s3_key)
-       values ($1, $2, $3, $4, $5) returning id`,
-      [terminationId, input.findingId ?? null, input.description, input.amountCents, input.evidenceS3Key ?? null],
-    );
+    let row: { id: string } | undefined;
+    try {
+      [row] = await run<{ id: string }>(
+        `insert into deposit_deduction (termination_id, finding_id, description, amount_cents, evidence_s3_key)
+         values ($1, $2, $3, $4, $5) returning id`,
+        [terminationId, input.findingId ?? null, input.description, input.amountCents, input.evidenceS3Key ?? null],
+      );
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw conflict('That finding already has a deduction. Remove it first to change the amount.');
+      }
+      throw error;
+    }
     await run("update termination set status = 'reconciling' where id = $1 and status <> 'settled'", [
       terminationId,
     ]);

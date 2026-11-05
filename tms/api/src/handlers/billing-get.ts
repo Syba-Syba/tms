@@ -18,11 +18,18 @@ export const handler = route(async (event) => {
   );
   const units = Number(count!.units);
   const allowance = unitAllowance(subscription, standing);
+  // A plan change waits for its first payment at the new price; until then the screen showed the
+  // old plan as if the change had not been made.
+  const [pending] = await query<{ pending_plan: string | null }>(
+    'select pending_plan from subscription where landlord_id = $1',
+    [landlordId],
+  );
   return json(200, {
     driver: billingDriver(),
     standing,
     status: subscription.status,
     plan: subscription.plan,
+    pendingPlan: pending?.pending_plan ?? null,
     trialEndsOn: subscription.trialEndsOn,
     paidUntil: subscription.currentPeriodEnd,
     graceDays: GRACE_DAYS,

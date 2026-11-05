@@ -64,14 +64,16 @@ Everything from here runs on the server.
 
 ## 6. Prepare the server
 
-Install Docker, and open ports 80 and 443 in Ubuntu's own firewall. Oracle's Ubuntu image
-blocks them even after step 3.
+Open ports 80 and 443 in Ubuntu's own firewall, then install Docker. Oracle's Ubuntu image
+blocks the ports even after step 3. Save the firewall rules before Docker is installed:
+Docker adds its own chains, and saving after it would write those into the saved rules,
+where they clash with the ones Docker creates on the next boot.
 
-    curl -fsSL https://get.docker.com | sudo sh
-    sudo usermod -aG docker ubuntu
     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
     sudo netfilter-persistent save
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker ubuntu
     exit
 
 Log in again (step 5) so the Docker group takes effect, then check:

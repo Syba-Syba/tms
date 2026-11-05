@@ -4,12 +4,13 @@ import { api } from '../api/client';
 import { Money } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
-import { currentLease } from '../lib/leases';
+import { currentLease, leaseDocumentBadge } from '../lib/leases';
 import { useOpenDocument } from '../lib/open-document';
 import { PAGE } from '../lib/layout';
 
 interface Lease {
   id: string; ref: string; unit: string; startDate: string; endDate: string; hasDocument: boolean;
+  status: string; source: 'online' | 'import'; signatures: { party: string; signedAt: string }[];
   pdfKey: string | null;
   inspections: { id: string; kind: string; status: string; scheduledFor: string; flagged: number; reportKey: string | null }[];
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string; pdfKey: string | null }[];
@@ -76,9 +77,7 @@ export function Documents() {
                 Open
               </Button>
             ) : null}
-            <Badge tone={data.hasDocument ? 'success' : 'neutral'}>
-              {data.hasDocument ? 'Signed' : 'Not issued'}
-            </Badge>
+            <Badge tone={leaseDocumentBadge(data).tone}>{leaseDocumentBadge(data).label}</Badge>
           </span>
         </CardBody>
       </Card>

@@ -54,12 +54,14 @@ describe('the maintenance lifecycle, clicked', () => {
     mount(`/tickets/${ticketId}`, <Route path="/tickets/:ticketId" element={<TicketDetail />} />);
     await screen.findAllByText('Stove plate dead');
 
-    type(screen.getByPlaceholderText('Name'), 'Thabo Nkosi');
-    type(screen.getByPlaceholderText('Trade'), 'Electrician');
-    type(screen.getByPlaceholderText('Phone'), '0827771111');
+    // Found by their accessible names: a placeholder alone is not announced once typed over.
+    type(screen.getByLabelText('Contractor name'), 'Thabo Nkosi');
+    type(screen.getByLabelText('Contractor trade'), 'Electrician');
+    type(screen.getByLabelText('Contractor phone'), '0827771111');
     fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
     await screen.findByText('Contractor assigned');
 
+    expect(await screen.findByLabelText('Quote amount')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Start now' }));
     await screen.findByText('Work started');
     fireEvent.click(await screen.findByRole('button', { name: 'Mark complete' }));
@@ -70,8 +72,13 @@ describe('the maintenance lifecycle, clicked', () => {
     const second = mount(`/tickets/${ticketId}`, <Route path="/tickets/:ticketId" element={<TicketDetail />} />);
     const scope = within(second.container);
     await scope.findByText('Rate the work to close it');
-    const arches = scope.getAllByRole('button', { name: /arch|rate|[1-5]/i });
+    const rating = scope.getByRole('radiogroup', { name: 'Rating' });
+    const arches = within(rating).getAllByRole('radio');
+    expect(arches).toHaveLength(5);
     fireEvent.click(arches[arches.length - 1]!);
+    // The chosen rating is announced, not just painted.
+    expect(within(rating).getByRole('radio', { name: '5 of 5' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(rating).getByRole('radio', { name: '4 of 5' })).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(scope.getByRole('button', { name: /Close/ }));
     await scope.findByText(/closed/i, undefined, { timeout: 10000 });
   });
@@ -88,7 +95,7 @@ describe('the exit, clicked', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Record a notice' }));
       const dialog = await screen.findByRole('dialog');
       // The case that used to be impossible: a tenant cancelling early by letter.
-      fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'early_tenant' } });
+      fireEvent.change(within(dialog).getByRole('combobox', { name: 'Reason' }), { target: { value: 'early_tenant' } });
       // Recording stays disabled until the landlord confirms what it does.
       expect(within(dialog).getByRole('button', { name: 'Record it' })).toBeDisabled();
       fireEvent.click(within(dialog).getByRole('checkbox'));
@@ -118,6 +125,9 @@ describe('the exit, clicked', () => {
     await screen.findByText('Deduction removed');
 
     fireEvent.click(screen.getByRole('button', { name: 'Settle the deposit' }));
+    // Settling is final, so it asks first.
+    const confirm = await screen.findByRole('dialog');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Settle and end the lease' }));
     await screen.findByText('Cannot settle yet');
   });
 });

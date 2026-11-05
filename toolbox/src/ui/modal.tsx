@@ -26,11 +26,11 @@ export function Modal({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45" />
         <Dialog.Content
           className={cn(
-            'fixed left-1/2 top-1/2 z-40 w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border border-line bg-surface shadow-lg focus:outline-none',
+            'fixed left-1/2 top-1/2 z-40 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-line bg-surface shadow-lg focus:outline-none',
             widths[size],
           )}
         >
-          <div className="border-b border-line px-5 py-4">
+          <div className="shrink-0 border-b border-line px-5 py-4">
             <Dialog.Title className="text-lead font-semibold text-ink">
               {title}
             </Dialog.Title>
@@ -40,9 +40,10 @@ export function Modal({
               </Dialog.Description>
             ) : null}
           </div>
-          <div className="px-5 py-4">{children}</div>
+          {/* Only the body scrolls, so the title and the buttons stay on screen however tall the form is. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
           {footer ? (
-            <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>
           ) : null}
         </Dialog.Content>
       </Dialog.Portal>

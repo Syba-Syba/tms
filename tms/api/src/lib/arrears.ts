@@ -12,34 +12,68 @@ export interface Owing {
 }
 
 /**
+ * Rent paid above an invoice's total on a lease, for SQL: what the tenant has in credit. Notice
+ * re-rates a paid month and moves the excess onto open invoices; whatever is left over (or an
+ * overpayment from before that) still counts against what is overdue.
+ */
+export const RENT_CREDIT_SQL = (leaseExpr: string) =>
+  `coalesce((select sum(greatest(0, coalesce((select sum(cp.amount_cents) from payment cp where cp.invoice_id = c.id), 0)
+                                    - c.total_cents))
+               from invoice c where c.lease_id = ${leaseExpr} and c.status <> 'void'), 0)`;
+
+/**
+ * Takes a lease's credit off its unpaid invoices, oldest first, and drops any it clears. The
+ * rows must already be in due order.
+ */
+export function netCredit<T extends { owed: number }>(rows: T[], creditCents: number): T[] {
+  let credit = Math.max(0, creditCents);
+  const out: T[] = [];
+  for (const row of rows) {
+    if (row.owed <= 0) continue;
+    const used = Math.min(credit, row.owed);
+    credit -= used;
+    if (row.owed - used > 0) out.push({ ...row, owed: row.owed - used });
+  }
+  return out;
+}
+
+/**
  * Leases with rent past its due date and unpaid, as of `today` (SAST). Only invoices already
- * due count: next month's invoice, issued on the 25th, is not arrears.
+ * due count: next month's invoice, issued on the 25th, is not arrears. Credit on the lease is
+ * taken off first.
  */
 export async function owingLeases(today: string, leaseId?: string): Promise<Owing[]> {
-  const rows = await query<{ lease_id: string; oldest_due_on: string; outstanding: string; slip_pending: boolean }>(
-    `with open_due as (
-       select i.lease_id, i.due_on,
-              i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0) as owed
-         from invoice i
-         join lease l on l.id = i.lease_id
-        where i.status in ('issued', 'part_paid') and i.due_on < $1::date
-          and l.status in ('active', 'terminated')
-          and ($2::uuid is null or i.lease_id = $2)
-     )
-     select lease_id, min(due_on)::text as oldest_due_on, sum(owed)::text as outstanding,
-            exists (select 1 from payment_proof pp where pp.lease_id = open_due.lease_id and pp.status = 'pending')
+  const rows = await query<{ lease_id: string; due_on: string; owed: string; credit: string; slip_pending: boolean }>(
+    `select i.lease_id, i.due_on::text,
+            (i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0))::text as owed,
+            ${RENT_CREDIT_SQL('i.lease_id')}::text as credit,
+            exists (select 1 from payment_proof pp where pp.lease_id = i.lease_id and pp.status = 'pending')
               as slip_pending
-       from open_due
-      where owed > 0
-      group by lease_id`,
+       from invoice i
+       join lease l on l.id = i.lease_id
+      where i.status in ('issued', 'part_paid') and i.due_on < $1::date
+        and l.status in ('active', 'terminated')
+        and ($2::uuid is null or i.lease_id = $2)
+      order by i.lease_id, i.due_on, i.period_start`,
     [today, leaseId ?? null],
   );
-  return rows.map((row) => ({
-    leaseId: row.lease_id,
-    oldestDueOn: row.oldest_due_on,
-    outstandingCents: Number(row.outstanding),
-    slipPending: row.slip_pending,
-  }));
+  const byLease = new Map<string, typeof rows>();
+  for (const row of rows) byLease.set(row.lease_id, [...(byLease.get(row.lease_id) ?? []), row]);
+  const result: Owing[] = [];
+  for (const [id, invoices] of byLease) {
+    const owing = netCredit(
+      invoices.map((row) => ({ dueOn: row.due_on, owed: Number(row.owed) })),
+      Number(invoices[0]!.credit),
+    );
+    if (owing.length === 0) continue;
+    result.push({
+      leaseId: id,
+      oldestDueOn: owing[0]!.dueOn,
+      outstandingCents: owing.reduce((sum, row) => sum + row.owed, 0),
+      slipPending: invoices[0]!.slip_pending,
+    });
+  }
+  return result;
 }
 
 export interface CaseRow {

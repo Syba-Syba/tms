@@ -2,14 +2,26 @@ import { caller } from '../lib/auth';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { encryptIdNumber } from '../lib/idcrypt';
-import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, conflict, json, notFound, parseBody, route, tooManyRequests } from '../lib/http';
+import { applicationsByAddress } from '../lib/ratelimit';
 import { createApplicationSchema } from '../domain/application';
 import { recordConsent } from '../lib/privacy';
 import { PRIVACY_VERSION } from '../domain/privacy';
 import { isoDate, sastToday } from '../domain/dates';
 
+/**
+ * Applications one account may have open at once. Each holds a unit, so without a cap one free
+ * tenant account could apply to every vacant unit of every landlord and empty their listings.
+ * Three is room to apply for a shortlist; a decision, or a withdrawal, frees a place.
+ */
+export const MAX_OPEN_APPLICATIONS = 3;
+
 export const handler = route(async (event) => {
   const person = caller(event);
+  const address = event.requestContext.http?.sourceIp ?? 'unknown';
+  if (!applicationsByAddress.allows(address)) {
+    throw tooManyRequests('Too many applications from this connection today. Try again tomorrow.');
+  }
   const input = parseBody(event, createApplicationSchema);
 
   if (isoDate(input.preferredMoveIn) < sastToday()) {
@@ -75,6 +87,25 @@ export const handler = route(async (event) => {
     );
     if (open) throw conflict('You already have an application open for this unit.');
 
+    // Counted per sign-in as well as per applicant row: the row is keyed by the sign-in, but an
+    // older row without one must not let the same person past the cap.
+    const [held] = await run<{ n: number }>(
+      `select count(*)::int as n from application a
+         join applicant p on p.id = a.applicant_id
+        where (p.id = $1 or ($2::text is not null and p.cognito_sub = $2))
+          and (a.status in ('draft', 'submitted', 'screening')
+               or (a.status = 'approved' and not exists (
+                     select 1 from lease l
+                      where l.application_id = a.id
+                        and l.status in ('scheduled', 'active', 'terminated', 'cancelled'))))`,
+      [applicant!.id, person.sub || null],
+    );
+    if (held!.n >= MAX_OPEN_APPLICATIONS) {
+      throw conflict(
+        `You already have ${MAX_OPEN_APPLICATIONS} applications open. Withdraw one, or wait for a landlord to decide, before applying again.`,
+      );
+    }
+
     // A held unit with a lease being drawn up or signed is spoken for. Only one live lease
     // is allowed per unit, so approving this application would lead nowhere.
     const [leased] = await run<{ id: string }>(
@@ -123,6 +154,7 @@ export const handler = route(async (event) => {
 
     return application!;
   });
+  applicationsByAddress.record(address);
 
   await audit({
     actorSub: person.sub,

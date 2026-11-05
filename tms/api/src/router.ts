@@ -92,6 +92,7 @@ import { handler as terminations_comparison } from './handlers/terminations-comp
 import { handler as terminations_deduction } from './handlers/terminations-deduction';
 import { handler as terminations_serve } from './handlers/terminations-serve';
 import { handler as terminations_settle } from './handlers/terminations-settle';
+import { handler as terminations_withdraw } from './handlers/terminations-withdraw';
 import { handler as tickets_action } from './handlers/tickets-action';
 import { handler as tickets_close } from './handlers/tickets-close';
 import { handler as tickets_comment } from './handlers/tickets-comment';
@@ -168,6 +169,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/terminations/{id}/deductions', terminations_deduction],
   ['DELETE', '/terminations/{id}/deductions/{deductionId}', terminations_deduction],
   ['POST', '/terminations/{id}/settle', terminations_settle],
+  ['POST', '/terminations/{id}/withdraw', terminations_withdraw],
   ['GET', '/notifications/preferences', notifications_preferences],
   ['PUT', '/notifications/preferences', notifications_preferences],
   ['POST', '/leases/{id}/renewal', renewals_offer],
@@ -229,11 +231,27 @@ const ROUTES: Array<[string, string, Handler]> = [
 
 interface Compiled {
   method: string;
+  path: string;
   pattern: RegExp;
   names: string[];
   handler: Handler;
   literal: number;
 }
+
+/**
+ * Path parameters that are not row ids. Every other {param} is a uuid primary key, and a value
+ * that is not one used to reach the database and come back as a 500 (and an alert email per
+ * distinct bad id). /landlord/members/{sub}/remove takes a sign-in id, which locally is
+ * "local-<uuid>", not a uuid.
+ */
+const NOT_UUID_PARAMS = new Set(['sub']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const noSuchRecord: Handler = async () => ({
+  statusCode: 404,
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ error: { code: 'not_found', message: 'Not found.' } }),
+});
 
 // Compiled once per container, not per request.
 const COMPILED: Compiled[] = ROUTES.map(([method, path, handler]) => {
@@ -244,6 +262,7 @@ const COMPILED: Compiled[] = ROUTES.map(([method, path, handler]) => {
   });
   return {
     method,
+    path,
     pattern: new RegExp(`^${pattern}$`),
     names,
     handler,
@@ -262,7 +281,18 @@ export function match(method: string, path: string) {
     route.names.forEach((name, index) => {
       params[name] = decodeURIComponent(found[index + 1]!);
     });
-    return { handler: route.handler, params };
+    const template = `${route.method} ${route.path}`;
+    // The route exists; the record cannot. Same 404 a handler gives for an unknown id.
+    const malformed = route.names.some((name) => !NOT_UUID_PARAMS.has(name) && !UUID.test(params[name]!));
+    const handler = malformed ? noSuchRecord : route.handler;
+    // routeKey is what API Gateway sets for a route of its own. With one catch-all route it
+    // reads "ANY /{proxy+}", so the router fills in the real template: logs and alerts group
+    // by route instead of by every distinct id.
+    return {
+      handler: ((event) => handler({ ...event, routeKey: template })) as Handler,
+      params,
+      route: template,
+    };
   }
   return null;
 }

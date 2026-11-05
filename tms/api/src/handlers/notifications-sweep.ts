@@ -2,15 +2,38 @@ import { query } from '../lib/db';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { jobLogger } from '../lib/logger';
-import { sastToday } from '../domain/dates';
+import { dateFromIso, isoDate, sastToday } from '../domain/dates';
+import { sastDateTime } from '../domain/notification';
+import { addBusinessDays, businessDaysBetween } from '../domain/termination';
 
 const log = jobLogger('notifications-sweep');
 
 const days = (from: string, to: Date) =>
   Math.floor((to.getTime() - new Date(from).getTime()) / 86400000);
 
-/** Lease-ending reminders, furthest first. Each is sent once, on the first sweep inside it. */
-const LEASE_ENDING_DAYS = [60, 30, 7] as const;
+/**
+ * Lease-ending reminders. CPA s14(2)(c) has the landlord tell the tenant 40 to 80 business days
+ * before a fixed term expires; told later, the lease runs on month to month. The old 60 and 30
+ * calendar day reminders were both inside the 40 business day minimum, too late to act on. The
+ * first now comes when the window opens, at 80 business days, the second at 45, still before
+ * the minimum, and the last a week out for the exit inspection. Each is sent once, on the first
+ * sweep inside it; the key names the threshold.
+ */
+export const LEASE_ENDING_FIRST_BUSINESS_DAYS = 80;
+export const LEASE_ENDING_SECOND_BUSINESS_DAYS = 45;
+export const LEASE_ENDING_LAST_CALENDAR_DAYS = 7;
+
+/** The nearest reminder reached for a lease ending on `endDate`, or null when none is due yet. */
+export function leaseEndingThreshold(today: string, endDate: string): '80bd' | '45bd' | '7d' | null {
+  const from = dateFromIso(today);
+  const end = dateFromIso(endDate);
+  if (end < from) return null;
+  if (days(today, end) <= LEASE_ENDING_LAST_CALENDAR_DAYS) return '7d';
+  const businessDays = businessDaysBetween(from, end);
+  if (businessDays <= LEASE_ENDING_SECOND_BUSINESS_DAYS) return '45bd';
+  if (businessDays <= LEASE_ENDING_FIRST_BUSINESS_DAYS) return '80bd';
+  return null;
+}
 
 /**
  * Runs `send` for each row on its own. One bad row (a tenant with no address, a template field
@@ -77,7 +100,7 @@ export async function slaSweep(now: Date = new Date()) {
       dedupeKey: row.overdue ? `sla_breached:${row.id}:${today}` : `sla_soon:${row.id}:${row.target_by}`,
       data: {
         title: row.title, unit: row.unit, status: row.status.replace(/_/g, ' '),
-        targetBy: row.target_by.slice(0, 16).replace('T', ' '),
+        targetBy: sastDateTime(row.target_by),
         severityLabel: row.severity.charAt(0).toUpperCase() + row.severity.slice(1),
         hoursLeft: String(hoursLeft),
       },
@@ -202,9 +225,10 @@ export const handler = async () => {
     });
   });
 
-  /* Leases running out, so a renewal or an exit inspection gets decided in time. Each reminder
-     covers a range rather than one exact day, so a sweep that missed the 60th, 30th or 7th day
-     still sends it the next morning; the key names the threshold, so it goes once. */
+  /* Leases running out, so a renewal or notice is given inside the CPA window and the exit
+     inspection gets booked. Each reminder covers a range rather than one exact day, so a sweep
+     that missed its day still sends it the next morning; the key names the threshold, so it
+     goes once. */
   await runStep('leaseEnding', failures, async () => {
     const ending = await query<{
       lease_id: string; end_date: string; unit: string;
@@ -219,14 +243,15 @@ export const handler = async () => {
          join landlord ll on ll.id = pr.landlord_id
          left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
         where l.status = 'active' and t.id is null
-          and l.end_date between ${sqlToday} and ${sqlToday} + ${LEASE_ENDING_DAYS[0]}
+          and l.end_date between ${sqlToday} and $1::date
           and ll.cognito_sub is not null`,
+      [isoDate(addBusinessDays(dateFromIso(today), LEASE_ENDING_FIRST_BUSINESS_DAYS))],
     );
     await eachRow('leaseEnding', ending, failures, async (row) => {
       const daysLeft = days(today, new Date(row.end_date));
-      // The nearest threshold reached: 45 days out is the 60 day reminder, 5 days out the 7.
-      const threshold = [...LEASE_ENDING_DAYS].reverse().find((limit) => daysLeft <= limit);
-      if (threshold === undefined) return;
+      // The nearest threshold reached: 60 business days out is the 80 day reminder, 5 days out the 7.
+      const threshold = leaseEndingThreshold(today, row.end_date);
+      if (threshold === null) return;
       await notify({
         leaseId: row.lease_id,
         to: { sub: row.landlord_sub, email: row.landlord_email },
@@ -246,7 +271,7 @@ export const handler = async () => {
     }>(
       `select r.id, r.lease_id, r.respond_by::text, r.new_rent_cents,
               pr.name || ' ' || u.code as unit,
-              a.cognito_sub as sub, a.email, a.phone
+              coalesce(a.cognito_sub, 'applicant:' || a.id) as sub, a.email, a.phone
          from renewal r
          join lease l on l.id = r.lease_id
          join applicant a on a.id = l.applicant_id

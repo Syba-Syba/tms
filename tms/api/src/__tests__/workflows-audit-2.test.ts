@@ -159,7 +159,7 @@ describe('bug 2 and 7: the morning sweep', () => {
       `select dedupe_key from notification where lease_id = $1 and kind = 'lease_ending_soon'`,
       [ending.lease],
     );
-    expect(rows.map((row) => row.dedupe_key)).toEqual([`lease_ending:${ending.lease}:${plus(28)}:30:email`]);
+    expect(rows.map((row) => row.dedupe_key)).toEqual([`lease_ending:${ending.lease}:${plus(28)}:45bd:email`]);
   });
 
   it('reminds of an inspection today when yesterday’s sweep did not run', async () => {

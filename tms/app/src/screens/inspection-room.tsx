@@ -59,10 +59,21 @@ export function InspectionRoom() {
       // The server only puts confirmed photos in the sealed report.
       await api.post('/photos/confirm', { scope: 'inspection', photoId });
       setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl, state: 'synced' } }));
-      queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] });
     } catch (error) {
       setPhotos((current) => ({ ...current, [item]: { src: photo.dataUrl, state: 'failed' } }));
       toast.show({ title: 'Photo not uploaded', description: humanError(error), tone: 'danger' });
+      return;
+    }
+    // Once the reloaded inspection lists the photo, it is shown from there; keeping the local
+    // tile as well showed every new photo twice.
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] });
+    } finally {
+      setPhotos((current) => {
+        if (current[item]?.src !== photo.dataUrl) return current;
+        const { [item]: _synced, ...rest } = current;
+        return rest;
+      });
     }
   };
 

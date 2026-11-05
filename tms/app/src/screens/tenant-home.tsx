@@ -4,7 +4,7 @@ import { Alert, Badge, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
-import { daysUntil, formatDate } from '../lib/format';
+import { daysUntil, formatDate, formatInstant } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { PAGE } from '../lib/layout';
 
@@ -183,13 +183,53 @@ const APPLICATION_STATUS: Record<string, { label: string; tone: 'info' | 'succes
   withdrawn: { label: 'Withdrawn', tone: 'neutral', next: 'This application is closed.' },
 };
 
+/**
+ * Where an application stands, read together with its lease. An approved application stays
+ * approved after the lease it led to has ended, so a former tenant used to be told their
+ * landlord was still preparing the lease.
+ */
+export function applicationStatus(item: Pick<MyApplication, 'id' | 'status' | 'leaseId' | 'leaseStatus'>): {
+  label: string;
+  tone: 'info' | 'success' | 'danger' | 'neutral';
+  next: string;
+  link: { to: string; label: string } | null;
+} {
+  if (item.status === 'approved' && item.leaseId && item.leaseStatus) {
+    if (item.leaseStatus === 'terminated' || item.leaseStatus === 'cancelled') {
+      return { label: 'Lease ended', tone: 'neutral', next: 'The lease that followed this application has ended.', link: null };
+    }
+    if (item.leaseStatus === 'out_for_signature') {
+      return {
+        label: 'Lease ready to sign',
+        tone: 'info',
+        next: 'Your landlord has issued the lease. Read it, then sign on your phone.',
+        link: { to: `/lease/${item.leaseId}`, label: 'Read and sign the lease' },
+      };
+    }
+    if (item.leaseStatus === 'active' || item.leaseStatus === 'scheduled') {
+      return {
+        label: 'Lease signed',
+        tone: 'success',
+        next: 'Both of you have signed the lease.',
+        link: { to: `/lease/${item.leaseId}`, label: 'Open the lease' },
+      };
+    }
+  }
+  const known = APPLICATION_STATUS[item.status] ?? { label: item.status, tone: 'neutral' as const, next: '' };
+  return { ...known, link: null };
+}
+
 /** Before there is a lease: what they applied for and where it stands, rather than an empty page. */
 function NoLeaseYet() {
-  const { data } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['my-applications'],
     queryFn: () => api.get<{ items: MyApplication[] }>('/me/applications'),
   });
-  const items = data?.items ?? [];
+  // "No lease yet" is only true once the list has answered; a failure used to read as it.
+  if (!data) {
+    return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your applications" />;
+  }
+  const items = data.items;
   if (items.length === 0) {
     return (
       <main className={PAGE.narrow}>
@@ -205,7 +245,7 @@ function NoLeaseYet() {
       <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">Your applications</h1>
       <ul className="space-y-3">
         {items.map((item) => {
-          const status = APPLICATION_STATUS[item.status] ?? { label: item.status, tone: 'neutral' as const, next: '' };
+          const status = applicationStatus(item);
           return (
             <li key={item.id}>
               <Card>
@@ -215,12 +255,17 @@ function NoLeaseYet() {
                     <Badge tone={status.tone}>{status.label}</Badge>
                   </div>
                   <p className="text-meta text-ink-muted">
-                    {item.landlord}{item.submittedAt ? `, sent ${formatDate(item.submittedAt.slice(0, 10))}` : ''}
+                    {item.landlord}{item.submittedAt ? `, sent ${formatInstant(item.submittedAt)}` : ''}
                   </p>
                   <p className="text-body text-ink">{status.next}</p>
                   {item.status === 'draft' || (item.status === 'submitted' && item.documents < 4) ? (
                     <Link className="inline-block text-body font-semibold text-brand-600" to={`/apply/${item.id}/documents`}>
                       Upload documents
+                    </Link>
+                  ) : null}
+                  {status.link ? (
+                    <Link className="inline-block text-body font-semibold text-brand-600" to={status.link.to}>
+                      {status.link.label}
                     </Link>
                   ) : null}
                 </div>

@@ -10,6 +10,7 @@ import { formatDate, formatMonth, status } from '../lib/format';
 import { localToday } from '../lib/dates';
 import { csvText } from '../lib/csv';
 import { QueryState } from '../components/query-state';
+import { invalidateMoneyCaches } from '../lib/money-caches';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { Money } from '../components/money';
 
@@ -68,6 +69,26 @@ const blankSlip = () => ({ invoiceId: '', amountCents: null as number | null, pa
 type Slip = ReturnType<typeof blankSlip>;
 const untouched = (slip: Slip) => !slip.invoiceId && slip.amountCents === null && !slip.reference;
 
+/**
+ * The invoices a waiting slip is for. A rent slip names its invoice, or none for "oldest month
+ * first", which could be any unpaid one. A deposit slip has no invoice either, and used to be
+ * read the same way, so one waiting deposit slip marked every unpaid month "Proof sent".
+ */
+export function invoicesWithPendingProof(
+  proofs: { target: 'invoice' | 'deposit'; invoiceId: string | null; status: string }[],
+  invoices: { id: string; status: string }[],
+): Set<string> {
+  const marked = new Set<string>();
+  for (const proof of proofs) {
+    if (proof.status !== 'pending' || proof.target === 'deposit') continue;
+    for (const invoice of invoices) {
+      if (invoice.status === 'paid') continue;
+      if (proof.invoiceId === null || proof.invoiceId === invoice.id) marked.add(invoice.id);
+    }
+  }
+  return marked;
+}
+
 export function TenantRent() {
   const { leaseId } = useParams();
   const queryClient = useQueryClient();
@@ -84,9 +105,7 @@ export function TenantRent() {
 
   const balance = data?.balanceCents ?? 0;
   const open = data?.invoices.filter((invoice) => invoice.status === 'issued' || invoice.status === 'part_paid') ?? [];
-  const pendingFor = new Set(
-    data?.proofs.filter((proof) => proof.status === 'pending').map((proof) => proof.invoiceId ?? 'any') ?? [],
-  );
+  const proofSentFor = invoicesWithPendingProof(data?.proofs ?? [], data?.invoices ?? []);
 
   const fileProblem = !file
     ? null
@@ -129,7 +148,8 @@ export function TenantRent() {
       });
       if (!uploaded.ok) throw new Error('The upload did not go through. Try again.');
       await api.post(`/payment-proofs/${created.proofId}/submit`, {});
-      await queryClient.invalidateQueries({ queryKey: ['statement', leaseId] });
+      // The arrears panel reads its own query; a slip can pause the arrears process.
+      await invalidateMoneyCaches(queryClient);
       setShowSlip(false);
       setSlip(blankSlip());
       setFile(null);
@@ -205,7 +225,7 @@ export function TenantRent() {
 
       <div className="space-y-3">
         {data?.invoices.map((invoice) => {
-          const proofSent = invoice.status !== 'paid' && (pendingFor.has(invoice.id) || pendingFor.has('any'));
+          const proofSent = proofSentFor.has(invoice.id);
           return (
             <Card key={invoice.id}>
               <CardBody className="flex items-center justify-between">

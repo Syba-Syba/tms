@@ -34,7 +34,7 @@ export async function leasesOf(sub: string, landlordId: string | null = null): P
     `select l.status, l.end_date::text, t.effective_on::text
        from lease l
        join applicant a on a.id = l.applicant_id
-       left join termination t on t.lease_id = l.id
+       left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
        join unit u on u.id = l.unit_id
        join property p on p.id = u.property_id
       where a.cognito_sub = $1 and ($2::uuid is null or p.landlord_id = $2)`,
@@ -209,6 +209,40 @@ export async function erasePerson(
         );
         await run('update lease set applicant_id = $2 where id = any($1)', [leases, standIn!.id]);
         await run('update application set applicant_id = $2 where id = any($1)', [applications, standIn!.id]);
+
+        // What they did on this landlord's records stays in the activity log, by the stand-in:
+        // the log named them through their account, which outlives this landlord's erasure.
+        const entities = (
+          await run<{ id: string }>(
+            `select unnest($1::uuid[]) as id
+             union select unnest($2::uuid[])
+             union select id from ticket where lease_id = any($2)
+             union select id from inspection where lease_id = any($2)
+             union select id from renewal where lease_id = any($2)
+             union select id from termination where lease_id = any($2)
+             union select id from payment_proof where lease_id = any($2)`,
+            [applications, leases],
+          )
+        ).map((row) => row.id);
+        await run(
+          `update audit_log set actor_sub = 'erased:' || $3,
+                  detail = case
+                    when detail is null then null
+                    when jsonb_typeof(detail) = 'object'
+                      then (replace(replace(detail::text, $4, '[email removed]'), $5, 'the tenant'))::jsonb - 'address'
+                    else (replace(replace(detail::text, $4, '[email removed]'), $5, 'the tenant'))::jsonb
+                  end
+            where actor_sub = $1 and entity_id = any($2)`,
+          [sub, entities, standIn!.id, applicant.email, fullName],
+        );
+        // Messages addressed to them through a stand-in address (an imported tenant without an
+        // account, or an invite) go: they carry their email, first name and old links.
+        await run(
+          `delete from notification
+            where lease_id = any($1)
+              and (recipient_sub = 'applicant:' || $2 or recipient_sub like 'tenant-invite:%' or recipient_to = $3)`,
+          [leases, applicant.id, applicant.email],
+        );
       }
     }
 
@@ -252,6 +286,12 @@ export async function erasePerson(
     }
     await run('delete from tenant_invite where accepted_sub = $1', [sub]);
     await run('delete from notification where recipient_sub = $1', [sub]);
+    // Messages sent to their address under another name: invites, and notices to an imported
+    // tenant before they had an account.
+    for (const email of emails) {
+      await run('delete from notification where lower(recipient_to) = lower($1)', [email]);
+    }
+    if (applicant) await run(`delete from notification where recipient_sub = 'applicant:' || $1`, [applicant.id]);
     await run('delete from notification_preference where person_sub = $1', [sub]);
     // Password reset links and recovery codes go with the sign-in (on delete cascade).
     await run('delete from local_credential where sub = $1', [sub]);

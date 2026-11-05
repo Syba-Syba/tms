@@ -104,7 +104,11 @@ export const handler = route(async (event) => {
       leaseId: row.lease_id,
       actor: {
         role: row.actor_role,
-        name: row.actor_sub === person.sub ? 'You' : (row.actor_name ?? (row.actor_role === 'job' ? 'Scheduled job' : 'Unknown')),
+        name: row.actor_sub === person.sub
+          ? 'You'
+          : row.actor_sub?.startsWith('erased:')
+            ? 'Erased person'
+            : (row.actor_name ?? (row.actor_role === 'job' ? 'Scheduled job' : 'Unknown')),
       },
       detail: row.detail,
     })),

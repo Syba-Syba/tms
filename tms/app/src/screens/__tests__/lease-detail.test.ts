@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { noticeRules } from '../lease-detail';
+import { noticeRules, payableInvoices } from '../lease-detail';
 
 const TODAY = '2026-10-27';
 const live = { status: 'active', endDate: '2027-04-30', renewedBy: null };
@@ -22,5 +22,17 @@ describe('noticeRules', () => {
   it('treats a lease past its end date as month to month', () => {
     const rules = noticeRules({ ...live, endDate: '2026-10-17' }, 'end_of_term', TODAY);
     expect(rules).toMatchObject({ canServe: true, monthToMonth: true, latestEffectiveOn: undefined });
+  });
+});
+
+describe('payableInvoices', () => {
+  it('offers only issued and part-paid invoices for a payment, never void or paid ones', () => {
+    const invoices = [
+      { id: 'a', status: 'issued' },
+      { id: 'b', status: 'part_paid' },
+      { id: 'c', status: 'void' },
+      { id: 'd', status: 'paid' },
+    ];
+    expect(payableInvoices(invoices).map((invoice) => invoice.id)).toEqual(['a', 'b']);
   });
 });

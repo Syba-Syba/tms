@@ -22,7 +22,9 @@ export async function leaseParties(leaseId: string, run: Run = query): Promise<L
     unit: string;
     start_date: string;
   }>(
-    `select a.cognito_sub as sub, a.email, a.phone, a.first_name,
+    // A tenant imported without an account has no sign-in, but email still reaches them: they
+    // are addressed by their applicant row, as lib/lease-parties.ts and the sweep do.
+    `select coalesce(a.cognito_sub, 'applicant:' || a.id) as sub, a.email, a.phone, a.first_name,
             'LSE-' || lpad(l.ref_no::text, 5, '0') as reference,
             p.name || ' ' || u.code as unit, l.start_date::text as start_date
        from lease l

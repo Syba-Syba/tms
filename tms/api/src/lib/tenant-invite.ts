@@ -1,5 +1,7 @@
 import { appUrl, hashResetToken, newResetToken } from './password-reset';
 import { INVITE_TTL_DAYS } from '../domain/landlord';
+import { tooManyRequests } from './http';
+import { invitesByLandlordDaily, invitesByLandlordHourly, invitesByRecipient } from './ratelimit';
 
 type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
 
@@ -48,4 +50,24 @@ export async function sendTenantInvite(run: Run, input: { leaseId: string; invit
     ],
   );
   return 'sent';
+}
+
+/**
+ * Every invitation is an email from our domain to an address the landlord typed. Capped per
+ * landlord account (an hour and a day) and per recipient, whichever landlord sends it. Shared
+ * with tenant re-invites, which send the same kind of email.
+ */
+export function requireInviteAllowance(landlordId: string, email: string) {
+  if (!invitesByLandlordHourly.allows(landlordId) || !invitesByLandlordDaily.allows(landlordId)) {
+    throw tooManyRequests('Too many invitations sent from this account. Try again later.');
+  }
+  if (!invitesByRecipient.allows(email.toLowerCase())) {
+    throw tooManyRequests('That address has had enough invitations for today. Try again tomorrow.');
+  }
+}
+
+export function recordInvite(landlordId: string, email: string) {
+  invitesByLandlordHourly.record(landlordId);
+  invitesByLandlordDaily.record(landlordId);
+  invitesByRecipient.record(email.toLowerCase());
 }

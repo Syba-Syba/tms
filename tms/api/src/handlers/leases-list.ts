@@ -26,6 +26,7 @@ export const handler = route(async (event) => {
     open_tickets: string;
     termination_effective_on: string | null;
     renewal_status: string | null;
+    previous_lease_id: string | null;
   }>(
     `select l.id,
             'LSE-' || lpad(l.ref_no::text, 5, '0') as ref,
@@ -38,10 +39,17 @@ export const handler = route(async (event) => {
                        when 'interest' then d.amount_cents
                        else -d.amount_cents end)
                         from deposit_ledger d where d.lease_id = l.id), 0)::text as deposit_balance,
-            -- The deposit asked for less what has come in. Until it is paid the tenant owes it,
-            -- and their home screen used to say "You owe nothing".
-            greatest(0, l.deposit_cents - coalesce((select sum(d.amount_cents) from deposit_ledger d
-                                                     where d.lease_id = l.id and d.entry_type = 'received'), 0))::text as deposit_owing,
+            -- The deposit asked for less what is held. Until it is paid the tenant owes it, and
+            -- their home screen used to say "You owe nothing". Held counts interest, as the
+            -- renewal's top-up does: a renewal sets the deposit to the new rent and nets the
+            -- top-up off the interest, so counting only what was received showed a phantom
+            -- amount owed for the rest of the lease.
+            greatest(0, l.deposit_cents - coalesce((select sum(case d.entry_type
+                       when 'received' then d.amount_cents
+                       when 'interest' then d.amount_cents
+                       else -d.amount_cents end)
+                        from deposit_ledger d where d.lease_id = l.id), 0))::text as deposit_owing,
+            l.previous_lease_id,
             -- Each open invoice less the payments made against it. Subtracting every payment
             -- the lease ever received from only the unpaid invoices made arrears vanish as
             -- soon as any earlier invoice had been paid.
@@ -82,7 +90,10 @@ export const handler = route(async (event) => {
       monthlyRentCents: Number(row.monthly_rent_cents),
       escalationPct: Number(row.escalation_pct),
       depositBalanceCents: Number(row.deposit_balance),
-      depositOwingCents: row.status === 'active' ? Number(row.deposit_owing) : 0,
+      // A new tenant's lease that starts next month is 'scheduled', and the deposit is due
+      // within days of signing. A scheduled renewal's deposit is still on the current lease.
+      depositOwingCents:
+        row.status === 'active' || (row.status === 'scheduled' && !row.previous_lease_id) ? Number(row.deposit_owing) : 0,
       outstandingCents: Math.max(0, Number(row.outstanding)),
       openTickets: Number(row.open_tickets),
       terminationEffectiveOn: row.termination_effective_on,

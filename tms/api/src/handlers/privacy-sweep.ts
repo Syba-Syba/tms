@@ -54,6 +54,14 @@ export const handler = async () => {
   const failedLogins = await query<{ id: string }>(
     `delete from audit_log where action = 'auth.login_failed' and at < now() - interval '90 days' returning id`,
   );
+  // The last message to an erased person ("your information has been erased") has to carry
+  // their address to be sent. Once it has gone out, and their account is gone, it goes too.
+  await query(
+    `delete from notification
+      where kind = 'privacy_request' and status in ('sent', 'failed', 'skipped')
+        and created_at < now() - interval '30 days'
+        and not exists (select 1 from local_credential c where c.sub = notification.recipient_sub)`,
+  );
   log.info('Privacy sweep complete.', { found: stale.length, removed, creditChecks: checks.length, failedLogins: failedLogins.length });
   return { found: stale.length, removed };
 };

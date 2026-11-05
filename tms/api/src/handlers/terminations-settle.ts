@@ -3,13 +3,21 @@ import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
-import { pickRefundRule, reconcile, refundDueBy, settleSchema } from '../domain/termination';
+import {
+  incomingInspectionSql,
+  outgoingInWindowSql,
+  pickRefundRule,
+  reconcile,
+  refundDueBy,
+  settleSchema,
+} from '../domain/termination';
 import { dateFromIso, isoDate, sastToday } from '../domain/dates';
 import { renderExitStatementPdf, type ComparisonRow, type InspectionPhoto } from '../lib/pdf';
 import { sniffImageType } from '../lib/images';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { logger } from '../lib/logger';
+import { moveCreditToOpenInvoices } from '../lib/billing';
 
 /** The bytes decide whether a photo is a PNG or a JPEG. The key's extension used to, and a
     gallery PNG saved under a .jpg key made the statement render throw, blocking settlement. */
@@ -64,8 +72,10 @@ export const handler = route(async (event) => {
             -- landlord inspects alone, and a report the landlord signed after the date counts.
             -- Only for an inspection booked before its day (SAST), so the tenant was told: one
             -- created after the date could otherwise be signed alone to keep deductions.
+            -- Only the exit inspection for the current end date counts: one held for an earlier
+            -- date (before a month-to-month lease was given notice) is not the move-out.
             exists (select 1 from inspection i
-                     where i.lease_id = t.lease_id and i.kind = 'outgoing'
+                     where i.lease_id = t.lease_id and ${outgoingInWindowSql('i', 't')}
                        and (i.status = 'completed'
                             or (i.scheduled_for < $2::date
                                 and (i.created_at at time zone 'UTC' + interval '2 hours')::date < i.scheduled_for
@@ -87,6 +97,7 @@ export const handler = route(async (event) => {
   );
   if (!context) throw notFound('Termination');
   if (context.status === 'settled') throw conflict('This deposit is already settled.');
+  if (context.status === 'withdrawn') throw conflict('This notice was withdrawn, so the lease carries on.');
   // Settling terminates the lease and vacates the unit, so doing it early would end a
   // tenancy that is still running. The deposit is reconciled once the tenant has moved out.
   if (today < context.effective_on) {
@@ -141,11 +152,18 @@ export const handler = route(async (event) => {
     incoming_key: string | null;
     outgoing_key: string | null;
   }>(
+    // The move-in baseline may sit on the lease a renewal replaced; the exit record is this
+    // lease's live outgoing inspection for the current end date.
     `with insp as (
-       select i.kind, f.id, f.room, f.item, f.condition, f.note
-         from inspection i
+       select 'incoming' as kind, f.id, f.room, f.item, f.condition, f.note
+         from inspection_finding f
+        where f.inspection_id = ${incomingInspectionSql('$1')}
+       union all
+       select 'outgoing' as kind, f.id, f.room, f.item, f.condition, f.note
+         from termination t
+         join inspection i on i.lease_id = t.lease_id
          join inspection_finding f on f.inspection_id = i.id
-        where i.lease_id = $1
+        where t.id = $2 and ${outgoingInWindowSql('i', 't')}
      ),
      first_photo as (
        select distinct on (finding_id) finding_id, s3_key
@@ -163,7 +181,7 @@ export const handler = route(async (event) => {
       where out.condition in ('poor', 'damaged', 'missing')
         and (inc.condition is null or out.condition <> inc.condition)
       order by out.room, out.item`,
-    [context.lease_id],
+    [context.lease_id, terminationId],
   );
 
   // Two photos per row, fetched row by row: the whole set at once was most of the memory
@@ -283,6 +301,14 @@ export const handler = route(async (event) => {
       }
     }
     if (summary.penaltyCents > 0) await post(summary.penaltyCents, 'Cancellation penalty');
+    // The rent credit left after arrears is settled here too: refunded with the deposit, or set
+    // against what the tenant owes on it. Left on the overpaid invoices, the rent statement went
+    // on showing the landlord owing it after it had been paid back. It is recorded as a refund
+    // against each overpaid invoice, which brings the rent account to zero.
+    if (summary.rentCreditCents > 0) {
+      await refundRentCredit(run, context.lease_id, summary.rentCreditCents, today, access.person.sub,
+        summary.refundCents > 0 ? 'Rent credit refunded at settlement' : 'Rent credit set against the deposit statement');
+    }
     // Only the deposit's share of the refund leaves the deposit; a rent credit is the
     // landlord's own money, so it is on the statement but not in the ledger.
     const fromDeposit = Math.min(summary.refundCents, Math.max(0, remaining));
@@ -329,7 +355,8 @@ export const handler = route(async (event) => {
   // of something that has already happened.
   try {
     const [tenant] = await query<{ sub: string | null; email: string; phone: string }>(
-      `select a.cognito_sub as sub, a.email, a.phone
+      // A tenant imported without an account is addressed by their applicant row.
+      `select coalesce(a.cognito_sub, 'applicant:' || a.id) as sub, a.email, a.phone
          from lease l join applicant a on a.id = l.applicant_id where l.id = $1`,
       [context.lease_id],
     );
@@ -413,53 +440,37 @@ async function readBalances(run: SettleRun, leaseId: string, lock = false) {
 }
 
 /**
- * Moves payments sitting above an invoice's total onto the lease's open invoices, oldest first.
- * A payment is split rather than deleted, so every rand stays on record with its original date,
- * method and reference.
+ * Records `amountCents` of rent credit as paid back, as negative 'refund' payments against the
+ * invoices paid above their total, most recent first, never more than each one's excess.
  */
-async function moveCreditToOpenInvoices(run: SettleRun, leaseId: string): Promise<void> {
-  const balances = await run<{ id: string; total: string; paid: string; status: string }>(
-    `select i.id, i.total_cents::text as total, i.status,
-            coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid
+async function refundRentCredit(
+  run: SettleRun,
+  leaseId: string,
+  amountCents: number,
+  today: string,
+  recordedBy: string,
+  reference: string,
+): Promise<void> {
+  const overpaid = await run<{ id: string; excess: string }>(
+    `select i.id,
+            (coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0) - i.total_cents)::text as excess
        from invoice i
       where i.lease_id = $1 and i.status in ('issued', 'part_paid', 'paid')
-      order by i.due_on, i.period_start
-      for update`,
+        and coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0) > i.total_cents
+      order by i.period_start desc`,
     [leaseId],
   );
-  const open = balances
-    .filter((row) => row.status !== 'paid' && Number(row.total) > Number(row.paid))
-    .map((row) => ({ id: row.id, owing: Number(row.total) - Number(row.paid), total: Number(row.total) }));
-  for (const source of balances.filter((row) => Number(row.paid) > Number(row.total))) {
-    let excess = Number(source.paid) - Number(source.total);
-    const payments = await run<{ id: string; amount_cents: string }>(
-      'select id, amount_cents::text from payment where invoice_id = $1 order by received_on desc, created_at desc',
-      [source.id],
+  let left = amountCents;
+  for (const invoice of overpaid) {
+    const amount = Math.min(left, Number(invoice.excess));
+    if (amount <= 0) continue;
+    await run(
+      `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+       values ($1, $2, $3, 'refund', $4, $5, $6)`,
+      [leaseId, invoice.id, -amount, reference, today, recordedBy],
     );
-    for (const target of open) {
-      while (excess > 0 && target.owing > 0 && payments.length > 0) {
-        const payment = payments[0]!;
-        const available = Math.min(Number(payment.amount_cents), excess);
-        const move = Math.min(available, target.owing);
-        if (move === Number(payment.amount_cents)) {
-          await run('update payment set invoice_id = $2 where id = $1', [payment.id, target.id]);
-          payments.shift();
-        } else {
-          await run('update payment set amount_cents = amount_cents - $2 where id = $1', [payment.id, move]);
-          await run(
-            `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
-             select lease_id, $2, $3, method, coalesce(reference, '') || ' (credit moved at settlement)', received_on, recorded_by
-               from payment where id = $1`,
-            [payment.id, target.id, move],
-          );
-          payment.amount_cents = String(Number(payment.amount_cents) - move);
-          if (Number(payment.amount_cents) === 0) payments.shift();
-        }
-        excess -= move;
-        target.owing -= move;
-        await run('update invoice set status = $2 where id = $1', [target.id, target.owing === 0 ? 'paid' : 'part_paid']);
-      }
-      if (excess === 0) break;
-    }
+    left -= amount;
+    if (left === 0) break;
   }
+  if (left > 0) logger.warn('Rent credit larger than the overpaid invoices; the rest is not recorded.', { leaseId, left });
 }

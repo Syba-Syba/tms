@@ -14,7 +14,9 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       role="tablist"
-      className={cn('inline-flex rounded-sm border border-line bg-surface-muted p-0.5', className)}
+      // Wraps onto a second row rather than running off a 360px screen.
+      className={cn(
+        'inline-flex max-w-full flex-wrap rounded-sm border border-line bg-surface-muted p-0.5', className)}
     >
       {options.map((option) => (
         <button
@@ -24,7 +26,7 @@ export function SegmentedControl<T extends string>({
           aria-selected={option.value === value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-[4px] px-3.5 py-1.5 text-meta text-ink-muted transition-colors',
+            'whitespace-nowrap rounded-[4px] px-3.5 py-1.5 text-meta text-ink-muted transition-colors',
             option.value === value && 'bg-surface font-medium text-ink ring-1 ring-line',
           )}
         >
