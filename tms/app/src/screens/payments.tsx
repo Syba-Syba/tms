@@ -9,7 +9,8 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { useOpenDocument } from '../lib/open-document';
 import { QueryError } from '../components/query-state';
-import { formatDate, formatInstant } from '../lib/format';
+import { formatDate, formatInstant, headlineZar } from '../lib/format';
+import { localToday as today } from '../lib/dates';
 import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
@@ -74,6 +75,57 @@ export function Payments() {
   );
 }
 
+/**
+ * Nothing to check, so the tab shows where the month stands instead of an empty box: what came
+ * in, what is still owed, and where to look next.
+ */
+function NoSlips() {
+  const monthStart = `${today().slice(0, 7)}-01`;
+  const month = useQuery({
+    queryKey: ['report-income', monthStart, today()],
+    queryFn: () =>
+      api.get<{ totals: { invoicedCents: number; collectedCents: number } }>(
+        `/reports/income-expense?from=${monthStart}&to=${today()}`,
+      ),
+  });
+  const arrears = useQuery({
+    queryKey: ['report-arrears'],
+    queryFn: () => api.get<{ items: unknown[]; totals: { totalCents: number } }>('/reports/arrears'),
+  });
+  const owing = arrears.data?.items.length ?? 0;
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <p className="text-lead font-semibold text-ink">No slips waiting</p>
+        <p className="text-meta text-ink-muted">When a tenant sends proof of payment, it shows up here.</p>
+      </div>
+      {month.data && arrears.data ? (
+        <dl className="grid grid-cols-2 border-y border-line">
+          <div className="py-3 pr-4">
+            <dt className="text-xs text-ink-muted">Collected this month</dt>
+            <dd className="text-figure"><Money whole cents={month.data.totals.collectedCents} /></dd>
+            <dd className="text-xs text-ink-muted">of {headlineZar(month.data.totals.invoicedCents)} invoiced</dd>
+          </div>
+          <div className="border-l border-line py-3 pl-4">
+            <dt className="text-xs text-ink-muted">Owed by tenants</dt>
+            <dd className={`text-figure ${arrears.data.totals.totalCents > 0 ? 'text-danger' : ''}`}>
+              <Money whole cents={arrears.data.totals.totalCents} />
+            </dd>
+            <dd className="text-xs text-ink-muted">
+              {owing === 0 ? 'Nobody is behind' : `${owing} lease${owing === 1 ? '' : 's'} behind`}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      <p className="text-meta text-ink-muted">
+        Paid by EFT without a slip? Upload the statement under Bank import to match it.{' '}
+        <Link to="/reports" className="inline-flex min-h-6 items-center font-semibold text-brand-500">Arrears by lease</Link>
+      </p>
+    </section>
+  );
+}
+
 function Slips() {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -106,7 +158,7 @@ function Slips() {
   if (isLoading) return <Spinner />;
   if (isError) return <QueryError error={error} onRetry={() => void refetch()} what="The slips" />;
   if (!data?.items.length) {
-    return <EmptyState title="No slips waiting" description="When a tenant sends proof of payment, it shows up here." />;
+    return <NoSlips />;
   }
 
   return (

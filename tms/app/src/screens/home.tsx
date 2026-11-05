@@ -213,15 +213,15 @@ function LandlordHome() {
       <PageHeader title="Overview" description={`${rows.length} lease${rows.length === 1 ? '' : 's'} running.`} />
       <SetupChecklist />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Collected this month" value={month.data ? <Money whole cents={month.data.totals.collectedCents} /> : '...'}
-          hint={month.data ? `of ${headlineZar(month.data.totals.invoicedCents)} invoiced` : undefined} />
-        <Stat label="Arrears" value={<Money whole cents={arrears} />} danger={arrears > 0}
-          hint={owing > 0 ? `${owing} tenant${owing === 1 ? '' : 's'} owing` : 'Nobody owes anything'} to="/reports" />
-        <Stat label="Slips to check" value={String(slipCount)} to="/payments" />
-        <Stat label="Open maintenance" value={String(openTickets.length)}
-          hint={lateTickets.length > 0 ? `${lateTickets.length} overdue` : undefined} danger={lateTickets.length > 0} to="/tickets" />
-      </div>
+      <Headline
+        arrearsCents={arrears}
+        owing={owing}
+        collectedCents={month.data?.totals.collectedCents}
+        invoicedCents={month.data?.totals.invoicedCents}
+        slips={slipCount}
+        openTickets={openTickets.length}
+        lateTickets={lateTickets.length}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div className="space-y-6">
@@ -267,17 +267,44 @@ function LandlordHome() {
   );
 }
 
-function Stat({ label, value, hint, danger, to }: { label: string; value: React.ReactNode; hint?: string; danger?: boolean; to?: string }) {
-  const body = (
-    <Card className="h-full">
-      <CardBody>
-        <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`font-display text-figure font-medium leading-tight ${danger ? 'text-danger' : 'text-ink'}`}>{value}</p>
-        {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
-      </CardBody>
-    </Card>
+/**
+ * One figure leads: what tenants owe, or when nobody owes, what came in this month. The other
+ * counts follow as a line of text, so the page opens on the number that needs a decision.
+ */
+function Headline({ arrearsCents, owing, collectedCents, invoicedCents, slips, openTickets, lateTickets }: {
+  arrearsCents: number;
+  owing: number;
+  collectedCents?: number;
+  invoicedCents?: number;
+  slips: number;
+  openTickets: number;
+  lateTickets: number;
+}) {
+  const owed = arrearsCents > 0;
+  const collected = collectedCents === undefined ? '...' : `${headlineZar(collectedCents)} of ${headlineZar(invoicedCents ?? 0)}`;
+  const tickets = `${openTickets} open repair${openTickets === 1 ? '' : 's'}${lateTickets > 0 ? `, ${lateTickets} overdue` : ''}`;
+  const link = 'inline-flex min-h-6 items-center hover:text-ink hover:underline';
+
+  return (
+    <section className="mb-8 border-b border-line pb-6" aria-label="This month">
+      <Link to={owed ? '/reports' : '/payments'} className="inline-block">
+        <p className="label">{owed ? 'Owed to you' : 'Collected this month'}</p>
+        <p className={`font-display text-hero font-medium ${owed ? 'text-danger' : 'text-ink'}`}>
+          {owed ? <Money whole cents={arrearsCents} /> : collectedCents === undefined ? '...' : <Money whole cents={collectedCents} />}
+        </p>
+      </Link>
+      <p className="text-meta text-ink-muted">
+        {owed
+          ? `${owing} tenant${owing === 1 ? '' : 's'} behind on rent.`
+          : invoicedCents === undefined ? '' : `of ${headlineZar(invoicedCents)} invoiced. Nobody owes anything.`}
+      </p>
+      <ul className="mt-3 flex flex-wrap gap-x-5 text-meta text-ink-muted">
+        {owed ? <li><Link to="/payments" className={link}>{collected} collected this month</Link></li> : null}
+        <li><Link to="/payments" className={link}>{slips} slip{slips === 1 ? '' : 's'} to check</Link></li>
+        <li><Link to="/tickets" className={`${link} ${lateTickets > 0 ? 'text-danger' : ''}`}>{tickets}</Link></li>
+      </ul>
+    </section>
   );
-  return to ? <Link to={to} className="block">{body}</Link> : body;
 }
 
 /** A table on a laptop, a compact list on a phone. Search appears once the list is long. */
