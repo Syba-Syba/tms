@@ -5,7 +5,6 @@ import { api } from '../api/client';
 import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, formatInstant } from '../lib/format';
-import { currentUser } from '../lib/session';
 import { QueryState } from '../components/query-state';
 import { PAGE } from '../lib/layout';
 
@@ -43,7 +42,6 @@ export function TenantHome() {
   if (lease.status === 'out_for_signature') {
     return (
       <main className={PAGE.narrow}>
-        <p className="text-lead text-ink-muted">{currentUser()?.name.split(' ')[0] ? `Hi ${currentUser()!.name.split(' ')[0]}` : 'Hi'}</p>
         <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
         <Card>
           <div className="space-y-3 p-5">
@@ -64,7 +62,6 @@ export function TenantHome() {
   const settled = owing === 0;
   const endingIn = daysUntil(lease.endDate);
 
-  const firstName = currentUser()?.name.split(' ')[0];
   const actions = [
     { label: 'Rent and deposit', hint: 'Statement, EFT reference, send proof of payment', to: `/leases/${lease.id}/rent` },
     {
@@ -78,7 +75,6 @@ export function TenantHome() {
 
   return (
     <main className={PAGE.wide}>
-      <p className="text-lead text-ink-muted">{firstName ? `Hi ${firstName}` : 'Hi'}</p>
       <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">{lease.unit}</h1>
 
       {/* On a laptop: their money and any notices on the left, what they can do on the right. */}

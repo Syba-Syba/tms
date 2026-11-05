@@ -84,7 +84,7 @@ export function Login() {
       </span>
       <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Sign in</h1>
       <p className="mb-5 text-body text-ink-muted">
-        Your lease, rent, inspections and maintenance, in one place.
+        Pay rent, report repairs and sign your lease.
       </p>
       {apiDown ? (
         import.meta.env.DEV ? (
