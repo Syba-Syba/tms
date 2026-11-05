@@ -182,30 +182,7 @@ function IncomeExpense() {
         <Spinner />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Rent invoiced" cents={data.totals.invoicedCents} />
-            <Stat label="Rent collected" cents={data.totals.collectedCents} />
-            <Stat label="Expenses" cents={data.totals.expensesCents} />
-            <Stat label="Net" cents={data.totals.netCents} strong />
-          </div>
-          {data.items.filter(active).map((row) => (
-            <Card key={row.propertyId ?? 'none'}>
-              <CardBody className="space-y-2">
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-lead font-semibold text-ink">{row.property}</p>
-                  <p className={`text-lead ${row.netCents < 0 ? 'text-danger' : ''}`}>
-                    <Money cents={row.netCents} className="font-semibold" />
-                  </p>
-                </div>
-                <Line label="Collected" cents={row.collectedCents} hint={`of ${zar(row.invoicedCents)} invoiced`} />
-                {Object.keys(CATEGORIES)
-                  .filter((category) => (row.expenseCents[category] ?? 0) > 0)
-                  .map((category) => (
-                    <Line key={category} label={CATEGORIES[category]!} cents={-(row.expenseCents[category] ?? 0)} />
-                  ))}
-              </CardBody>
-            </Card>
-          ))}
+          <Ledger rows={data.items.filter(active)} totals={data.totals} />
           {data.items.some((row) => !active(row)) ? (
             <p className="text-xs text-ink-muted">
               {data.items.filter((row) => !active(row)).length === 1
@@ -225,28 +202,59 @@ function IncomeExpense() {
 
 const active = (row: IncomeRow) => row.invoicedCents > 0 || row.collectedCents > 0 || row.expensesCents > 0;
 
-function Stat({ label, cents, strong }: { label: string; cents: number; strong?: boolean }) {
+/**
+ * Income and expenses as one statement: each property a group of ruled lines, its net on the
+ * heading row, and the period's totals under a double rule at the foot.
+ */
+function Ledger({ rows, totals }: { rows: IncomeRow[]; totals: IncomeRow }) {
   return (
-    <Card>
-      <CardBody>
-        <p className="text-xs text-ink-muted">{label}</p>
-        <p className={`text-figure ${cents < 0 ? 'text-danger' : ''}`}>
-          <Money cents={cents} whole className={strong ? 'font-semibold' : ''} />
-        </p>
-      </CardBody>
-    </Card>
+    <table className="w-full border-y border-line text-meta">
+      <caption className="sr-only">Income and expenses by property</caption>
+      <thead className="sr-only">
+        <tr><th scope="col">Item</th><th scope="col">Amount</th></tr>
+      </thead>
+      {rows.map((row) => (
+        <tbody key={row.propertyId ?? 'none'} className="border-b border-line">
+          <tr>
+            <th scope="rowgroup" className="pb-1 pt-4 text-left text-lead font-semibold text-ink">{row.property}</th>
+            <td className={`pb-1 pt-4 text-right text-lead ${row.netCents < 0 ? 'text-danger' : ''}`}>
+              <Money cents={row.netCents} className="font-semibold" />
+            </td>
+          </tr>
+          <Line label="Collected" cents={row.collectedCents} hint={`of ${zar(row.invoicedCents)} invoiced`} />
+          {Object.keys(CATEGORIES)
+            .filter((category) => (row.expenseCents[category] ?? 0) > 0)
+            .map((category) => (
+              <Line key={category} label={CATEGORIES[category]!} cents={-(row.expenseCents[category] ?? 0)} />
+            ))}
+          <tr aria-hidden><td colSpan={2} className="h-3" /></tr>
+        </tbody>
+      ))}
+      <tfoot>
+        <Line label="Rent invoiced" cents={totals.invoicedCents} first />
+        <Line label="Rent collected" cents={totals.collectedCents} />
+        <Line label="Expenses" cents={-totals.expensesCents} />
+        <tr className="border-t-4 border-double border-line">
+          <th scope="row" className="py-3 text-left text-lead font-semibold text-ink">Net for the period</th>
+          <td className={`py-3 text-right text-figure ${totals.netCents < 0 ? 'text-danger' : ''}`}>
+            <Money cents={totals.netCents} className="font-semibold" />
+          </td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }
 
-function Line({ label, cents, hint }: { label: string; cents: number; hint?: string }) {
+function Line({ label, cents, hint, first }: { label: string; cents: number; hint?: string; first?: boolean }) {
+  const pad = first ? 'pb-1 pt-4' : 'py-1';
   return (
-    <p className="flex justify-between gap-3 text-meta text-ink-muted">
-      <span>
+    <tr>
+      <th scope="row" className={`${pad} text-left font-normal text-ink-muted`}>
         {label}
         {hint ? <span className="ml-1 text-xs">({hint})</span> : null}
-      </span>
-      <Money cents={cents} className="text-ink" />
-    </p>
+      </th>
+      <td className={`${pad} text-right`}><Money cents={cents} className="text-ink" /></td>
+    </tr>
   );
 }
 
@@ -291,11 +299,14 @@ function Arrears() {
         </p>
         <Button variant="outline" disabled={data.items.length === 0} onClick={exportCsv}>Download CSV</Button>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <dl className="grid grid-cols-2 border-y border-line sm:grid-cols-5">
         {BUCKETS.map((bucket) => (
-          <Stat key={bucket.key} label={bucket.label} cents={data.totals.ageing[bucket.key]} />
+          <div key={bucket.key} className="border-line py-3 sm:border-l sm:px-4 sm:first:border-l-0 sm:first:pl-0">
+            <dt className="text-xs text-ink-muted">{bucket.label}</dt>
+            <dd className="text-figure"><Money cents={data.totals.ageing[bucket.key]} whole /></dd>
+          </div>
         ))}
-      </div>
+      </dl>
       {data.items.length === 0 ? (
         <EmptyState title="No arrears" description="Every invoice is paid." />
       ) : (
