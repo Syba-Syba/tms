@@ -73,7 +73,7 @@ const today = () => dates.sastToday();
 const plus = (days: number) => dates.addDaysIso(today(), days);
 
 /** A unit with an active lease. Without `tenantSub` the tenant was imported and has no account. */
-async function leaseFor(opts: { start: string; end: string; tenantSub?: string; unit?: string; previous?: string; applicant?: string }) {
+async function leaseFor(opts: { start: string; end: string; tenantSub?: string; unit?: string; previous?: string; applicant?: string; status?: string }) {
   const unit = opts.unit ?? randomUUID();
   const applicant = opts.applicant ?? randomUUID();
   const application = randomUUID();
@@ -101,8 +101,8 @@ async function leaseFor(opts: { start: string; end: string; tenantSub?: string; 
   await db.query(
     `insert into lease (id, application_id, unit_id, applicant_id, start_date, end_date,
                         monthly_rent_cents, escalation_pct, deposit_cents, status, previous_lease_id)
-     values ($1, $2, $3, $4, $5, $6, 700000, 0, 700000, 'active', $7)`,
-    [lease, application, unit, applicant, opts.start, opts.end, opts.previous ?? null],
+     values ($1, $2, $3, $4, $5, $6, 700000, 0, 700000, $8, $7)`,
+    [lease, application, unit, applicant, opts.start, opts.end, opts.previous ?? null, opts.status ?? 'active'],
   );
   return { unit, applicant, application, lease };
 }
@@ -520,5 +520,160 @@ describe('bug 10: deadlines in messages are South African time', () => {
     await slaSweep();
     const [message] = await sentTo(lease, 'sla_breach_soon');
     expect(message!.body).toContain(sast(ticket!.target_by));
+  });
+});
+
+describe('follow-up: the settlement preview', () => {
+  it('shows the exact refund the settlement then pays, and only to the landlord', async () => {
+    const tenantSub = `sub-${randomUUID()}`;
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(300), tenantSub });
+    const terminationId = await termination(lease, plus(-2));
+    await db.query(
+      `insert into deposit_ledger (lease_id, entry_type, amount_cents, note) values ($1, 'received', 700000, 'Deposit')`,
+      [lease],
+    );
+    await db.query(
+      `insert into invoice (lease_id, period_start, due_on, total_cents, status)
+       values ($1, $2::date - 20, $2::date - 20, 100000, 'issued')`,
+      [lease, today()],
+    );
+
+    const preview = await call('GET', `/terminations/${terminationId}/settlement`);
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      heldCents: 700000, arrearsCents: 100000, deductionsCents: 0, refundCents: 600000, tenantOwesCents: 0, blocker: null,
+    });
+    expect((await call('GET', `/terminations/${terminationId}/settlement`, { sub: tenantSub, groups: 'tenant' })).status).toBe(403);
+
+    const settled = await call('POST', `/terminations/${terminationId}/settle`, { body: {} });
+    expect(settled.status).toBe(200);
+    expect(settled.body.refundCents).toBe(preview.body.refundCents);
+    expect(settled.body.refundDueBy).toBe(preview.body.refundDueBy);
+  });
+
+  it('says when the lease has not ended yet', async () => {
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(300) });
+    const terminationId = await termination(lease, plus(10));
+    const preview = await call('GET', `/terminations/${terminationId}/settlement`);
+    expect(preview.status).toBe(200);
+    expect(preview.body.blocker).toMatch(/The lease runs until/);
+  });
+
+  it('names what blocks the settlement instead of failing', async () => {
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(300) });
+    const terminationId = await termination(lease, plus(-2));
+    await db.query(
+      `insert into deposit_deduction (termination_id, description, amount_cents) values ($1, 'Carpet', 50000)`,
+      [terminationId],
+    );
+    const preview = await call('GET', `/terminations/${terminationId}/settlement`);
+    expect(preview.status).toBe(200);
+    expect(preview.body.blocker).toMatch(/No outgoing inspection/);
+    expect((await call('POST', `/terminations/${terminationId}/settle`, { body: {} })).status).toBe(409);
+  });
+});
+
+describe('follow-up: tenancy import limits', () => {
+  const LANDLORD = '11111111-1111-1111-1111-111111111111';
+  const row = (unit: string) => ({
+    property: 'Kruis Court', unit, firstName: 'Lerato', lastName: 'Import', email: `${unit.toLowerCase()}@example.co.za`,
+    phone: '+27821112222', startDate: plus(-200), endDate: plus(165), monthlyRentCents: 600000,
+    escalationPct: 0, depositHeldCents: 0, currentMonthPaid: true, arrearsCents: 0, bedrooms: 1, bathrooms: 1,
+  });
+
+  it('caps imports per account per hour, previews included', async () => {
+    const { importsByLandlord } = await import('../lib/ratelimit');
+    try {
+      for (let i = 0; i < 30; i += 1) {
+        expect((await call('POST', '/leases/import', { body: { rows: [row('ZQ1')], dryRun: true } })).status).toBe(200);
+      }
+      expect((await call('POST', '/leases/import', { body: { rows: [row('ZQ1')], dryRun: true } })).status).toBe(429);
+    } finally {
+      importsByLandlord.clear(LANDLORD);
+    }
+  });
+
+  it('refuses an import whose invitations would pass the daily budget, and writes nothing', async () => {
+    const { importInvitesByLandlord } = await import('../lib/ratelimit');
+    try {
+      for (let i = 0; i < 499; i += 1) importInvitesByLandlord.record(LANDLORD);
+      const refused = await call('POST', '/leases/import', {
+        body: { rows: [row('ZQ2'), row('ZQ3')], dryRun: false, invite: true },
+      });
+      expect(refused.status).toBe(429);
+      expect(JSON.stringify(refused.body)).toMatch(/send 1 more invitation today/);
+      expect(await db.query(`select 1 from unit where code in ('ZQ2', 'ZQ3')`)).toHaveLength(0);
+      const without = await call('POST', '/leases/import', { body: { rows: [row('ZQ2'), row('ZQ3')], dryRun: false } });
+      expect(without.status).toBe(201);
+    } finally {
+      importInvitesByLandlord.clear(LANDLORD);
+    }
+  });
+});
+
+describe('follow-up: withdrawing a notice brings the renewal back', () => {
+  it('re-opens an offer the notice lapsed', async () => {
+    const tenantSub = `sub-${randomUUID()}`;
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(120), tenantSub });
+    const [offer] = await db.query<{ id: string }>(
+      `insert into renewal (lease_id, respond_by, term_months, new_start_date, new_end_date, new_rent_cents)
+       values ($1, $2, 12, $3, $4, 750000) returning id`,
+      [lease, plus(60), plus(121), plus(486)],
+    );
+    const served = await call('POST', `/leases/${lease}/termination`, {
+      sub: tenantSub, groups: 'tenant', body: { initiatedBy: 'tenant', reason: 'early_tenant' },
+    });
+    expect(served.status).toBe(201);
+    const status = async () => (await db.query<{ status: string }>('select status from renewal where id = $1', [offer!.id]))[0]!.status;
+    expect(await status()).toBe('lapsed');
+
+    const withdrawn = await call('POST', `/terminations/${served.body.id}/withdraw`, { sub: tenantSub, groups: 'tenant' });
+    expect(withdrawn.status).toBe(200);
+    expect(withdrawn.body.renewalsRestored).toBe(1);
+    expect(await status()).toBe('offered');
+  });
+
+  it('puts back an accepted, unsigned renewal and its scheduled lease', async () => {
+    const tenantSub = `sub-${randomUUID()}`;
+    const current = await leaseFor({ start: plus(-300), end: plus(120), tenantSub });
+    const next = await leaseFor({
+      start: plus(121), end: plus(486), unit: current.unit, applicant: current.applicant, previous: current.lease,
+      status: 'scheduled',
+    });
+    const [renewal] = await db.query<{ id: string }>(
+      `insert into renewal (lease_id, respond_by, term_months, new_start_date, new_end_date, new_rent_cents, status, new_lease_id)
+       values ($1, $2, 12, $3, $4, 750000, 'accepted', $5) returning id`,
+      [current.lease, plus(60), plus(121), plus(486), next.lease],
+    );
+    const served = await call('POST', `/leases/${current.lease}/termination`, {
+      sub: tenantSub, groups: 'tenant', body: { initiatedBy: 'tenant', reason: 'early_tenant' },
+    });
+    expect(served.status).toBe(201);
+    expect(served.body.renewalCancelled).toBe(next.lease);
+
+    const withdrawn = await call('POST', `/terminations/${served.body.id}/withdraw`, { sub: tenantSub, groups: 'tenant' });
+    expect(withdrawn.status).toBe(200);
+    const [lease] = await db.query<{ status: string }>('select status from lease where id = $1', [next.lease]);
+    const [after] = await db.query<{ status: string }>('select status from renewal where id = $1', [renewal!.id]);
+    expect(lease!.status).toBe('scheduled');
+    expect(after!.status).toBe('accepted');
+  });
+
+  it('leaves an offer lapsed once its reply date has passed', async () => {
+    const tenantSub = `sub-${randomUUID()}`;
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(120), tenantSub });
+    const [offer] = await db.query<{ id: string }>(
+      `insert into renewal (lease_id, respond_by, term_months, new_start_date, new_end_date, new_rent_cents)
+       values ($1, $2, 12, $3, $4, 750000) returning id`,
+      [lease, plus(60), plus(121), plus(486)],
+    );
+    const served = await call('POST', `/leases/${lease}/termination`, {
+      sub: tenantSub, groups: 'tenant', body: { initiatedBy: 'tenant', reason: 'early_tenant' },
+    });
+    await db.query(`update renewal set respond_by = $2 where id = $1`, [offer!.id, plus(-1)]);
+    const withdrawn = await call('POST', `/terminations/${served.body.id}/withdraw`, { sub: tenantSub, groups: 'tenant' });
+    expect(withdrawn.body.renewalsRestored).toBe(0);
+    const [row] = await db.query<{ status: string }>('select status from renewal where id = $1', [offer!.id]);
+    expect(row!.status).toBe('lapsed');
   });
 });

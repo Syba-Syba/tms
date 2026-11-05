@@ -13,6 +13,7 @@ export function ConfirmDialog({
   requireText,
   onConfirm,
   loading,
+  disabled,
   children,
 }: {
   open: boolean;
@@ -23,6 +24,8 @@ export function ConfirmDialog({
   requireText?: string;
   onConfirm: () => void;
   loading?: boolean;
+  /** Holds the confirm button, for example while the figures it confirms are still loading. */
+  disabled?: boolean;
   /** What the action will do, in figures, above the buttons. */
   children?: ReactNode;
 }) {
@@ -44,7 +47,7 @@ export function ConfirmDialog({
         <Button variant="ghost" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button variant="danger" disabled={blocked} loading={loading} onClick={onConfirm}>
+        <Button variant="danger" disabled={blocked || disabled} loading={loading} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

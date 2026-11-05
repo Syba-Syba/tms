@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { membershipOf } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
-import { badRequest, json, parseBody, route } from '../lib/http';
+import { badRequest, json, parseBody, route, tooManyRequests } from '../lib/http';
+import { importsByLandlord } from '../lib/ratelimit';
 import { importTenancies } from '../lib/tenancy-import';
 import { MAX_ROWS, parseTenancyCsv } from '../domain/tenancy-import';
 
@@ -24,6 +25,10 @@ export const handler = route(async (event) => {
   const person = requireLandlord(event);
   const { landlordId } = await membershipOf(person);
   const input = parseBody(event, schema);
+  if (!importsByLandlord.allows(landlordId)) {
+    throw tooManyRequests('Too many imports from this account in the last hour. Try again later.');
+  }
+  importsByLandlord.record(landlordId);
 
   let items: { line: number; input: unknown; problems?: string[] }[];
   if (input.csv !== undefined) {
