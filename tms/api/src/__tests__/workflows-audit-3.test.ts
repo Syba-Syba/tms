@@ -217,7 +217,8 @@ describe('bug 2: rebooking the exit inspection when the end date moves', () => {
 
 describe('bug 3: a landlord cannot backdate their own notice', () => {
   it('refuses a landlord notice dated before today, and still records a tenant’s paper notice', async () => {
-    const { lease } = await leaseFor({ start: plus(-300), end: plus(200) });
+    // The tenant has an account: a notice the landlord records for them waits for their confirmation.
+    const { lease } = await leaseFor({ start: plus(-300), end: plus(200), tenantSub: `sub-${randomUUID()}` });
     const landlord = await call('POST', `/leases/${lease}/termination`, {
       body: { initiatedBy: 'landlord', reason: 'breach_by_tenant', noticeGivenOn: plus(-10) },
     });
@@ -239,8 +240,9 @@ const sentTo = async (lease: string, kind: string) =>
 describe('bug 4: tenants imported without an account still get their notices', () => {
   it('notice served, deposit settled, renewal offered, ticket assigned', async () => {
     const served = await leaseFor({ start: plus(-300), end: plus(200) });
+    // The landlord's own notice: one recorded for an imported tenant waits for an invite (audit 5).
     expect((await call('POST', `/leases/${served.lease}/termination`, {
-      body: { initiatedBy: 'tenant', reason: 'early_tenant' },
+      body: { initiatedBy: 'landlord', reason: 'breach_by_tenant' },
     })).status).toBe(201);
     expect((await sentTo(served.lease, 'notice_served')).map((row) => row.recipient_sub)).toContain(`applicant:${served.applicant}`);
 

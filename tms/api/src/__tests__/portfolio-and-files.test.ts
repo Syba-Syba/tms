@@ -411,7 +411,8 @@ describe('the remaining buttons', () => {
     const notice = await call('POST', `/leases/${LEASE}/termination`, {
       body: {
         initiatedBy: 'landlord',
-        reason: 'end_of_term',
+        // Not end_of_term: the seed lease ends more than 80 business days away.
+        reason: 'breach_by_tenant',
         // Today in South Africa: the UTC date is yesterday before 02:00, and a landlord's notice cannot be backdated.
         noticeGivenOn: new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10),
       },

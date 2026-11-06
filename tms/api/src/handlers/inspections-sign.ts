@@ -4,8 +4,8 @@ import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { signInspectionSchema } from '../domain/inspection';
-import { pngBytesFromDataUrl, sniffImageType } from '../lib/images';
-import { renderInspectionPdf, type InspectionData, type InspectionPhoto } from '../lib/pdf';
+import { hasSafeDimensions, pngBytesFromDataUrl, sniffImageType } from '../lib/images';
+import { isEmbeddableImage, renderInspectionPdf, type InspectionData, type InspectionPhoto } from '../lib/pdf';
 import { logger } from '../lib/logger';
 
 /** Three per finding keeps the report a document, not a photo dump. */
@@ -77,6 +77,11 @@ export async function collectReportFindings(inspectionId: string): Promise<{
         logger.warn('Photo is neither PNG nor JPEG; left out of the report.', { key });
         continue;
       }
+      // Confirm checks this now; a photo stored before then could decode to gigabytes.
+      if (!hasSafeDimensions(bytes)) {
+        logger.warn('Photo is too large to decode; left out of the report.', { key });
+        continue;
+      }
       photos.push({ bytes, type });
       embedded += 1;
       embeddedBytes += bytes.byteLength;
@@ -105,11 +110,14 @@ async function sealReport(inspectionId: string) {
   );
   const withImages = [];
   for (const signature of signatures) {
+    // A missing image must not block the seal: the signature row is the record, and the
+    // report prints its line without the picture (see renderInspectionPdf).
+    const png = await bytesOrNull(signature.signature_s3_key);
     withImages.push({
       party: signature.party,
       name: signature.party === 'landlord' ? 'Landlord' : 'Tenant',
       signedAt: signature.signed_at,
-      png: await storage().get(signature.signature_s3_key),
+      png: png ?? undefined,
     });
   }
 
@@ -154,7 +162,11 @@ export const handler = route(async (event) => {
   // Checked before anything is stored: a signature that is not a PNG would only surface
   // at seal time, as a 500, with both parties' signatures already on file.
   const signaturePng = pngBytesFromDataUrl(input.signatureBase64);
-  if (!signaturePng) throw badRequest('The signature image is not a PNG.');
+  if (!signaturePng) throw badRequest('The signature image is not a PNG, or is too large.');
+  // The header alone passed a truncated or corrupt image, which then failed every seal.
+  if (!(await isEmbeddableImage(signaturePng, 'png'))) {
+    throw badRequest('The signature image could not be read. Clear it and sign again.');
+  }
   const signatureKey = `inspections/${inspectionId}/signature-${input.party}.png`;
 
   const state = await withTransaction(async (run) => {

@@ -1,7 +1,11 @@
 import { requireLeaseAccess } from '../lib/access';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
-import { badRequest, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, conflict, json, notFound, parseBody, route, tooManyRequests } from '../lib/http';
+import { ticketsByAccountDaily, ticketsByAccountHourly } from '../lib/ratelimit';
+
+/** Tickets one lease may have open at once; past it, earlier ones are closed or cancelled first. */
+export const MAX_OPEN_TICKETS = 25;
 import { createTicketSchema, targetBy } from '../domain/ticket';
 import { notify } from '../lib/notify';
 import { sastDateTime } from '../domain/notification';
@@ -13,11 +17,22 @@ export const handler = route(async (event) => {
   const access = await requireLeaseAccess(event, leaseId);
   const person = access.person;
   const input = parseBody(event, createTicketSchema);
+  if (!ticketsByAccountHourly.allows(person.sub) || !ticketsByAccountDaily.allows(person.sub)) {
+    throw tooManyRequests('Too many tickets raised from this account. Add to an open ticket, or try again later.');
+  }
 
   const ticket: { id: string; targetBy: string; isTenant: boolean } = await withTransaction(async (run) => {
-    const [lease] = await run<{ status: string }>('select status from lease where id = $1', [leaseId]);
+    // Locked, so two tickets raised together cannot both pass the open-ticket count below.
+    const [lease] = await run<{ status: string }>('select status from lease where id = $1 for update', [leaseId]);
     if (!lease) throw notFound('Lease');
     if (lease.status !== 'active') throw badRequest('Tickets attach to an active lease.');
+    const [open] = await run<{ n: number }>(
+      `select count(*)::int as n from ticket where lease_id = $1 and status not in ('done', 'closed', 'cancelled')`,
+      [leaseId],
+    );
+    if (open!.n >= MAX_OPEN_TICKETS) {
+      throw conflict(`This lease has ${MAX_OPEN_TICKETS} open tickets. Close or cancel some before raising more.`);
+    }
     const isTenant = access.isTenant;
 
     const due = targetBy(input.severity);
@@ -32,6 +47,8 @@ export const handler = route(async (event) => {
     );
     return { id: created!.id, targetBy: due.toISOString(), isTenant };
   });
+  ticketsByAccountHourly.record(person.sub);
+  ticketsByAccountDaily.record(person.sub);
 
   const [context] = await query<{
     landlord_sub: string | null; landlord_email: string; unit: string; tenant: string;

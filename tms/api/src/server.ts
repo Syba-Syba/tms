@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { handler as api } from './api';
@@ -226,6 +226,20 @@ async function serveWeb(pathname: string, response: ServerResponse) {
   }
 }
 
+/** Whether a confirm already kept a checked copy of this upload, under any image or PDF type. */
+async function keptCopyExists(path: string) {
+  const stem = path.replace(/\.[a-z]+$/i, '');
+  for (const extension of ['jpg', 'png', 'pdf']) {
+    try {
+      await access(`${stem}.kept.${extension}`);
+      return true;
+    } catch {
+      // not there
+    }
+  }
+  return false;
+}
+
 /** Signed GET and PUT under /files, the on-disk stand-in for presigned S3 URLs. */
 async function serveFile(request: IncomingMessage, response: ServerResponse, url: URL) {
   const key = url.pathname.slice('/files/'.length).split('/').map(decodeURIComponent).join('/');
@@ -243,6 +257,13 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, url
   try {
     const path = localPathFor(key);
     if (method === 'PUT') {
+      // Confirm copies the checked bytes to a '.kept.' key and removes the upload, and then the
+      // link (still valid for five minutes) could write the raw key again: a file no row points
+      // at, which no sweep or erasure would ever find. A confirmed upload's key stays spent.
+      if (!key.includes('.kept.') && (await keptCopyExists(path))) {
+        sendJson(response, 409, { error: { code: 'already_uploaded', message: 'This file was already uploaded. Start a new upload.' } });
+        return;
+      }
       await mkdir(dirname(path), { recursive: true });
       let body: Buffer;
       try {
@@ -307,12 +328,16 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   // Screens and endpoints share paths (/applications, /tickets, /leases/{id}), so a refresh
   // on one of those screens used to come back as the API's JSON. A browser loading a page
   // says so; the app's own fetch() calls do not, so they still reach the API.
-  if (method === 'GET' && isPageLoad(request)) {
+  // /health answers for monitors, whatever they send: a monitor with a browser's Accept header
+  // got the app's page and a 200 while the server was unhealthy. HEAD is answered as GET.
+  const healthCheck = url.pathname === '/health' && (method === 'GET' || method === 'HEAD');
+  if (method === 'GET' && !healthCheck && isPageLoad(request)) {
     await serveWeb(url.pathname, response);
     return;
   }
 
-  const found = match(method, url.pathname);
+  const routeMethod = healthCheck ? 'GET' : method;
+  const found = match(routeMethod, url.pathname);
   if (!found) {
     // Anything the API does not claim is the web app, so a deep link works on a refresh.
     if (method === 'GET') await serveWeb(url.pathname, response);
@@ -329,7 +354,7 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
 
   const bearer = (headers['authorization'] ?? '').replace(/^Bearer\s+/i, '');
   const user = bearer ? await currentUser(bearer) : null;
-  if (!user && !PUBLIC_ROUTES.has(`${method} ${url.pathname}`)) {
+  if (!user && !PUBLIC_ROUTES.has(`${routeMethod} ${url.pathname}`)) {
     // The dev server would have guessed an identity here. This is the whole difference.
     sendJson(response, 401, { error: { code: 'unauthorised', message: 'Sign in to continue.' } });
     logger.info('Request refused.', { status: 401, method, path: url.pathname });
@@ -360,7 +385,7 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     requestContext: {
       requestId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       http: {
-        method,
+        method: routeMethod,
         path: url.pathname,
         sourceIp: clientAddress(request),
         userAgent: headers['user-agent'] ?? 'self-hosted',
@@ -388,7 +413,7 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     'cache-control': 'private, no-store',
     ...result.headers,
   });
-  response.end(result.body ?? '');
+  response.end(method === 'HEAD' ? undefined : (result.body ?? ''));
   logger.info('Request completed.', {
     status: result.statusCode,
     method,

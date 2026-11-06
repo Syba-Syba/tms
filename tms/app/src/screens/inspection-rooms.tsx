@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   PageHeader,
   SignaturePad,
   useToast,
@@ -29,6 +30,8 @@ export interface InspectionState {
   draftSha256: string | null;
   viewer: { isLandlord: boolean; isTenant: boolean };
   signatures: { party: 'tenant' | 'landlord'; signedAt: string }[];
+  /** Whether this viewer may reopen it, by the server's rules. */
+  reopenable?: boolean;
   findings: {
     id: string;
     room: string;
@@ -50,6 +53,7 @@ export function InspectionRooms() {
   const padRef = useRef<SignaturePadHandle>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<{ key: string; sha256: string } | null>(null);
+  const [confirmReopen, setConfirmReopen] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['inspection', inspectionId],
@@ -90,6 +94,26 @@ export function InspectionRooms() {
       toast.show({ title: 'Report ready', description: 'Read it, then sign below.', tone: 'success' });
     } catch (error) {
       toast.show({ title: 'Could not prepare the report', description: humanError(error), tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Once someone has signed, the findings are locked. Reopening is how the other party disputes
+  // them instead of signing what they disagree with; the server withdraws any signature given.
+  // The server says who may: a tenant who missed the booked exit inspection may not.
+  const canReopen = data.reopenable ?? (data.status === 'awaiting_signatures' && signedParties.length < 2);
+  const reopen = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/inspections/${inspectionId}/reopen`, {});
+      setConfirmReopen(false);
+      setDraft(null);
+      toast.show({ title: 'Reopened', description: 'Correct the findings, then prepare the report again.', tone: 'success' });
+      queryClient.invalidateQueries({ queryKey: ['lease'] });
+      refetch();
+    } catch (error) {
+      toast.show({ title: 'Not reopened', description: humanError(error), tone: 'danger' });
     } finally {
       setBusy(false);
     }
@@ -213,10 +237,29 @@ export function InspectionRooms() {
                   ) : null}
                 </>
               )}
+              {canReopen ? (
+                <Button block variant="ghost" disabled={busy} onClick={() => setConfirmReopen(true)}>
+                  Reopen to correct the findings
+                </Button>
+              ) : null}
             </CardBody>
           </Card>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmReopen}
+        onOpenChange={(next) => !busy && setConfirmReopen(next)}
+        title="Reopen the inspection?"
+        description={
+          signedParties.length
+            ? `The findings can be changed again. ${signedParties[0] === party ? 'Your' : `The ${signedParties[0]}’s`} signature is withdrawn, and both of you sign the corrected report.`
+            : 'The findings can be changed again, and both of you sign the corrected report.'
+        }
+        confirmLabel="Reopen it"
+        loading={busy}
+        onConfirm={reopen}
+      />
     </main>
   );
 }

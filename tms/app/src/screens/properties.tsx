@@ -88,7 +88,9 @@ export function Properties() {
   });
 
   const copyApplicationLink = async (unit: Unit) => {
-    const link = `${window.location.origin}/apply?unit=${unit.id}`;
+    // Without the landlord, a server with more than one landlord shows no form at all.
+    if (!slug) return;
+    const link = `${window.location.origin}/apply?landlord=${encodeURIComponent(slug)}&unit=${unit.id}`;
     // Over plain HTTP there is no navigator.clipboard; copyText falls back to the selection
     // API, and when even that fails the link is shown so it can be copied by hand.
     if (await copyText(link)) {
@@ -259,7 +261,8 @@ export function Properties() {
                               <button
                                 type="button"
                                 aria-label={`Copy the application link for ${unit.code}`}
-                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 "
+                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 disabled:opacity-40"
+                                disabled={!slug}
                                 onClick={() => copyApplicationLink(unit)}
                               >
                                 Copy apply link

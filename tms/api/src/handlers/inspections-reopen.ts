@@ -3,6 +3,8 @@ import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, route } from '../lib/http';
 import { removeDraft, withdrawDraft } from './inspections-render';
+import { outgoingCountsSql } from '../domain/termination';
+import { sastToday } from '../domain/dates';
 
 /**
  * Returns an inspection awaiting signatures to 'in_progress', so a disputed finding can be
@@ -40,6 +42,21 @@ export const handler = route(async (event) => {
     );
     if (Number(signed?.count ?? 0) >= 2) {
       throw conflict('Both parties have signed this inspection. It can no longer be reopened.');
+    }
+    // An exit report the landlord signed alone after a booked date the tenant stayed away from
+    // already counts as done for the deposit. Reopened by the tenant, it lost that standing and
+    // every deduction with it, and they could do so again after each new signature. The
+    // landlord may still reopen it; the tenant can still sign it.
+    if (access.isTenant && !access.isLandlord) {
+      const [done] = await run<{ counts: boolean }>(
+        // outgoingCountsSql does not check the kind; a move-in report must stay open to dispute.
+        `select (i.kind = 'outgoing' and ${outgoingCountsSql('i', '$2::date')}) as counts
+           from inspection i where i.id = $1`,
+        [inspectionId, sastToday()],
+      );
+      if (done?.counts) {
+        throw conflict('The landlord signed this exit report after the booked date, which you did not attend. It can no longer be reopened.');
+      }
     }
 
     const withdrawn = await run<{ party: string }>(

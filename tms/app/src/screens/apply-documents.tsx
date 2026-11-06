@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { Alert, Button, Card, CardBody, PageHeader, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
-import { pickPhoto, putFile } from '../lib/photos';
+import { photoFromFile, putFile } from '../lib/photos';
 import { CreditCheckApplicant } from '../components/credit-check';
 import { PRIVACY_VERSION } from '../lib/privacy';
 
@@ -22,6 +22,8 @@ export function ApplyDocuments() {
   const toast = useToast();
   const [state, setState] = useState<Record<string, UploadState>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [pdfs, setPdfs] = useState<Record<string, boolean>>({});
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // What is already on file. Upload state used to live only here, so an applicant coming back
   // saw every document missing and could not finish.
@@ -49,27 +51,46 @@ export function ApplyDocuments() {
       }
       return next;
     });
+    setPdfs((current) => {
+      const next = { ...current };
+      for (const item of items) next[item.kind] ??= item.contentType === 'application/pdf';
+      return next;
+    });
   }, [onFile.data]);
 
-  const capture = async (kind: Kind) => {
-    let photo: Awaited<ReturnType<typeof pickPhoto>>;
+  // Statements and payslips usually come as PDFs from internet banking, and one PDF holds all
+  // three months. A PDF goes up as it is; a photo is redrawn as a JPEG, as everywhere else.
+  const capture = (kind: Kind) => inputs.current[kind]?.click();
+
+  const upload = async (kind: Kind, file: File) => {
+    let picked: { blob: Blob; contentType: 'image/jpeg' | 'application/pdf'; dataUrl: string | null };
     try {
-      photo = await pickPhoto();
+      if (file.type === 'application/pdf') {
+        picked = { blob: file, contentType: 'application/pdf', dataUrl: null };
+      } else {
+        const photo = await photoFromFile(file);
+        picked = { blob: photo.blob, contentType: photo.contentType, dataUrl: photo.dataUrl };
+      }
     } catch (error) {
-      toast.show({ title: 'Could not read that photo', description: humanError(error), tone: 'danger' });
+      toast.show({ title: 'Could not read that file', description: humanError(error), tone: 'danger' });
       return;
     }
-    if (!photo) return;
 
-    setPreviews((current) => ({ ...current, [kind]: photo.dataUrl }));
+    setPreviews((current) => {
+      const next = { ...current };
+      if (picked.dataUrl) next[kind] = picked.dataUrl;
+      else delete next[kind];
+      return next;
+    });
+    setPdfs((current) => ({ ...current, [kind]: picked.contentType === 'application/pdf' }));
     setState((current) => ({ ...current, [kind]: 'uploading' }));
 
     try {
       const { uploadUrl, key } = await api.post<{ uploadUrl: string; key: string }>(
         `/applications/${applicationId}/documents/presign`,
-        { kind, contentType: photo.contentType, sizeBytes: photo.blob.size },
+        { kind, contentType: picked.contentType, sizeBytes: picked.blob.size },
       );
-      await putFile(uploadUrl, photo.blob, photo.contentType);
+      await putFile(uploadUrl, picked.blob, picked.contentType);
       // Only a confirmed upload is on file for the landlord, and it replaces any earlier one.
       await api.post(`/applications/${applicationId}/documents/confirm`, { key });
       setState((current) => ({ ...current, [kind]: 'synced' }));
@@ -85,7 +106,10 @@ export function ApplyDocuments() {
 
   return (
     <main className="mx-auto max-w-lg px-4 py-6">
-      <PageHeader title="Upload documents" description="Photograph each one. They upload as you go." />
+      <PageHeader
+        title="Upload documents"
+        description="Photograph each one, or choose a PDF from your phone. They upload as you go."
+      />
       <Alert tone="info" title="Why we ask">
         These confirm who you are and that the rent fits your income. They are encrypted and deleted
         twelve months after the application closes.
@@ -104,14 +128,29 @@ export function ApplyDocuments() {
                 <p className="text-body font-medium">{item.label}</p>
                 <p className="text-xs text-ink-muted">
                   {state[item.kind] === 'synced'
-                    ? 'Received'
+                    ? pdfs[item.kind] ? 'Received (PDF)' : 'Received'
                     : state[item.kind] === 'failed'
-                      ? 'Upload failed. Tap the photo to retry.'
+                      ? 'Upload failed. Tap retry to choose it again.'
                       : state[item.kind] === 'uploading'
                         ? 'Uploading'
                         : 'Not uploaded yet'}
                 </p>
               </div>
+              <input
+                ref={(element) => {
+                  inputs.current[item.kind] = element;
+                }}
+                type="file"
+                accept="image/jpeg,image/png,application/pdf"
+                className="hidden"
+                aria-label={`Choose a file for ${item.label}`}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // Cleared so choosing the same file again still fires a change.
+                  event.target.value = '';
+                  if (file) void upload(item.kind, file);
+                }}
+              />
               <Button
                 variant="outline"
                 size="sm"

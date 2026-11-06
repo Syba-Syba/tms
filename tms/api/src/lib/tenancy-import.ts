@@ -3,7 +3,7 @@ import { encryptIdNumber } from './idcrypt';
 import { audit } from './audit';
 import { billableUntil } from './billing';
 import { sendTenantInvite } from './tenant-invite';
-import { importInvitesByLandlord as importInviteBudget } from './ratelimit';
+import { importInvitesByLandlord as importInviteBudget, invitesByRecipient } from './ratelimit';
 import { tooManyRequests } from './http';
 import { assertUnitRoom } from './subscription';
 import { importRowSchema, lastAnniversary, rowProblems, type ImportRow } from '../domain/tenancy-import';
@@ -232,20 +232,36 @@ export async function importTenancies(
           : `This account can send ${left} more invitation${left === 1 ? "" : "s"} today. Import fewer tenants, or import without invitations.`,
       );
     }
+    // The per-recipient cap holds here too, or one address on every row got an email per row.
+    const perAddress = new Map<string, number>();
+    for (const item of ready) {
+      const email = item.row.email.toLowerCase();
+      perAddress.set(email, (perAddress.get(email) ?? 0) + 1);
+    }
+    for (const [email, count] of perAddress) {
+      if (count > invitesByRecipient.remaining(email)) {
+        throw tooManyRequests(`${email} cannot be sent ${count} invitations today. Import without invitations, or invite them later.`);
+      }
+    }
   }
 
+  const sent: string[] = [];
   const leaseIds = await withTransaction(async (run) => {
     const ids: string[] = [];
     for (const item of ready) {
       const leaseId = await writeTenancy(run, item, options.actorSub, today);
-      if (options.invite) {
-        await sendTenantInvite(run, { leaseId, invitedBy: options.actorSub });
-        importInviteBudget.record(landlordId);
+      if (options.invite && (await sendTenantInvite(run, { leaseId, invitedBy: options.actorSub })) === 'sent') {
+        sent.push(item.row.email.toLowerCase());
       }
       ids.push(leaseId);
     }
     return ids;
   });
+  // Counted once the import commits: a rolled-back import sent nothing.
+  for (const email of sent) {
+    importInviteBudget.record(landlordId);
+    invitesByRecipient.record(email);
+  }
   for (const leaseId of leaseIds) {
     await audit({
       actorSub: options.actorSub, actorRole: 'landlord', action: 'lease.imported', entity: 'lease',

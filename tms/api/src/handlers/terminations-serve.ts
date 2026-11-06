@@ -3,8 +3,12 @@ import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import {
+  businessDaysBetween,
   earliestEffectiveDate,
+  LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS,
+  landlordEndOfTermServableFrom,
   latestEffectiveDate,
+  maxCancellationPenaltyCents,
   noticeBusinessDays,
   serveNoticeSchema,
   type TerminationReason,
@@ -13,6 +17,7 @@ import { addDaysIso, dateFromIso, isoDate, sastToday } from '../domain/dates';
 import { movePendingChargesPast, trimInvoicesAfter } from '../lib/billing';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
+import { rentForPeriod, zar } from '../domain/money';
 
 /**
  * Which reasons each side may give. The reason sets the notice period, so letting a tenant
@@ -79,20 +84,34 @@ export const handler = route(async (event) => {
   if (noticeGivenOn < addDaysIso(today, -LANDLORD_BACKDATE_DAYS)) {
     throw badRequest(`A notice can be recorded up to ${LANDLORD_BACKDATE_DAYS} days after it was given, not earlier.`);
   }
-  // A mutual notice, or a tenant's notice dated before today, entered by the landlord rests on
-  // the landlord's word alone, and either could end a fixed term the same day. The tenant has
-  // to confirm it in the app before the deposit is settled, and until then may withdraw it.
+  // A mutual or tenant's notice entered by the landlord rests on the landlord's word alone,
+  // whatever its date: dated today it still ended a fixed term, and carried a penalty, without
+  // the tenant agreeing. The tenant confirms it in the app before the deposit is settled; until
+  // then the tenant may refuse it and the landlord may withdraw their own entry.
   const recordedByTenant = access.isTenant && !access.isLandlord;
-  const needsTenantConfirmation =
-    !recordedByTenant && (input.initiatedBy === 'mutual' || (input.initiatedBy === 'tenant' && noticeGivenOn < today));
+  const needsTenantConfirmation = !recordedByTenant && input.initiatedBy !== 'landlord';
 
   const result = await withTransaction(async (run) => {
-    const [lease] = await run<{ status: string; end_date: string }>(
-      'select status, end_date::text from lease where id = $1 for update',
+    const [lease] = await run<{
+      status: string; end_date: string; start_date: string; escalates_from: string | null;
+      monthly_rent_cents: string; escalation_pct: string; has_account: boolean;
+    }>(
+      `select l.status, l.end_date::text, l.start_date::text, l.escalates_from::text,
+              l.monthly_rent_cents::text, l.escalation_pct::text,
+              (select a.cognito_sub is not null from applicant a where a.id = l.applicant_id) as has_account
+         from lease l where l.id = $1 for update`,
       [leaseId],
     );
     if (!lease) throw badRequest('That lease no longer exists.');
     if (lease.status !== 'active') throw conflict(`This lease is ${lease.status}.`);
+    // A tenant imported without an account cannot confirm, so the notice would never stand
+    // and the deposit could never be settled.
+    if (needsTenantConfirmation && !lease.has_account) {
+      throw conflict(
+        'The tenant has to confirm this notice in the app, and they have no account yet. ' +
+          'Invite them to the app first, then record the notice.',
+      );
+    }
 
     // An accepted renewal takes over from this lease on its start date and moves the tenant
     // across. A notice here was lost at that handover and the tenant billed under the new
@@ -115,10 +134,28 @@ export const handler = route(async (event) => {
 
     const notice = dateFromIso(noticeGivenOn);
     const leaseEnd = dateFromIso(lease.end_date);
+    // CPA s14(2)(c): 40 to 80 business days before expiry. Served earlier, it is not the notice
+    // the Act asks for, and the tenant would forget it long before the end date.
+    if (
+      input.initiatedBy === 'landlord' &&
+      input.reason === 'end_of_term' &&
+      leaseEnd > notice &&
+      businessDaysBetween(notice, leaseEnd) > LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS
+    ) {
+      throw badRequest(
+        `An end-of-term notice is given no more than ${LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS} business days ` +
+          `before the lease ends. It can be served from ${isoDate(landlordEndOfTermServableFrom(leaseEnd))}.`,
+      );
+    }
     const noticeDays = noticeBusinessDays(input.reason, notice, leaseEnd, input.initiatedBy);
     const earliest = earliestEffectiveDate(input.reason, notice, leaseEnd, input.initiatedBy);
     const latest = latestEffectiveDate(input.reason, notice, leaseEnd, input.initiatedBy);
-    const effective = input.effectiveOn ? dateFromIso(isoDate(input.effectiveOn)) : earliest;
+    // With no date chosen, the earliest lawful day, or today when a backdated notice's earliest
+    // day has already passed: the form leaves the date optional, and it was refused below.
+    const todayDate = dateFromIso(today);
+    const effective = input.effectiveOn
+      ? dateFromIso(isoDate(input.effectiveOn))
+      : earliest < todayDate ? todayDate : earliest;
     // The parties may agree a later date than the minimum, never an earlier one.
     if (effective < earliest) {
       throw badRequest(
@@ -141,6 +178,18 @@ export const handler = route(async (event) => {
       throw badRequest('A cancellation penalty applies only when a fixed term is cancelled before its end date.', {
         penaltyCents: 'Leave it at zero.',
       });
+    }
+    // CPA s14(3)(b) and Reg 5(3): only a reasonable penalty.
+    // Rated at the rent in force when the notice takes effect, after any escalation; an imported
+    // lease escalates from when its stated rent took effect, as the invoice run does.
+    const rentNow = rentForPeriod(Number(lease.monthly_rent_cents), Number(lease.escalation_pct),
+      dateFromIso(lease.escalates_from ?? lease.start_date), effective);
+    const maxPenalty = maxCancellationPenaltyCents(rentNow, effective, leaseEnd);
+    if (penaltyCents > maxPenalty) {
+      throw badRequest(
+        `The cancellation penalty can be at most ${zar(maxPenalty)}: one month’s rent, or the rent for the rest of the term if that is less.`,
+        { penaltyCents: `Use ${zar(maxPenalty)} or less.` },
+      );
     }
 
     const [termination] = await run<{ id: string }>(
@@ -223,6 +272,8 @@ export const handler = route(async (event) => {
     unit: parties?.unit ?? '',
     noticeGivenOn,
     effectiveOn: result.effectiveOn,
+    // The tenant sees any penalty before confirming the notice it rides on.
+    penaltyLine: penaltyCents > 0 ? `\n\nIt carries a cancellation penalty of ${zar(penaltyCents)}, taken from the deposit at settlement.` : '',
   };
   // Both parties, because the exit inspection deadline binds both of them.
   if (parties?.tenant_sub) {

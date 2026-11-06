@@ -248,7 +248,7 @@ describe('deduction evidence', () => {
 
     const notice = await call('POST', `/leases/${LEASE}/termination`, {
       // The landlord's notice is dated today in South Africa; the UTC date is yesterday before 02:00.
-      body: { initiatedBy: 'landlord', reason: 'end_of_term', noticeGivenOn: new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10) },
+      body: { initiatedBy: 'landlord', reason: 'breach_by_tenant', noticeGivenOn: new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 10) },
     });
     expect(notice.status).toBe(201);
     terminationId = notice.body.id;

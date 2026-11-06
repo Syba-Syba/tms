@@ -36,18 +36,32 @@ export const handler = route(async (event) => {
        values ($1, $2, $3, $4) returning id`,
       [landlordId, input.fileName, parsed.format, person.sub],
     );
-    let count = 0;
-    for (const line of parsed.lines) {
-      const inserted = await run(
-        `insert into bank_line (import_id, landlord_id, posted_on, amount_cents, description, fingerprint)
-         values ($1, $2, $3, $4, $5, $6)
-         on conflict (landlord_id, fingerprint) do nothing
-         returning id`,
-        [created!.id, landlordId, line.postedOn, line.amountCents, line.description.slice(0, 300), line.fingerprint],
-      );
-      count += inserted.length;
-    }
-    return { importId: created!.id, added: count };
+    // One statement for every line: one insert per line held the connection for tens of
+    // seconds on a large file. A line on file under its old OFX fingerprint (before the
+    // account was part of it), with the same date and amount, was imported already.
+    const lines = parsed.lines;
+    const inserted = await run<{ id: string }>(
+      `insert into bank_line (import_id, landlord_id, posted_on, amount_cents, description, fingerprint)
+       select $1, $2, l.posted_on, l.amount_cents, l.description, l.fingerprint
+         from unnest($3::date[], $4::bigint[], $5::text[], $6::text[], $7::text[])
+              as l(posted_on, amount_cents, description, fingerprint, legacy)
+        where l.legacy is null
+           or not exists (select 1 from bank_line b
+                           where b.landlord_id = $2 and b.fingerprint = l.legacy
+                             and b.posted_on = l.posted_on and b.amount_cents = l.amount_cents)
+       on conflict (landlord_id, fingerprint) do nothing
+       returning id`,
+      [
+        created!.id,
+        landlordId,
+        lines.map((line) => line.postedOn),
+        lines.map((line) => line.amountCents),
+        lines.map((line) => line.description.slice(0, 300)),
+        lines.map((line) => line.fingerprint),
+        lines.map((line) => line.legacyFingerprint ?? null),
+      ],
+    );
+    return { importId: created!.id, added: inserted.length };
   });
 
   await audit({

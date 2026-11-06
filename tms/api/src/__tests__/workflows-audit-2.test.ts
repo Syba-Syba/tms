@@ -235,7 +235,8 @@ describe('bug 3: an accepted renewal that is not yet signed', () => {
 
   it('is cancelled when notice is served', async () => {
     const notice = await call('POST', `/leases/${LEASE}/termination`, {
-      body: { initiatedBy: 'landlord', reason: 'end_of_term' },
+      // Not end_of_term: this lease ends more than 80 business days away (audit 5).
+      body: { initiatedBy: 'landlord', reason: 'breach_by_tenant' },
     });
     expect(notice.status).toBe(201);
     const [lease] = await db.query<{ status: string }>('select status from lease where id = $1', [second]);

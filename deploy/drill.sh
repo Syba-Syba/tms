@@ -11,7 +11,8 @@
 #      as tms_backup and cannot write, and neither container holds the other's secrets
 #   2. signs a landlord up through the app and stores a document
 #   3. takes a backup and runs the restore check
-#   4. damages the data, restores the backup, and checks the data, the documents and the app
+#   4. damages the data and records an erasure, restores the backup, and checks the data, the
+#      documents, the app, that the erasure was done again and that the app came up held
 #   5. starts a restore that fails part-way, and checks everything is put back as it was
 # Everything it made is removed at the end, pass or fail. Exit code 0 means every step passed.
 set -eu
@@ -141,12 +142,18 @@ files="$(find backups -maxdepth 1 -name "storage-*.tar.gz" | sort | tail -n 1 | 
 
 step "Damage the data, then restore"
 owner "update landlord set trading_name = 'DAMAGED'"
+# An erasure made after the backup, which the restore must do again.
+owner "insert into audit_log (actor_sub, actor_role, action, entity, detail)
+  values ('drill', 'landlord', 'privacy.erased', 'person', '{\"personSub\": \"drill-erased\", \"files\": 0}')"
 compose exec -T app sh -c 'rm /data/storage/drill/lease.pdf && echo junk > /data/storage/drill/after.txt'
 printf 'RESTORE\n' | sh ./restore.sh "backups/$dump" "backups/$files"
 [ "$(owner "select count(*) from landlord where trading_name = 'Drill Lets'")" = 1 ] || fail "the landlord did not come back"
 [ "$(owner "select count(*) from landlord where trading_name = 'DAMAGED'")" = 0 ] || fail "the damage is still there"
 [ "$(compose exec -T app cat /data/storage/drill/lease.pdf)" = before ] || fail "the document did not come back"
 compose exec -T app test -e /data/storage/drill/after.txt && fail "a file from after the backup survived"
+[ "$(owner "select count(*) from audit_log where action = 'privacy.erased' and detail->>'personSub' = 'drill-erased' and detail ? 'replayOf'")" = 1 ] \
+  || fail "the erasure made after the backup was not done again"
+[ -f restore-hold.yml ] || fail "the app was not started with its jobs held"
 for _ in $(seq 1 60); do
   appjs "fetch('http://127.0.0.1:3001/health').then(()=>process.exit(0),()=>process.exit(1))" 2>/dev/null && break
   sleep 2
@@ -159,6 +166,8 @@ owner "update landlord set trading_name = 'Kept' where trading_name = 'Drill Let
 owner "drop database if exists tms_previous" 2>/dev/null || true
 compose run --rm --no-deps -T --entrypoint sh backup -c 'rm -rf /tmp/x && mkdir -p /tmp/x/not-storage && tar -czf /backups/bad.tar.gz -C /tmp/x not-storage'
 # The clean-up restore.sh prints once a restore is confirmed good.
+sh ./restore.sh resume
+[ -f restore-hold.yml ] && fail "resume left the app held"
 compose run --rm --no-deps -T --user root --entrypoint rm app -rf /data/storage/.restore-prev </dev/null
 printf 'RESTORE\n' | sh ./restore.sh "backups/$dump" backups/bad.tar.gz && fail "the bad restore reported success"
 [ "$(owner "select count(*) from landlord where trading_name = 'Kept'")" = 1 ] || fail "the database was not put back"

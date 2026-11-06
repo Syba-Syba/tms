@@ -28,6 +28,12 @@ import { PAGE } from '../lib/layout';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
 
+/** Rent as a share of income. With no income declared there is no share: 0% read as the best. */
+export function incomeShare(ratio: number | null, suffix = ''): string {
+  if (ratio === null || !Number.isFinite(ratio)) return 'No income declared';
+  return `${Math.round(ratio * 100)}%${suffix}`;
+}
+
 interface ApplicationDocument {
   id: string;
   kind: string;
@@ -115,6 +121,9 @@ export function LandlordQueue() {
   const withdrawable = (item: ApplicationSummary) =>
     !item.leaseId || item.leaseStatus === 'draft' || item.leaseStatus === 'out_for_signature';
 
+  const signing = (item: ApplicationSummary) =>
+    !item.leaseStatus || item.leaseStatus === 'draft' || item.leaseStatus === 'out_for_signature';
+
   /** The same buttons in the laptop table and on the phone cards. */
   const actionsFor = (item: ApplicationSummary) => {
     if (status === 'submitted') {
@@ -138,9 +147,16 @@ export function LandlordQueue() {
             </Button>
           ) : null}
           {item.leaseId ? (
-            <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
-              {item.leaseStatus === 'active' ? 'Open lease' : 'Continue signing'}
-            </Button>
+            // Only a lease still being signed goes to the signing page; a live or ended one opens its details.
+            signing(item) ? (
+              <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
+                Continue signing
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => navigate(`/leases/${item.leaseId}`)}>
+                Open lease
+              </Button>
+            )
           ) : (
             <Button size="sm" loading={generating === item.id} onClick={() => openGenerate(item)}>
               Generate lease
@@ -252,7 +268,7 @@ export function LandlordQueue() {
                   </p>
                 </div>
                 <Badge tone={bandTone[item.affordability.band]}>
-                  {Math.round(item.affordability.ratio * 100)}% of income
+                  {incomeShare(item.affordability.ratio, ' of income')}
                 </Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
@@ -278,7 +294,7 @@ export function LandlordQueue() {
               const item = row.original as ApplicationSummary;
               return (
                 <Badge tone={bandTone[item.affordability.band]}>
-                  {Math.round(item.affordability.ratio * 100)}%
+                  {incomeShare(item.affordability.ratio)}
                 </Badge>
               );
             },

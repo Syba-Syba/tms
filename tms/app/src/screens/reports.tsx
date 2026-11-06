@@ -396,6 +396,8 @@ function Expenses() {
         amountCents: editing.form.amountCents,
         incurredOn: editing.form.incurredOn,
       };
+      // Set when the slip did not make it, so the warning is not followed by a plain "saved".
+      let slipProblem = false;
       if (editing.id) {
         await api.put(`/expenses/${editing.id}`, body);
       } else {
@@ -414,20 +416,22 @@ function Expenses() {
             uploaded = null;
           }
           if (!uploaded?.ok) {
+            slipProblem = true;
             toast.show({ title: 'Expense saved, slip not uploaded', tone: 'warning' });
           } else {
             // The server checks the bytes and keeps its own copy. A refused slip is detached,
             // and the expense stays.
-            await api.post(`/expenses/${created.id}/slip/confirm`, {}).catch((error) =>
-              toast.show({ title: 'Expense saved, slip refused', description: humanError(error), tone: 'warning' }),
-            );
+            await api.post(`/expenses/${created.id}/slip/confirm`, {}).catch((error) => {
+              slipProblem = true;
+              toast.show({ title: 'Expense saved, slip refused', description: humanError(error), tone: 'warning' });
+            });
           }
         }
       }
       await refresh();
       setEditing(null);
       setFile(null);
-      toast.show({ title: 'Expense saved', tone: 'success' });
+      if (!slipProblem) toast.show({ title: 'Expense saved', tone: 'success' });
     } catch (error) {
       toast.show({ title: 'Not saved', description: humanError(error), tone: 'danger' });
     } finally {

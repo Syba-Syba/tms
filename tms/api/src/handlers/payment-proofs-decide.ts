@@ -67,16 +67,22 @@ export const handler = route(async (event) => {
     // instead: the same window as the bank import uses the other way round. (The bank import
     // only records a deposit together with a pending slip, so a deposit line is never left
     // unlinked for a later deposit slip to find.)
+    // The line must be posted on or after the slip's date (a day's grace for a late-night
+    // transfer). Rent is the same amount every month, so last month's late transfer looked like
+    // this month's slip and swallowed it. The slip's invoice only orders the candidates: the
+    // bank import pays the oldest invoice first, so the slip's own transfer may sit on another.
     const [banked] = proof.target === 'invoice'
       ? await run<{ id: string }>(
           `select b.id from bank_line b
             where b.lease_id = $1 and b.status = 'matched' and b.amount_cents = $2
-              and b.posted_on between $3::date - 3 and $3::date + 14
+              and b.posted_on between $3::date - 1 and $3::date + 14
               and exists (select 1 from payment p where p.bank_line_id = b.id)
               and not exists (select 1 from payment p where p.bank_line_id = b.id and p.proof_id is not null)
-            order by abs(b.posted_on - $3::date) limit 1
+            order by exists (select 1 from payment p where p.bank_line_id = b.id and p.invoice_id = $4::uuid) desc,
+                     b.posted_on
+            limit 1
             for update`,
-          [access.leaseId, amountCents, proof.paid_on],
+          [access.leaseId, amountCents, proof.paid_on, proof.invoice_id],
         )
       : [];
     if (banked) {

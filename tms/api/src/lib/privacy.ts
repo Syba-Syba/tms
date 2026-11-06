@@ -9,6 +9,57 @@ import { erasureBlock, type LeaseForRetention } from '../domain/privacy';
 
 type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
 
+const escapeRegex = (text: string) => text.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+/**
+ * One regex for whole-word matches of any of these strings. A plain replace() turned 'Ann'
+ * inside 'Annandale Court' into 'the tenantandale Court'. With nothing to match, it matches
+ * nothing (an empty alternation would match everywhere).
+ */
+const wholeWords = (words: string[]) => {
+  const usable = [...new Set(words.map((w) => w.trim()).filter((w) => w.length >= 3))].sort((a, b) => b.length - a.length);
+  return usable.length ? `(?<![[:alnum:]])(${usable.map(escapeRegex).join('|')})(?![[:alnum:]])` : '(?!)x';
+};
+
+/**
+ * Takes their names and emails out of activity-log details. It works on the parsed JSON's
+ * string values: a regex over detail::text could hit a JSON token (a name such as 'Null'
+ * lower-cased) and break the cast, and missed names stored with quotes or backslashes escaped.
+ */
+async function scrubAuditDetails(
+  run: Run,
+  rows: { id: string; detail: unknown; own: boolean }[],
+  names: string[],
+  emails: string[],
+): Promise<void> {
+  const usable = [...new Set(names.map((w) => w.trim()).filter((w) => w.length >= 3))].sort((a, b) => b.length - a.length);
+  const namesRe = usable.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${usable.map(escapeRegex).join('|')})(?![\\p{L}\\p{N}])`, 'gu') : null;
+  const usableEmails = [...new Set(emails.filter(Boolean))];
+  const emailsRe = usableEmails.length ? new RegExp(`(${usableEmails.map(escapeRegex).join('|')})`, 'giu') : null;
+  const clean = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      let out = emailsRe ? value.replace(emailsRe, '[email removed]') : value;
+      if (namesRe) out = out.replace(namesRe, 'the tenant');
+      return out;
+    }
+    if (Array.isArray(value)) return value.map(clean);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clean(v)]));
+    return value;
+  };
+  for (const row of rows) {
+    if (row.detail === null || row.detail === undefined) continue;
+    let next = clean(row.detail);
+    // The IP address on their own rows (and sign-ins for their email) is theirs; on a
+    // landlord's row about them it is the landlord's.
+    if (row.own && next && typeof next === 'object' && !Array.isArray(next)) {
+      const { address: _address, ...rest } = next as Record<string, unknown>;
+      next = rest;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(row.detail)) {
+      await run('update audit_log set detail = $2::jsonb where id = $1', [row.id, JSON.stringify(next)]);
+    }
+  }
+}
+
 /** Records what someone agreed to, with enough context to prove it later. */
 export async function recordConsent(
   run: Run,
@@ -69,7 +120,7 @@ export async function erasureBlockFor(sub: string, landlordId: string | null = n
 export async function erasePerson(
   sub: string,
   actor: { sub: string; role: string },
-  scope: { landlordId?: string } = {},
+  scope: { landlordId?: string; replayOf?: string } = {},
 ): Promise<{ files: number; identityErased: boolean }> {
   const landlordId = scope.landlordId ?? null;
   const { keys, identityErased } = await withTransaction(async (run) => {
@@ -150,11 +201,20 @@ export async function erasePerson(
       // Their name, email and phone wherever they typed or were quoted in free text. A blank
       // phone must not match (and blank out) everything. The number is stored as +27…, and text
       // often carries it as dialled locally, 08….
+      // Every name the record has carried (0044): a message keeps the name it was sent under,
+      // and applying elsewhere, or claiming an imported tenancy, changes the record's.
       const fullName = `${applicant.first_name} ${applicant.last_name}`.trim();
+      const pastNames = (
+        await run<{ name: string }>(
+          `select first_name || ' ' || last_name as name from applicant_name where applicant_id = $1`,
+          [applicant.id],
+        )
+      ).map((row) => row.name.trim());
+      const namePattern = wholeWords([fullName, ...pastNames]);
       const phone = applicant.phone || 'no phone on record';
       const localPhone = phone.startsWith('+27') ? `0${phone.slice(3)}` : phone;
       const scrub = (column: string) =>
-        `replace(replace(replace(replace(${column}, $2, 'the tenant'), $3, '[email removed]'), $4, '[phone removed]'), $5, '[phone removed]')`;
+        `replace(replace(replace(regexp_replace(${column}, $2, 'the tenant', 'g'), $3, '[email removed]'), $4, '[phone removed]'), $5, '[phone removed]')`;
 
       // Payment references carry their name ("N PHIRI LSE-00101"). Before they are cleared below,
       // they go from the activity log, whoever recorded them, and from the messages quoting them.
@@ -171,6 +231,9 @@ export async function erasePerson(
             .filter((reference) => reference.length >= 3),
         ),
       ];
+      const leaseRefs = (
+        await run<{ ref: string }>(`select 'LSE-' || lpad(ref_no::text, 5, '0') as ref from lease where id = any($1)`, ls)
+      ).map((row) => row.ref);
       await run(
         `update audit_log set detail = detail - 'reference'
           where jsonb_typeof(detail) = 'object' and detail ? 'reference'
@@ -182,8 +245,7 @@ export async function erasePerson(
       for (const reference of references) {
         // Whole references only: a plain replace() turned a reference such as 'RENT' inside
         // 'CURRENT' into '[reference removed]'.
-        const escaped = reference.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
-        const pattern = `(?<![[:alnum:]])${escaped}(?![[:alnum:]])`;
+        const pattern = `(?<![[:alnum:]])${escapeRegex(reference)}(?![[:alnum:]])`;
         await run(
           `update notification set subject = regexp_replace(subject, $2, '[reference removed]', 'g'),
                                    body = regexp_replace(body, $2, '[reference removed]', 'g')
@@ -225,7 +287,7 @@ export async function erasePerson(
       await run(
         `update ticket set description = '[Removed at the tenant''s request]', rating_note = null, title = ${scrub('title')}
           where created_by = $6 and lease_id = any($1)`,
-        [leases, fullName, applicant.email, phone, localPhone, sub],
+        [leases, namePattern, applicant.email, phone, localPhone, sub],
       );
       await run(
         `update ticket_event set note = '[Removed at the tenant''s request]'
@@ -235,6 +297,37 @@ export async function erasePerson(
       // Payment references and bank lines carry their name ("N PHIRI LSE-00101").
       await run('update payment set reference = null where lease_id = any($1)', ls);
       await run(`update bank_line set description = '[erased]' where lease_id = any($1)`, ls);
+      // Lines never matched to the lease (left unmatched, or ignored as a duplicate) have no
+      // lease to find them by: they go when they quote the lease reference, or
+      // name the surname, unless another of this landlord's people has that surname too.
+      const surname = applicant.last_name.trim();
+      const [shared] = await run<{ n: number }>(
+        `select count(*)::int as n from applicant a
+          where a.id <> $1 and a.erased_at is null and lower(a.last_name) = lower($2)
+            and (exists (select 1 from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
+                          where ap.applicant_id = a.id and p.landlord_id = $3)
+                 or exists (select 1 from lease l join unit u on u.id = l.unit_id join property p on p.id = u.property_id
+                             where l.applicant_id = a.id and p.landlord_id = $3))`,
+        [applicant.id, surname, landlordId],
+      );
+      // Not payment references: those are often generic ('RENT') and would reach other people's lines.
+      const lineWords = [...leaseRefs, ...(shared!.n === 0 ? [surname] : [])];
+      if (lineWords.length) {
+        await run(
+          `update bank_line set description = '[erased]'
+            where landlord_id = $1 and status <> 'matched' and description ~* $2`,
+          [landlordId, wholeWords(lineWords)],
+        );
+      }
+      // Deposits received keep the bank line or slip text they were recorded with
+      // ("N PHIRI DEPOSIT LSE-00101"), which the lease statement shows. The note the tenancy
+      // import writes is not about the person.
+      await run(
+        `update deposit_ledger set note = null
+          where lease_id = any($1) and entry_type = 'received' and note is not null
+            and note <> 'Held before the lease was brought into Threshold'`,
+        ls,
+      );
       await run('delete from tenant_invite where lease_id = any($1)', ls);
 
       // The landlord's own messages about this person ("Proof of payment from Naledi Phiri,
@@ -242,7 +335,7 @@ export async function erasePerson(
       await run(
         `update notification set subject = ${scrub('subject')}, body = ${scrub('body')}
           where lease_id = any($1) and recipient_sub is distinct from $6`,
-        [leases, fullName, applicant.email, phone, localPhone, sub],
+        [leases, namePattern, applicant.email, phone, localPhone, sub],
       );
 
       // The landlord's applications and leases move to an anonymous stand-in, so the shared
@@ -270,24 +363,32 @@ export async function erasePerson(
             [applications, leases],
           )
         ).map((row) => row.id);
-        await run(
-          `update audit_log set actor_sub = 'erased:' || $3,
-                  detail = case
-                    when detail is null then null
-                    when jsonb_typeof(detail) = 'object'
-                      then (replace(replace(detail::text, $4, '[email removed]'), $5, 'the tenant'))::jsonb - 'address'
-                    else (replace(replace(detail::text, $4, '[email removed]'), $5, 'the tenant'))::jsonb
-                  end
-            where actor_sub = $1 and entity_id = any($2)`,
-          [sub, entities, standIn!.id, applicant.email, fullName],
+        // Every row about these records loses their name and email, whoever wrote it: a
+        // landlord's decline reason or deduction note can name them too.
+        await scrubAuditDetails(
+          run,
+          await run<{ id: string; detail: unknown; own: boolean }>(
+            `select id::text, detail, actor_sub is not distinct from $2 as own from audit_log
+              where entity_id = any($1) and detail is not null`,
+            [entities, sub],
+          ),
+          [fullName, ...pastNames],
+          [applicant.email],
         );
+        await run(`update audit_log set actor_sub = 'erased:' || $3 where actor_sub = $1 and entity_id = any($2)`, [
+          sub,
+          entities,
+          standIn!.id,
+        ]);
         // Messages addressed to them through a stand-in address (an imported tenant without an
         // account, or an invite) go: they carry their email, first name and old links.
+        // Any 'applicant:' address on these leases was theirs: an imported record merged into
+        // theirs on claiming (invites-accept.ts) leaves its old id, and a WhatsApp number, behind.
         await run(
           `delete from notification
             where lease_id = any($1)
-              and (recipient_sub = 'applicant:' || $2 or recipient_sub like 'tenant-invite:%' or recipient_to = $3)`,
-          [leases, applicant.id, applicant.email],
+              and (recipient_sub like 'applicant:%' or recipient_sub like 'tenant-invite:%' or recipient_to = $2)`,
+          [leases, applicant.email],
         );
       }
     }
@@ -300,24 +401,27 @@ export async function erasePerson(
     if (left!.n > 0) return { keys: files, identityErased: false };
 
     const emails = [...new Set([applicant?.email, credential?.email].filter((e): e is string => Boolean(e)))];
-    const names = [...new Set([applicant ? `${applicant.first_name} ${applicant.last_name}`.trim() : null, credential?.name]
-      .filter((n): n is string => Boolean(n && n.length >= 3)))];
-    // Their email, name and the IP addresses of their sign-ins in the activity log. Failed
-    // sign-ins for their email carry no actor, so they are found by the email in the detail.
-    for (const email of emails) {
-      await run(
-        `update audit_log set detail = (replace(detail::text, $1, '[email removed]'))::jsonb - 'address'
-          where detail::text like '%' || $1 || '%'`,
-        [email],
-      );
-    }
-    for (const name of names) {
-      await run(
-        `update audit_log set detail = (replace(detail::text, $1, 'the tenant'))::jsonb where detail::text like '%' || $1 || '%'`,
-        [name],
-      );
-    }
-    await run(`update audit_log set detail = detail - 'address' where actor_sub = $1 and detail ? 'address'`, [sub]);
+    const pastNames = applicant
+      ? (await run<{ name: string }>(`select first_name || ' ' || last_name as name from applicant_name where applicant_id = $1`, [applicant.id]))
+          .map((row) => row.name)
+      : [];
+    const names = [applicant ? `${applicant.first_name} ${applicant.last_name}` : '', credential?.name ?? '', ...pastNames];
+    // Their email, name and the IP addresses of their sign-ins in the activity log, on rows
+    // about them only: what they did, and sign-ins and resets for their email (those carry no
+    // actor). Rewriting every row that contained the name reached other landlords' records,
+    // and LIKE read an '_' in an email as any character.
+    await scrubAuditDetails(
+      run,
+      await run<{ id: string; detail: unknown; own: boolean }>(
+        `select id::text, detail, true as own from audit_log
+          where detail is not null
+            and (actor_sub = $1
+                 or (jsonb_typeof(detail) = 'object' and lower(detail->>'email') = any($2::text[])))`,
+        [sub, emails.map((e) => e.toLowerCase())],
+      ),
+      names,
+      emails,
+    );
     // What they agreed to, and when, stays as proof; where from and on what device does not.
     await run('update consent set ip_address = null, user_agent = null where person_sub = $1', [sub]);
     if (applicant) {
@@ -329,6 +433,7 @@ export async function erasePerson(
         [applicant.id],
       );
       await run('delete from tenant_invite where applicant_id = $1', [applicant.id]);
+      await run('delete from applicant_name where applicant_id = $1', [applicant.id]);
     }
     await run('delete from tenant_invite where accepted_sub = $1', [sub]);
     await run('delete from notification where recipient_sub = $1', [sub]);
@@ -371,12 +476,61 @@ export async function erasePerson(
     action: 'privacy.erased',
     entity: 'person',
     entityId: null,
-    detail: { personSub: sub, files: keys.length, landlordId, identityErased },
+    detail: { personSub: sub, files: keys.length, landlordId, identityErased, ...(scope.replayOf ? { replayOf: scope.replayOf } : {}) },
   });
   // Last: Cognito sits outside the VPC. A slow call that ran into the Lambda timeout used to
   // leave the files and the privacy.erased row (which the sweep relies on) undone.
   if (identityErased) await removeSignIn(sub);
   return { files: keys.length, identityErased };
+}
+
+/** An erasure as restore.sh and backup.sh list it: which 'privacy.erased' row, whose, by whom. */
+export interface RecordedErasure {
+  /** `<audit id>@<at, UTC, to the microsecond>`, or the replayOf of a replayed row: an id alone
+      is reused once a restore rewinds the sequence. to_char, not extract(epoch): that prints
+      differently from Postgres 14 on, and a key must read the same on any server. */
+  key: string;
+  personSub: string;
+  landlordId: string | null;
+}
+
+/** Lines of `epoch|key|personSub|landlordId`, as psql -At -F '|' prints them. */
+export function parseErasureList(text: string): RecordedErasure[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [, key, personSub, landlordId] = line.split('|');
+      if (!key || !personSub) throw new Error(`Not an erasure line: ${line}`);
+      return { key, personSub, landlordId: landlordId || null };
+    });
+}
+
+/**
+ * After a restore, erasures done since the dump are done again: the backup holds the person as
+ * they were, sign-in included. Each runs once; one the restored database already records (or
+ * replayed before) is skipped. The retention rule was checked when the erasure was first made.
+ */
+export async function replayErasures(list: RecordedErasure[]): Promise<number> {
+  let replayed = 0;
+  for (const erasure of list) {
+    const [done] = await query(
+      `select 1 from audit_log
+        where action = 'privacy.erased'
+          and coalesce(detail->>'replayOf', id::text || '@' || to_char(at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')) = $1
+        limit 1`,
+      [erasure.key],
+    );
+    if (done) continue;
+    await erasePerson(
+      erasure.personSub,
+      { sub: 'system:restore', role: 'system' },
+      { ...(erasure.landlordId ? { landlordId: erasure.landlordId } : {}), replayOf: erasure.key },
+    );
+    replayed += 1;
+  }
+  return replayed;
 }
 
 /** A message straight to an address, outside preferences: the person asked for this answer. */

@@ -183,3 +183,11 @@ export const importsByLandlord = new AttemptLimiter(30, HOUR);
  * portfolio across in one go, while keeping an account from using imports as a mailer.
  */
 export const importInvitesByLandlord = new AttemptLimiter(500, DAY);
+
+/**
+ * Tickets per account. Each one queues an urgent email to the landlord, and the outbox is one
+ * queue for the whole platform, so a loop of tickets delayed every other landlord's notices.
+ * Generous for a household reporting what broke; nothing for a script.
+ */
+export const ticketsByAccountHourly = new AttemptLimiter(10, HOUR);
+export const ticketsByAccountDaily = new AttemptLimiter(30, DAY);

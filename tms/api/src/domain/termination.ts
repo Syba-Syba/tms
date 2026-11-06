@@ -137,6 +137,28 @@ export const LATEST_AFTER_END_DAYS = 31;
     expires. Told later, the lease does not simply end: it carries on month to month. */
 export const LANDLORD_END_OF_TERM_BUSINESS_DAYS = 40;
 
+/** CPA s14(2)(c) also says "not more than 80": a notice served earlier does not count as the
+    expiry notice, so it is refused rather than ending the lease on its end date. */
+export const LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS = 80;
+
+/** The first day a landlord's end-of-term notice can be served: 80 business days or fewer
+    before the end date. */
+export function landlordEndOfTermServableFrom(leaseEnd: Date): Date {
+  let day = new Date(Date.UTC(leaseEnd.getUTCFullYear(), leaseEnd.getUTCMonth(), leaseEnd.getUTCDate()));
+  // Walk back while the day before is still inside the window.
+  while (businessDaysBetween(addDays(day, -1), leaseEnd) <= LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS) {
+    day = addDays(day, -1);
+  }
+  return day;
+}
+
+/** CPA s14(3)(b) and Reg 5(3) allow only a reasonable cancellation penalty. The cap is the
+    lesser of one month's rent and the rent for the part of the term cut short (pro rata by day). */
+export function maxCancellationPenaltyCents(monthlyRentCents: number, effectiveOn: Date, leaseEnd: Date): number {
+  const days = Math.max(0, Math.round((leaseEnd.getTime() - effectiveOn.getTime()) / 86400000));
+  return Math.min(monthlyRentCents, Math.round((monthlyRentCents * days * 12) / 365));
+}
+
 export type Initiator = 'tenant' | 'landlord' | 'mutual';
 
 const runOut = (noticeGivenOn: Date, leaseEnd: Date) => leaseEnd <= noticeGivenOn;

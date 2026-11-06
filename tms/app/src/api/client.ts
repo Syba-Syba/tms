@@ -46,7 +46,8 @@ export interface ApplicationSummary {
   occupants: number;
   monthlyRentCents: number;
   monthlyIncomeCents: number;
-  affordability: { ratio: number; band: 'comfortable' | 'tight' | 'over' };
+  /** ratio is null when no income was declared (the server's Infinity arrives as null). */
+  affordability: { ratio: number | null; band: 'comfortable' | 'tight' | 'over' };
   documentCount: number;
   leaseId: string | null;
   leaseStatus: string | null;

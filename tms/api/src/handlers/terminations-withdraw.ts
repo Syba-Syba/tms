@@ -14,9 +14,10 @@ type Run = typeof query;
  * Withdraws a notice, before the lease has ended and before the deposit is settled: a tenant
  * who changed their mind, a landlord whose notice was a mistake. Only the party who gave it may:
  * letting either side withdraw the other's let a tenant cancel every notice a landlord served,
- * and a landlord undo a tenant's CPA s14 cancellation. A mutual notice is both parties', so
- * either may. A notice the landlord recorded for the tenant and the tenant has not confirmed
- * stays open to the tenant and to the landlord who recorded it, even on and after its end date. 'withdrawn' existed but nothing set it, and the one notice a
+ * and a landlord undo a tenant's CPA s14 cancellation. A mutual notice, once the tenant has
+ * confirmed it, is an agreement of both, so neither undoes it alone. A notice the landlord
+ * recorded for the tenant (mutual or the tenant's) that the tenant has not confirmed stays open
+ * to the tenant and to the landlord who recorded it, even on and after its end date. 'withdrawn' existed but nothing set it, and the one notice a
  * lease could hold blocked serving a corrected one. The lease carries on as if notice had never
  * been served, so what serving changed is put back: the invoices it trimmed are re-rated to
  * the full months the invoice run would have billed, and an exit inspection still booked for
@@ -61,6 +62,10 @@ export const handler = route(async (event) => {
     const landlordUndoesOwnEntry = termination.awaiting_tenant && withdrawnBy === 'landlord';
     if (termination.initiated_by !== 'mutual' && termination.initiated_by !== withdrawnBy && !landlordUndoesOwnEntry) {
       throw forbidden('Only the party who gave this notice can withdraw it.');
+    }
+    // Agreed by both: the tenant may have signed elsewhere, the landlord re-let the unit.
+    if (termination.initiated_by === 'mutual' && !termination.awaiting_tenant) {
+      throw conflict('Both parties agreed this end date. Undoing it needs both: record a new agreement instead.');
     }
     if (termination.status === 'withdrawn') throw conflict('This notice has already been withdrawn.');
     if (termination.status === 'settled') throw conflict('The deposit is settled, so this notice can no longer be withdrawn.');
