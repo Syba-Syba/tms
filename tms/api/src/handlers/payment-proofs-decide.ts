@@ -4,7 +4,7 @@ import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/http';
 import { notify } from '../lib/notify';
-import { allocatePayment, balanceLineFor, notifyPaymentReceived } from '../lib/payments';
+import { allocatePayment, assertDepositOpen, balanceLineFor, lockLease, notifyPaymentReceived } from '../lib/payments';
 import { zar } from '../domain/money';
 
 const schema = z.discriminatedUnion('decision', [
@@ -36,13 +36,17 @@ export const handler = route(async (event) => {
   const input = parseBody(event, schema);
 
   const outcome = await withTransaction(async (run) => {
+    // The lease before the slip, the same order as the bank import, so a slip and its bank
+    // line confirmed together run one after the other: the second sees the first's payment
+    // and links to it instead of recording the same transfer twice.
+    await lockLease(run, access.leaseId);
     const [proof] = await run<{
       status: string; target: string; invoice_id: string | null; amount_cents: string;
       paid_on: string; reference: string | null;
     }>(
       `select status, target, invoice_id, amount_cents, paid_on::text, reference
-         from payment_proof where id = $1 for update`,
-      [proofId],
+         from payment_proof where id = $1 and lease_id = $2 for update`,
+      [proofId, access.leaseId],
     );
     if (!proof || proof.status !== 'pending') throw conflict('That slip has already been dealt with.');
 
@@ -85,6 +89,7 @@ export const handler = route(async (event) => {
       return { decision: 'accept' as const, amountCents, paidOn: proof.paid_on, target: proof.target, allocations, linked: true };
     }
     if (proof.target === 'deposit') {
+      await assertDepositOpen(run, access.leaseId);
       await run(
         `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note, proof_id)
          values ($1, 'received', $2, $3, $4, $5)`,

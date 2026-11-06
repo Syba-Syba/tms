@@ -34,7 +34,7 @@ const openedIsPdf = async (before: number) => {
 
 
 beforeAll(async () => {
-  leaseId = await ensureLease({ signed: false });
+  leaseId = await ensureLease({ signed: false, withoutNotice: true });
 });
 
 describe('signing the lease', () => {

@@ -31,6 +31,22 @@ export async function activateScheduledLease(
     // across with them rather than being refunded and recollected.
     await run(`update deposit_ledger set lease_id = $1 where lease_id = $2`, [lease.id, lease.previous_lease_id]);
     await movePendingCharges(run, lease.previous_lease_id, lease.id);
+    // The arrears case tracks the invoices that just moved, so it moves with them. Left behind
+    // it closed, and the renewal opened a fresh one: a landlord's pause was lost, the final
+    // reminder went out at once, and a second letter of demand was allowed for the same debt.
+    await run(
+      `update arrears_case set lease_id = $1
+        where lease_id = $2 and closed_on is null
+          and not exists (select 1 from arrears_case c where c.lease_id = $1 and c.closed_on is null)`,
+      [lease.id, lease.previous_lease_id],
+    );
+    // A slip not yet decided is for money owed, which is now on the renewal. Left on the old
+    // lease it could not be accepted, held no reminders, and a deposit slip credited a ledger
+    // nobody reads any more.
+    await run(
+      `update payment_proof set lease_id = $1 where lease_id = $2 and status in ('uploading', 'pending')`,
+      [lease.id, lease.previous_lease_id],
+    );
   }
   await run(`update lease set status = 'active', activated_at = now() where id = $1`, [lease.id]);
   await run(`update unit set status = 'occupied' where id = $1`, [lease.unit_id]);
@@ -71,9 +87,10 @@ async function moveOpenInvoices(run: Run, fromLeaseId: string, toLeaseId: string
       continue;
     }
     // The old lease's rent becomes a fixed line, so a later re-rate of the renewal's rent (on
-    // notice) only ever touches the renewal's own days.
+    // notice) only ever touches the renewal's own days. Its own kind, not 'other', so it is not
+    // listed or removable as a charge.
     await run(
-      `update invoice_line set invoice_id = $1, kind = case when kind = 'rent' then 'other' else kind end
+      `update invoice_line set invoice_id = $1, kind = case when kind = 'rent' then 'prior_rent' else kind end
         where invoice_id = $2`,
       [clash.new_id, clash.old_id],
     );

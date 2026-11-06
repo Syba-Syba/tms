@@ -19,8 +19,15 @@ afterAll(async () => db?.close());
 
 describe('migrations', () => {
   it('are numbered without gaps or duplicates', () => {
-    const numbers = all.map((name) => Number(name.slice(0, 4)));
+    // A lettered file (0036a) is a fix that has to run before the next number on databases
+    // that have not reached it yet; it does not take a number of its own.
+    const numbered = all.filter((name) => /^\d{4}_/.test(name));
+    const numbers = numbered.map((name) => Number(name.slice(0, 4)));
     expect(numbers).toEqual(numbers.map((_, index) => index + 1));
+    for (const name of all.filter((n) => !numbered.includes(n))) {
+      expect(name).toMatch(/^\d{4}[a-z]_/);
+      expect(numbered.some((n) => n.startsWith(name.slice(0, 4)))).toBe(true);
+    }
   });
 
   it('keeps the dev seeds out of what gets applied', () => {

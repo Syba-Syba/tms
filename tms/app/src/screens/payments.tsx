@@ -90,9 +90,16 @@ function NoSlips() {
   });
   const arrears = useQuery({
     queryKey: ['report-arrears'],
-    queryFn: () => api.get<{ items: unknown[]; totals: { totalCents: number } }>('/reports/arrears'),
+    queryFn: () =>
+      api.get<{ items: { totalCents: number; ageing: { current: number } }[]; totals: { totalCents: number } }>(
+        '/reports/arrears',
+      ),
   });
-  const owing = arrears.data?.items.length ?? 0;
+  // 'current' is rent not yet late: next month's, issued on the 25th. Only the rest is behind.
+  const late = (arrears.data?.items ?? []).map((item) => item.totalCents - (item.ageing?.current ?? 0));
+  const owing = late.filter((cents) => cents > 0).length;
+  const lateCents = late.reduce((sum, cents) => sum + Math.max(0, cents), 0);
+  const notDueCents = (arrears.data?.totals.totalCents ?? 0) - lateCents;
 
   return (
     <section className="space-y-4">
@@ -108,13 +115,16 @@ function NoSlips() {
             <dd className="text-xs text-ink-muted">of {headlineZar(month.data.totals.invoicedCents)} invoiced</dd>
           </div>
           <div className="border-l border-line py-3 pl-4">
-            <dt className="text-xs text-ink-muted">Owed by tenants</dt>
-            <dd className={`text-figure ${arrears.data.totals.totalCents > 0 ? 'text-danger' : ''}`}>
-              <Money whole cents={arrears.data.totals.totalCents} />
+            <dt className="text-xs text-ink-muted">Overdue from tenants</dt>
+            <dd className={`text-figure ${lateCents > 0 ? 'text-danger' : ''}`}>
+              <Money whole cents={lateCents} />
             </dd>
             <dd className="text-xs text-ink-muted">
               {owing === 0 ? 'Nobody is behind' : `${owing} lease${owing === 1 ? '' : 's'} behind`}
             </dd>
+            {notDueCents > 0 ? (
+              <dd className="text-xs text-ink-muted">{headlineZar(notDueCents)} more not yet due</dd>
+            ) : null}
           </div>
         </dl>
       ) : null}
@@ -374,7 +384,11 @@ function ImportReview({
   if (!data) return <Spinner />;
   const unmatched = data.lines.filter((line) => line.status === 'unmatched');
   const picked = (line: ImportLine) => choice[line.id] ?? line.suggestion?.leaseId ?? '';
-  const ready = unmatched.filter((line) => picked(line));
+  // The bulk confirm takes only lines the landlord picked or the matcher is sure of. A weak
+  // guess (an amount-only match) stays preselected for its own Confirm, checked one by one.
+  const ready = unmatched.filter((line) =>
+    choice[line.id] !== undefined ? Boolean(choice[line.id]) : line.suggestion?.confidence === 'high' && Boolean(line.suggestion.leaseId),
+  );
 
   const resolve = async (lines: Array<{ lineId: string; leaseId?: string; ignore?: true }>) => {
     setBusy(true);

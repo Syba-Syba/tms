@@ -247,6 +247,23 @@ export const TEMPLATES: Record<string, Template> = {
       `The exit inspection must happen in the last three days of the lease, with both of you there. ` +
       `Skip it and the law treats the place as undamaged, so nothing can be deducted.`,
   },
+  // A notice the landlord recorded on the tenant's behalf: it stands only once the tenant agrees.
+  notice_confirm_requested: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `Confirm the notice: lease for ${d('unit')} ends ${d('effectiveOn')}`,
+    body: (d) =>
+      `Your landlord recorded a notice, dated ${d('noticeGivenOn')}, that ends the lease for ${d('unit')} on ${d('effectiveOn')}.\n\n` +
+      `It needs your confirmation in the app. If you did not agree to it, withdraw it there instead.`,
+  },
+  notice_confirmed: {
+    category: 'deadline',
+    urgent: false,
+    subject: (d) => `Tenant confirmed the notice for ${d('unit')}`,
+    body: (d) =>
+      `The tenant confirmed the notice that ends the lease for ${d('unit')} on ${d('effectiveOn')}. ` +
+      `The deposit can be settled once the lease has ended.`,
+  },
   // Deadline: the refund deadline runs from here, and the tenant has to know what was kept.
   deposit_settled: {
     category: 'deadline',
@@ -272,6 +289,15 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `${d('amount')} is owed to ${d('tenant')} for ${d('unit')} and the statutory deadline is ${d('dueBy')}, ` +
       `${d('daysLeft')} days away.\n\nMissing it is a Rental Housing Tribunal matter.`,
+  },
+  // The refund clock runs from the lease end whether or not anyone settles the deposit.
+  deposit_unsettled: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `Deposit for ${d('unit')} not settled`,
+    body: (d) =>
+      `The lease for ${d('unit')} with ${d('tenant')} ended on ${d('effectiveOn')} and the deposit has not been settled.\n\n` +
+      `${d('deadlineLine')}\n\nSettle it in the app. Missing the deadline is a Rental Housing Tribunal matter.`,
   },
   renewal_offered: {
     category: 'lease',

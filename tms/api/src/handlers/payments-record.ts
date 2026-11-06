@@ -8,6 +8,7 @@ import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { isoDate, sastToday } from '../domain/dates';
 import { logger } from '../lib/logger';
+import { assertDepositOpen, lockLease } from '../lib/payments';
 
 const schema = z.object({
   target: z.enum(['invoice', 'deposit']),
@@ -38,6 +39,10 @@ export const handler = route(async (event) => {
   if (receivedOn > sastToday()) throw badRequest('A payment cannot be received in the future.');
 
   const result = await withTransaction(async (run): Promise<Outcome> => {
+    // The lease first, as every path that records money does. Locking the invoice first, the
+    // payment insert then waited on the lease for its foreign key while allocatePayment held
+    // the lease and waited on the invoice: a deadlock.
+    await lockLease(run, leaseId);
     if (input.idempotencyKey) {
       const [seen] = await run<{ result: Outcome }>(
         'select result from request_key where key = $1 and lease_id = $2',
@@ -49,6 +54,7 @@ export const handler = route(async (event) => {
 
     let outcome: Outcome;
     if (input.target === 'deposit') {
+      await assertDepositOpen(run, leaseId);
       await run(
         `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
          values ($1, 'received', $2, $3, $4)`,

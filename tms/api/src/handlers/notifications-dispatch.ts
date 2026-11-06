@@ -1,3 +1,4 @@
+import { alert } from '../lib/alerts';
 import { query } from '../lib/db';
 import { jobLogger } from '../lib/logger';
 import { sendWhatsapp, whatsappConfig } from '../lib/whatsapp';
@@ -45,6 +46,7 @@ interface Pending {
   body: string;
   attempts: number;
   stale: boolean;
+  category?: string;
 }
 
 type Sender = (row: Pending) => Promise<void>;
@@ -149,8 +151,10 @@ export const claimBatch = () =>
          limit ${BATCH}
          for update skip locked
       )
-      returning id, channel, recipient_to, subject, body, attempts,
-                created_at < now() - interval '${STALE_AFTER_HOURS} hours' as stale`,
+      returning id, channel, recipient_to, subject, body, attempts, category,
+                -- A legal notice (a letter of demand, notice served) is never old news: the
+                -- deadlines in it run from the day it was given, so it is sent however late.
+                category <> 'deadline' and created_at < now() - interval '${STALE_AFTER_HOURS} hours' as stale`,
   );
 
 /** Runs every few minutes. Claims a batch, then sends or parks each row on its own merits. */
@@ -188,7 +192,18 @@ export const handler = async () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const parked = (error as { skip?: boolean }).skip === true;
-      const exhausted = row.attempts >= MAX_ATTEMPTS;
+      // A legal notice is never given up on: it keeps retrying every few hours, and whoever
+      // runs the service is told, so it can be fixed or the notice served another way.
+      const legal = row.category === 'deadline';
+      const exhausted = row.attempts >= MAX_ATTEMPTS && !legal;
+      if (legal && !parked && row.attempts >= MAX_ATTEMPTS) {
+        await alert(
+          'notification-deadline-failing',
+          'A legal notice is not being delivered',
+          `Notification ${row.id} (a deadline notice) has failed ${row.attempts} times and is still being retried.\n\n` +
+            `Last error: ${message.slice(0, 500)}\n\nFix the mail settings, or serve the notice another way.`,
+        );
+      }
       await query(
         `update notification
             set status = $2, last_error = $3,

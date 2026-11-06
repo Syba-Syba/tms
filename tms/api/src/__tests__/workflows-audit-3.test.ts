@@ -406,8 +406,9 @@ describe('bug 7: withdrawing a notice', () => {
     const { lease } = await leaseFor({ start: plus(-300), end: plus(300) });
     const ids = [await monthInvoice(lease, plus(40)), await monthInvoice(lease, dates.nextMonthStart(plus(40)))];
     const before = await invoiceState(ids);
+    // The landlord's own notice: only the party who gave a notice withdraws it.
     const served = await call('POST', `/leases/${lease}/termination`, {
-      body: { initiatedBy: 'tenant', reason: 'early_tenant' },
+      body: { initiatedBy: 'landlord', reason: 'breach_by_tenant' },
     });
     expect(served.status).toBe(201);
     expect(served.body.invoicesAdjusted).toBeGreaterThan(0);
@@ -422,6 +423,8 @@ describe('bug 7: withdrawing a notice', () => {
   it('is refused once the end date has arrived, after settlement, and for a stranger', async () => {
     const { lease } = await leaseFor({ start: plus(-300), end: plus(300) });
     const ended = await termination(lease, today());
+    // The landlord's own notice, so the landlord is the one who may withdraw it.
+    await db.query(`update termination set initiated_by = 'landlord', reason = 'breach_by_tenant' where id = $1`, [ended]);
     expect((await call('POST', `/terminations/${ended}/withdraw`)).status).toBe(409);
     await db.query(`update termination set status = 'settled', effective_on = $2 where id = $1`, [ended, plus(5)]);
     expect((await call('POST', `/terminations/${ended}/withdraw`)).status).toBe(409);

@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   DataTable,
   Drawer,
   Input,
@@ -58,6 +59,7 @@ export function LandlordQueue() {
   const [viewingDocs, setViewingDocs] = useState<ApplicationSummary | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [generatingFor, setGeneratingFor] = useState<ApplicationSummary | null>(null);
+  const [withdrawing, setWithdrawing] = useState<ApplicationSummary | null>(null);
   const [terms, setTerms] = useState({ startDate: '', months: '12', escalationPct: '8' });
   const toast = useToast();
   const navigate = useNavigate();
@@ -94,6 +96,25 @@ export function LandlordQueue() {
     }
   };
 
+  // An approved applicant who went silent held the unit for good. Allowed until the lease is signed.
+  const withdraw = async (item: ApplicationSummary) => {
+    if (deciding) return;
+    setDeciding(item.id);
+    try {
+      await api.post(`/applications/${item.id}/withdraw`, {});
+      toast.show({ title: 'Application withdrawn', tone: 'info' });
+      setWithdrawing(null);
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    } catch (error) {
+      toast.show({ title: 'Not withdrawn', description: humanError(error), tone: 'danger' });
+    } finally {
+      setDeciding(null);
+    }
+  };
+  const withdrawable = (item: ApplicationSummary) =>
+    !item.leaseId || item.leaseStatus === 'draft' || item.leaseStatus === 'out_for_signature';
+
   /** The same buttons in the laptop table and on the phone cards. */
   const actionsFor = (item: ApplicationSummary) => {
     if (status === 'submitted') {
@@ -110,7 +131,12 @@ export function LandlordQueue() {
     }
     if (status === 'approved') {
       return (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {withdrawable(item) ? (
+            <Button size="sm" variant="ghost" disabled={deciding !== null} onClick={() => setWithdrawing(item)}>
+              Withdraw
+            </Button>
+          ) : null}
           {item.leaseId ? (
             <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
               {item.leaseStatus === 'active' ? 'Open lease' : 'Continue signing'}
@@ -313,6 +339,16 @@ export function LandlordQueue() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!withdrawing}
+        onOpenChange={(next) => !next && setWithdrawing(null)}
+        title={withdrawing ? `Withdraw ${withdrawing.applicant}'s application?` : 'Withdraw'}
+        description="The unit is freed, any unsigned lease is cancelled, and the applicant is told."
+        confirmLabel="Withdraw the application"
+        loading={deciding === withdrawing?.id}
+        onConfirm={() => withdrawing && withdraw(withdrawing)}
+      />
 
       <Modal
         open={!!generatingFor}

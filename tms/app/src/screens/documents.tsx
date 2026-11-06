@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, Card, CardBody, EmptyState, PageHeader } from '@hlonie/toolbox/ui';
+import { Badge, Button, Card, CardBody, EmptyState, PageHeader, Select } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
 import { Money } from '../components/money';
 import { formatDate, status } from '../lib/format';
@@ -21,12 +22,17 @@ interface Lease {
     disputed this is the list a tribunal asks for. */
 export function Documents() {
   const openDocument = useOpenDocument();
+  // Ended leases too: settling the deposit ends the lease, and its statement appears only then.
   const list = useQuery({
-    queryKey: ['leases'],
-    queryFn: () => api.get<{ items: { id: string; status: string }[] }>('/leases'),
+    queryKey: ['leases', 'with-ended'],
+    queryFn: () =>
+      api.get<{ items: { id: string; ref: string; status: string }[] }>('/leases', { query: { include: 'ended' } }),
   });
-  // The current tenancy's documents, not an accepted renewal's that has not started yet.
-  const leaseId = currentLease(list.data?.items ?? [])?.id;
+  const [picked, setPicked] = useState<string | null>(null);
+  const items = list.data?.items ?? [];
+  // The current tenancy's documents, not an accepted renewal's that has not started yet. An
+  // earlier lease (the move-in report sits on the first lease of a renewed chain) can be picked.
+  const leaseId = (picked && items.some((item) => item.id === picked) ? picked : null) ?? currentLease(items)?.id;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],
@@ -61,6 +67,19 @@ export function Documents() {
         title="Documents"
         description="Your lease, every inspection and every invoice. Keep these; they are what settles a dispute."
       />
+
+      {items.length > 1 ? (
+        <Select
+          className="mb-5"
+          aria-label="Lease"
+          value={leaseId ?? ''}
+          onChange={(event) => setPicked(event.target.value)}
+          options={items.map((item) => ({
+            value: item.id,
+            label: `${item.ref}${item.status === 'terminated' ? ' (ended)' : item.status === 'active' ? ' (current)' : ''}`,
+          }))}
+        />
+      ) : null}
 
       <p className="label mb-2">Lease</p>
       <Card className="mb-5">

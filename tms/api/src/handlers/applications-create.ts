@@ -116,10 +116,13 @@ export const handler = route(async (event) => {
     );
     if (leased) throw conflict('That unit already has a lease in progress.');
 
+    // The figures this landlord decides on stay with this application. The applicant row is
+    // shared by every landlord the person applies to, and the next application rewrites it.
     const [application] = await run<{ id: string; status: string }>(
       `insert into application
-         (unit_id, applicant_id, status, occupants, preferred_move_in, pets, notes, submitted_at)
-       values ($1, $2, 'submitted', $3, $4, $5, $6, now())
+         (unit_id, applicant_id, status, occupants, preferred_move_in, pets, notes, submitted_at,
+          monthly_income_cents, employment_status, employer)
+       values ($1, $2, 'submitted', $3, $4, $5, $6, now(), $7, $8, $9)
        returning id, status`,
       [
         input.unitId,
@@ -128,6 +131,9 @@ export const handler = route(async (event) => {
         input.preferredMoveIn,
         input.pets,
         input.notes ?? null,
+        input.monthlyIncomeCents,
+        input.employmentStatus,
+        input.employer ?? null,
       ],
     );
 

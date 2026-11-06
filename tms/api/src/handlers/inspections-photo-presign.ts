@@ -4,13 +4,14 @@ import { query } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
+import { roomName } from '../domain/inspection';
 
 /** Unconfirmed photo uploads one inspection may have in the last hour. */
 export const MAX_PENDING_INSPECTION_PHOTOS = 20;
 
 const schema = z.object({
-  room: z.string().min(1),
-  item: z.string().min(1),
+  room: roomName,
+  item: roomName,
   contentType: z.enum(['image/jpeg', 'image/png']),
   sizeBytes: z.number().int().positive().max(10 * 1024 * 1024),
 });

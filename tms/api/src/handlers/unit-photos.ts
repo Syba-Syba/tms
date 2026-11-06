@@ -4,6 +4,7 @@ import { audit } from '../lib/audit';
 import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
+import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
 import { storage } from '../lib/storage';
 
 export const MAX_UNIT_PHOTOS = 12;
@@ -50,6 +51,7 @@ export const handler = route(async (event) => {
   }
 
   const input = parseBody(event, schema);
+  requireUploadLinkAllowance(person.sub);
   // Abandoned uploads count for an hour, so a loop cannot pile up unconfirmed rows.
   const [count] = await query<{ n: string }>(
     `select count(*)::text as n from unit_photo
@@ -66,5 +68,6 @@ export const handler = route(async (event) => {
      returning id`,
     [unitId, key, input.contentType, input.sizeBytes],
   );
+  uploadLinksByAccount.record(person.sub);
   return json(201, { photoId: photo!.id, uploadUrl, key, expiresInSeconds: 300 });
 });

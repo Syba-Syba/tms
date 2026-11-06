@@ -22,6 +22,8 @@ landlord sign-up, a PayFast sandbox checkout, a backup, the restore check and a 
 ## First start
 
     # on the server, as a user in the docker group
+    docker version --format '{{.Server.Version}}'          # 27 or later, for IPv6 on the edge
+                                                           # network (get.docker.com installs it)
     git clone https://github.com/Syba-Syba/tms.git && cd tms
     openssl rand -base64 48; openssl rand -base64 48       # AUTH_SECRET and STORAGE_SECRET
     openssl rand -base64 32                                # three times: DB_PASSWORD,

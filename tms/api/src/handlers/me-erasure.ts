@@ -29,10 +29,11 @@ export const handler = route(async (event) => {
   // No landlord holds anything about them: never applied, or every landlord has already erased.
   if (!applicant || applicant.applications === 0) {
     await erasePerson(person.sub, { sub: person.sub, role: 'tenant' });
+    // Their note is not kept: the account it would describe is already gone.
     await query(
-      `insert into privacy_request (person_sub, note, status, decided_by, decided_at, response)
-       values ($1, $2, 'completed', $1, now(), 'Account deleted. There were no applications or leases to keep.')`,
-      [person.sub, input.note ?? null],
+      `insert into privacy_request (person_sub, status, decided_by, decided_at, response)
+       values ($1, 'completed', $1, now(), 'Account deleted. There were no applications or leases to keep.')`,
+      [person.sub],
     );
     return json(200, { status: 'completed' });
   }

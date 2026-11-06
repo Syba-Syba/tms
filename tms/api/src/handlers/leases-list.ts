@@ -1,6 +1,7 @@
 import { caller } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, route } from '../lib/http';
+import { sastToday } from '../domain/dates';
 
 /**
  * Everything the caller is a party to. Without this the app has no way to discover a lease id,
@@ -9,6 +10,9 @@ import { json, route } from '../lib/http';
 export const handler = route(async (event) => {
   const person = caller(event);
   const isLandlord = person.groups.includes('landlord');
+  // Ended tenancies only on request: their deposit statement and documents must stay reachable,
+  // but the dashboard counts every row it gets as a running lease.
+  const includeEnded = event.queryStringParameters?.include === 'ended';
 
   const rows = await query<{
     id: string;
@@ -23,8 +27,11 @@ export const handler = route(async (event) => {
     deposit_balance: string;
     deposit_owing: string;
     outstanding: string;
+    overdue: string;
+    termination_id: string | null;
     open_tickets: string;
     termination_effective_on: string | null;
+    awaiting_tenant: boolean;
     renewal_status: string | null;
     previous_lease_id: string | null;
   }>(
@@ -58,10 +65,20 @@ export const handler = route(async (event) => {
                                                            where pay.invoice_id = i.id), 0))
                         from invoice i
                        where i.lease_id = l.id and i.status in ('issued', 'part_paid')), 0)::text as outstanding,
+            -- The same, for invoices already past their due date. Next month's rent is issued on
+            -- the 25th and is not late until it falls due.
+            coalesce((select sum(i.total_cents - coalesce((select sum(pay.amount_cents)
+                                                            from payment pay
+                                                           where pay.invoice_id = i.id), 0))
+                        from invoice i
+                       where i.lease_id = l.id and i.status in ('issued', 'part_paid')
+                         and i.due_on < $3::date), 0)::text as overdue,
+            t.id as termination_id,
             (select count(*) from ticket t
               where t.lease_id = l.id
                 and t.status not in ('closed', 'cancelled'))::text as open_tickets,
             t.effective_on::text as termination_effective_on,
+            coalesce(t.needs_tenant_confirmation and t.tenant_confirmed_at is null, false) as awaiting_tenant,
             r.status as renewal_status
        from lease l
        join unit u on u.id = l.unit_id
@@ -70,11 +87,11 @@ export const handler = route(async (event) => {
        join applicant a on a.id = l.applicant_id
        left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
        left join renewal r on r.lease_id = l.id and r.status = 'offered'
-      where l.status in ('active', 'scheduled', 'out_for_signature')
+      where (l.status in ('active', 'scheduled', 'out_for_signature') or ($4 and l.status = 'terminated'))
         -- Any member of the landlord's team, not only the owner: agents saw an empty list.
         and (($1 and exists (select 1 from landlord_member m where m.landlord_id = ll.id and m.sub = $2)) or a.cognito_sub = $2)
       order by l.start_date desc`,
-    [isLandlord, person.sub],
+    [isLandlord, person.sub, sastToday(), includeEnded],
   );
 
   return json(200, {
@@ -95,8 +112,13 @@ export const handler = route(async (event) => {
       depositOwingCents:
         row.status === 'active' || (row.status === 'scheduled' && !row.previous_lease_id) ? Number(row.deposit_owing) : 0,
       outstandingCents: Math.max(0, Number(row.outstanding)),
+      overdueCents: Math.max(0, Number(row.overdue)),
+      previousLeaseId: row.previous_lease_id,
+      terminationId: row.termination_id,
       openTickets: Number(row.open_tickets),
       terminationEffectiveOn: row.termination_effective_on,
+      // A notice the landlord recorded for the tenant does not stand until the tenant confirms it.
+      awaitingTenant: row.awaiting_tenant,
       renewalOffered: row.renewal_status === 'offered',
     })),
   });

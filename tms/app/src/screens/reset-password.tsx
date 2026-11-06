@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
@@ -14,6 +15,7 @@ export function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const mismatch = confirm.length > 0 && confirm !== password;
   const ready = password.length >= 8 && password === confirm;
@@ -32,6 +34,8 @@ export function ResetPassword() {
         return;
       }
       await startSession(result.token, result.user);
+      // A new identity: nothing cached for whoever was signed in before may be shown to this one.
+      queryClient.clear();
       toast.show({ title: 'Password changed', description: 'You are signed in.', tone: 'success' });
       navigate('/', { replace: true });
     } catch (error) {

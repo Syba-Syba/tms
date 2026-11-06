@@ -5,7 +5,17 @@ import { badRequest, json, route } from '../lib/http';
 import { EXPENSE_CATEGORIES, taxYear, taxYearOf } from '../domain/expense';
 import { sastToday } from '../domain/dates';
 
-const isDate = (value: string | undefined): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+/**
+ * A real calendar day: 2026-02-31 matches the shape but is not one, and Postgres refused it with a 500.
+ * Year 0000 passes the round trip in JavaScript but not in Postgres, so years start at 1900.
+ */
+const isDate = (value: string | undefined): value is string =>
+  Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= '1900-01-01' && !Number.isNaN(Date.parse(value)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value);
+
+/** The longest period one report covers. Each month is two queries, and the screens ask for a year at most. */
+const MAX_MONTHS = 24;
+const monthsSpanned = (from: string, to: string) =>
+  (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7)) + 1;
 
 interface Row {
   propertyId: string | null;
@@ -33,6 +43,7 @@ export const handler = route(async (event) => {
   const from = params.from ?? fallback.from;
   const to = params.to ?? fallback.to;
   if (!isDate(from) || !isDate(to) || from > to) throw badRequest('Give a from and to date, YYYY-MM-DD, in order.');
+  if (monthsSpanned(from, to) > MAX_MONTHS) throw badRequest(`A report covers ${MAX_MONTHS} months at most.`);
 
   const properties = await query<{ id: string; name: string }>(
     'select id, name from property where landlord_id = $1 order by name',

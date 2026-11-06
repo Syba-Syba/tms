@@ -141,6 +141,8 @@ describe('turning two-step on', () => {
 
 describe('changing the bank account', () => {
   it('needs a current code to replace the account on file', async () => {
+    // Two-step must have been on for two days before it can approve a bank change.
+    await db.query(`update local_credential set totp_enabled_at = now() - interval '3 days' where sub = 'sub-landlord'`);
     const without = await call('PUT', '/landlord', OWNER, bank('1234567890'));
     expect(without.body.error.code).toBe('code_required');
     const wrong = await call('PUT', '/landlord', OWNER, { ...bank('1234567890'), code: '000000' });

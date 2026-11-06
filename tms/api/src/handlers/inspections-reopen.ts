@@ -2,6 +2,7 @@ import { requireLeaseAccessVia } from '../lib/access';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, route } from '../lib/http';
+import { removeDraft, withdrawDraft } from './inspections-render';
 
 /**
  * Returns an inspection awaiting signatures to 'in_progress', so a disputed finding can be
@@ -26,7 +27,7 @@ export const handler = route(async (event) => {
     ]);
     if (!inspection) throw notFound('Inspection');
     // Already open: a repeat tap is not an error.
-    if (inspection.status === 'in_progress') return { changed: false, withdrawn: [] as string[] };
+    if (inspection.status === 'in_progress') return { changed: false, withdrawn: [] as string[], draft: null };
     if (inspection.status !== 'awaiting_signatures') {
       throw conflict(`This inspection is ${inspection.status} and can no longer be reopened.`);
     }
@@ -45,10 +46,7 @@ export const handler = route(async (event) => {
       'delete from inspection_signature where inspection_id = $1 returning party',
       [inspectionId],
     );
-    await run(
-      `update inspection set status = 'in_progress', draft_s3_key = null, draft_sha256 = null where id = $1`,
-      [inspectionId],
-    );
+    const draft = await withdrawDraft(run, inspectionId, `status = 'in_progress', `);
     // Withdrawing someone's signature is a step either side may later need to account for.
     await audit(
       {
@@ -61,8 +59,9 @@ export const handler = route(async (event) => {
       },
       run,
     );
-    return { changed: true, withdrawn: withdrawn.map((row) => row.party) };
+    return { changed: true, withdrawn: withdrawn.map((row) => row.party), draft };
   });
+  await removeDraft(result.draft);
 
   return json(200, { status: 'in_progress', signaturesWithdrawn: result.withdrawn });
 });

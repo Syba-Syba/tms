@@ -6,6 +6,7 @@ import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { json, parseBody, route } from '../lib/http';
 import { assertOwnedPlace } from '../lib/landlord-scope';
+import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
 import { storage } from '../lib/storage';
 import { expenseSchema, slipSchema } from '../domain/expense';
 
@@ -19,6 +20,8 @@ export const handler = route(async (event) => {
   const landlordId = await landlordIdFor(person);
   const input = parseBody(event, schema);
   await assertOwnedPlace(landlordId, input.propertyId, input.unitId);
+  // A slip is an upload link like any other, and counts against the same hourly share.
+  if (input.slip) requireUploadLinkAllowance(person.sub);
 
   const slipKey = input.slip ? `expenses/${landlordId}/${randomUUID()}.${EXTENSION[input.slip.contentType]}` : null;
   const [expense] = await query<{ id: string }>(
@@ -31,6 +34,7 @@ export const handler = route(async (event) => {
     ],
   );
   const uploadUrl = input.slip && slipKey ? await storage().presignPut(slipKey, input.slip.contentType, 300) : null;
+  if (uploadUrl) uploadLinksByAccount.record(person.sub);
 
   await audit({
     actorSub: person.sub,

@@ -39,7 +39,7 @@ export const handler = route(async (event) => {
   // A tenant serves their own notice in the app. A tenant who gave it on paper or by email
   // (CPA s14 needs it in writing, not in this app) has it recorded by the landlord, dated the
   // day it was received. Without that, a tenant cancelling early by letter could not be
-  // entered at all. Mutual needs both, so the landlord records it.
+  // entered at all. Mutual needs both: the landlord records it and the tenant confirms it.
   if (input.initiatedBy === 'tenant' && !access.isTenant && !access.isLandlord) {
     throw forbidden('Only the tenant or the landlord records the tenant’s notice.');
   }
@@ -79,6 +79,12 @@ export const handler = route(async (event) => {
   if (noticeGivenOn < addDaysIso(today, -LANDLORD_BACKDATE_DAYS)) {
     throw badRequest(`A notice can be recorded up to ${LANDLORD_BACKDATE_DAYS} days after it was given, not earlier.`);
   }
+  // A mutual notice, or a tenant's notice dated before today, entered by the landlord rests on
+  // the landlord's word alone, and either could end a fixed term the same day. The tenant has
+  // to confirm it in the app before the deposit is settled, and until then may withdraw it.
+  const recordedByTenant = access.isTenant && !access.isLandlord;
+  const needsTenantConfirmation =
+    !recordedByTenant && (input.initiatedBy === 'mutual' || (input.initiatedBy === 'tenant' && noticeGivenOn < today));
 
   const result = await withTransaction(async (run) => {
     const [lease] = await run<{ status: string; end_date: string }>(
@@ -129,11 +135,19 @@ export const handler = route(async (event) => {
     if (isoDate(effective) < today) {
       throw badRequest(`The end date cannot be before today (${today}).`);
     }
+    // CPA s14(3)(b): the penalty is for cancelling a fixed term before it expires. A lease
+    // already month to month, or a notice that runs to the end date anyway, cuts nothing short.
+    if (penaltyCents > 0 && (leaseEnd <= notice || effective >= leaseEnd)) {
+      throw badRequest('A cancellation penalty applies only when a fixed term is cancelled before its end date.', {
+        penaltyCents: 'Leave it at zero.',
+      });
+    }
 
     const [termination] = await run<{ id: string }>(
       `insert into termination
-         (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days, penalty_cents)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days, penalty_cents,
+          needs_tenant_confirmation)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (lease_id) where status <> 'withdrawn' do nothing
        returning id`,
       [
@@ -144,6 +158,7 @@ export const handler = route(async (event) => {
         isoDate(effective),
         noticeDays,
         penaltyCents,
+        needsTenantConfirmation,
       ],
     );
     if (!termination) throw conflict('Notice has already been served on this lease.');
@@ -184,6 +199,7 @@ export const handler = route(async (event) => {
       invoicesAdjusted: trimmed,
       chargesMoved,
       renewalCancelled: renewed?.id ?? null,
+      awaitingTenant: needsTenantConfirmation,
     };
   });
 
@@ -213,7 +229,7 @@ export const handler = route(async (event) => {
     await notify({
       leaseId,
       to: { sub: parties.tenant_sub, email: parties.tenant_email, phone: parties.tenant_phone },
-      kind: 'notice_served',
+      kind: needsTenantConfirmation ? 'notice_confirm_requested' : 'notice_served',
       dedupeKey: `notice_served:${result.id}:tenant`,
       data: noticeData,
     });
@@ -235,7 +251,8 @@ export const handler = route(async (event) => {
     entity: 'termination',
     entityId: result.id,
     detail: {
-      recordedBy: access.isTenant && !access.isLandlord ? 'tenant' : 'landlord',
+      recordedBy: recordedByTenant ? 'tenant' : 'landlord',
+      needsTenantConfirmation,
       reason: input.reason,
       initiatedBy: input.initiatedBy,
       noticeGivenOn,

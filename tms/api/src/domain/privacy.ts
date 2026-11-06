@@ -28,17 +28,25 @@ const addYears = (iso: string, years: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+/** Lease states in which the tenancy is still running, whatever the end date says. */
+const LIVE = new Set(['active', 'scheduled', 'out_for_signature']);
+
+/** Stands for "while the tenancy runs, and five years after": no date erasure could pass. */
+export const STILL_RUNNING = '9999-12-31';
+
 /**
  * The date until which a person's records must be kept, or null when nothing holds them.
- * A lease that never took effect (draft or cancelled) holds nothing.
+ * A lease that never took effect (draft or cancelled) holds nothing. A live lease holds them
+ * without end: a tenant holding over past the end date (month to month) is still a tenant.
+ * A terminated lease counts from when the termination took effect, which is when the tenancy
+ * really ended: earlier than the end date for an early exit, later for a holdover.
  */
 export function retainedUntil(leases: LeaseForRetention[]): string | null {
   let latest: string | null = null;
   for (const lease of leases) {
     if (lease.status === 'draft' || lease.status === 'cancelled') continue;
-    const ended = lease.terminationEffectiveOn && lease.terminationEffectiveOn < lease.endDate
-      ? lease.terminationEffectiveOn
-      : lease.endDate;
+    if (LIVE.has(lease.status)) return STILL_RUNNING;
+    const ended = lease.terminationEffectiveOn ?? lease.endDate;
     const until = addYears(ended, LEASE_RETENTION_YEARS);
     if (!latest || until > latest) latest = until;
   }
@@ -49,6 +57,13 @@ export function retainedUntil(leases: LeaseForRetention[]): string | null {
 export function erasureBlock(leases: LeaseForRetention[], today: string): string | null {
   const until = retainedUntil(leases);
   if (!until || until <= today) return null;
+  if (until === STILL_RUNNING) {
+    return (
+      'Your tenancy is still running, and your lease records must be kept until it ends and for ' +
+      'five years after: the law requires a landlord to keep rent, deposit and lease records for ' +
+      'five years after a tenancy ends.'
+    );
+  }
   return (
     `Your lease records must be kept until ${until}: the law requires a landlord to keep rent, ` +
     'deposit and lease records for five years after a tenancy ends. They are used for nothing ' +

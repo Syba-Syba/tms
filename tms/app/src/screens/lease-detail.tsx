@@ -11,6 +11,7 @@ import { ChargesPanel, type Charge } from '../components/charges-panel';
 import { Money } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
+import { addBusinessDays } from '../lib/business-days';
 import { formatDate, status, formatInstant } from '../lib/format';
 import { randomId } from '../lib/ids';
 import { useOpenDocument } from '../lib/open-document';
@@ -25,7 +26,14 @@ interface Lease {
   charges: Charge[];
   viewer: { isLandlord: boolean; isTenant: boolean };
   inspections: { id: string; kind: string; status: string; scheduledFor: string; findings: number; flagged: number; reportKey: string | null }[];
-  termination: { id: string; status: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null; deductions: number; statementKey: string | null } | null;
+  termination: {
+    id: string; status: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null;
+    deductions: number; statementKey: string | null;
+    /** Who gave the notice; only they may withdraw it, either party for a mutual one. */
+    initiatedBy?: 'tenant' | 'landlord' | 'mutual';
+    /** Recorded by the landlord for the tenant and not yet confirmed by them. */
+    awaitingTenant?: boolean;
+  } | null;
   renewal: { id: string; respondBy: string; newStartDate: string; newEndDate: string; newRentCents: number; depositTopUpCents: number } | null;
   renewedBy: { id: string; ref: string; status: string; startDate: string; signaturesOnFile: number } | null;
   signatures: { party: 'tenant' | 'landlord'; signedAt: string }[];
@@ -34,24 +42,60 @@ interface Lease {
 
 /**
  * What the server allows for a notice on this lease, so the form says it before the server
- * refuses it. A lease with an accepted renewal takes no notice; one past its end date runs
- * month to month and needs 20 business days; a one-sided notice ends by the end date at the
- * latest, an agreed or month-to-month one at most a month after it.
+ * refuses it. A lease whose renewal is signed takes no notice; an accepted renewal not yet
+ * signed is cancelled by the notice. One past its end date runs month to month and needs 20
+ * business days; so does a landlord's end-of-term notice given with fewer than 40 business days
+ * left (CPA s14(2)(c)), which may then run up to a month past the end date. Any other
+ * one-sided notice ends by the end date at the latest, an agreed one at most a month after it.
  */
 export function noticeRules(
   lease: Pick<Lease, 'status' | 'endDate' | 'renewedBy'>,
   reason: string,
   today: string,
+  notice: { initiatedBy?: 'tenant' | 'landlord' | 'mutual'; givenOn?: string } = {},
 ) {
-  const renewalAccepted = lease.renewedBy?.status === 'scheduled';
-  const monthToMonth = lease.endDate <= today;
-  const latestEffectiveOn = reason === 'mutual' || monthToMonth ? undefined : lease.endDate;
+  const givenOn = notice.givenOn || today;
+  const scheduledRenewal = lease.renewedBy?.status === 'scheduled';
+  const renewalAccepted = scheduledRenewal && lease.renewedBy!.signaturesOnFile === 2;
+  const renewalUnsigned = scheduledRenewal && !renewalAccepted;
+  const monthToMonth = lease.endDate <= givenOn;
+  const landlordLate =
+    reason === 'end_of_term' &&
+    notice.initiatedBy === 'landlord' &&
+    !monthToMonth &&
+    addBusinessDays(givenOn, 40) > lease.endDate;
+  let latestEffectiveOn: string | undefined = lease.endDate;
+  if (reason === 'mutual' || monthToMonth) latestEffectiveOn = undefined;
+  else if (landlordLate) {
+    const afterNotice = addBusinessDays(givenOn, 20);
+    latestEffectiveOn = addDays(afterNotice > lease.endDate ? afterNotice : lease.endDate, 31);
+  }
   return {
     canServe: lease.status === 'active' && !renewalAccepted,
     renewalAccepted,
+    renewalUnsigned,
     monthToMonth,
+    landlordLate,
     latestEffectiveOn,
   };
+}
+
+/** Whether this viewer may withdraw the notice: the party who gave it, either for a mutual one,
+    before the lease ends. A tenant may still undo one they never confirmed. Mirrors the server. */
+export function canWithdrawNotice(
+  lease: Pick<Lease, 'status' | 'termination' | 'viewer'>,
+  today: string,
+): boolean {
+  const termination = lease.termination;
+  if (!termination || lease.status !== 'active') return false;
+  if (termination.status === 'withdrawn' || termination.status === 'settled') return false;
+  const party = lease.viewer.isLandlord ? 'landlord' : lease.viewer.isTenant ? 'tenant' : null;
+  if (!party || !termination.initiatedBy) return false;
+  const awaiting = Boolean(termination.awaitingTenant);
+  // As on the server: a landlord may undo a tenant's notice they recorded until the tenant confirms it.
+  const landlordUndoesOwnEntry = party === 'landlord' && awaiting;
+  if (termination.initiatedBy !== 'mutual' && termination.initiatedBy !== party && !landlordUndoesOwnEntry) return false;
+  return today < termination.effectiveOn || awaiting;
 }
 
 /** The invoices a payment can be recorded against. A void invoice is cancelled, and
@@ -79,6 +123,7 @@ export function LeaseDetail() {
   // Serving notice starts the end of a tenancy, so it takes a deliberate second step.
   const [noticeConfirmed, setNoticeConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lease', leaseId],
@@ -115,6 +160,14 @@ export function LeaseDetail() {
     setNotice({ reason, givenOn: today, effectiveOn: '', penaltyCents: 0 });
     setShowNotice(true);
   };
+  const openPayment = () => {
+    setPaymentKey(randomId());
+    // Rent, not the deposit, is what a quick entry usually is: start on the oldest open invoice.
+    // With none open, nothing is chosen and Save waits for one.
+    const oldest = [...open].sort((a, b) => a.period.localeCompare(b.period))[0];
+    setPayment({ amountCents: 0, reference: '', invoiceId: oldest?.id ?? '' });
+    setShowPayment(true);
+  };
   const noticeReasons = landlord
     ? [
         { value: 'end_of_term', label: 'Landlord: ending at the end of the term' },
@@ -134,7 +187,13 @@ export function LeaseDetail() {
     if (notice.reason === 'mutual') return 'mutual';
     return notice.reason === 'early_tenant' || notice.reason === 'tenant_end_of_term' ? 'tenant' : 'landlord';
   };
-  const rules = noticeRules(data, notice.reason, today);
+  // Only a tenant's written notice may be backdated; the server dates the rest today.
+  const backdatable = landlord && initiatedBy() === 'tenant';
+  const noticeGivenOn = backdatable ? notice.givenOn : today;
+  const rules = noticeRules(data, notice.reason, today, { initiatedBy: initiatedBy(), givenOn: noticeGivenOn });
+  const withdrawable = canWithdrawNotice(data, today);
+  // A signed renewal is the one case that is not re-offered: unsigned, a new offer replaces it.
+  const renewalSigned = data.renewedBy?.status === 'scheduled' && data.renewedBy.signaturesOnFile === 2;
 
   return (
     <main className={PAGE.reading}>
@@ -142,15 +201,10 @@ export function LeaseDetail() {
 
       {landlord && !['terminated', 'cancelled', 'scheduled'].includes(data.status) ? (
         <div className="mb-4 flex flex-wrap gap-2">
-          <Button
-            onClick={() => {
-              setPaymentKey(randomId());
-              setShowPayment(true);
-            }}
-          >
+          <Button onClick={openPayment}>
             Record a payment
           </Button>
-          {!data.renewal && !data.termination ? (
+          {!data.renewal && !data.termination && !renewalSigned ? (
             <Button variant="outline" onClick={() => setShowRenewal(true)}>Offer a renewal</Button>
           ) : null}
           {data.termination ? (
@@ -159,6 +213,25 @@ export function LeaseDetail() {
               className="rounded-sm border border-line bg-surface px-4 py-2 text-body font-medium text-ink"
             >
               Settle the deposit
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Settling ends the lease, which hid the only way back to the settlement and statement. */}
+      {data.status === 'terminated' && data.termination ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {data.termination.statementKey ? (
+            <Button variant="outline" onClick={() => openDocument(data.termination!.statementKey!)}>
+              Deposit statement
+            </Button>
+          ) : null}
+          {landlord ? (
+            <Link
+              to={`/terminations/${data.termination.id}`}
+              className="rounded-sm border border-line bg-surface px-4 py-2 text-body font-medium text-ink"
+            >
+              Deposit settlement
             </Link>
           ) : null}
         </div>
@@ -195,17 +268,19 @@ export function LeaseDetail() {
           className="mb-4"
         >
           {data.renewedBy.signaturesOnFile === 2 ? (
-            'Both of you have signed the new lease.'
+            <>
+              Both of you have signed the new lease, so notice cannot be given on this one. Once the
+              new lease starts on {formatDate(data.renewedBy.startDate)}, notice is given on that one.
+            </>
           ) : (
             <>
               The renewal was accepted, but it only starts once you have both signed it.{' '}
               <Link to={`/lease/${data.renewedBy.id}`} className="font-bold text-brand-500">
                 Sign the new lease
               </Link>
+              . Until then notice can still be given on this lease, and giving it cancels the renewal.
             </>
-          )}{' '}
-          Because the renewal was accepted, notice cannot be given on this lease. Once the new
-          lease starts on {formatDate(data.renewedBy.startDate)}, notice is given on that one.
+          )}
         </Alert>
       ) : null}
 
@@ -332,6 +407,13 @@ export function LeaseDetail() {
           final three days, with both of you there. Skip it and the law treats the place as
           undamaged, so nothing can be deducted.
           {data.termination.refundDueBy ? ` Refund due by ${formatDate(data.termination.refundDueBy)}.` : ''}
+          {withdrawable ? (
+            <div className="mt-3">
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmWithdraw(true)}>
+                Withdraw the notice
+              </Button>
+            </div>
+          ) : null}
         </Alert>
       ) : null}
 
@@ -382,8 +464,9 @@ export function LeaseDetail() {
         charges={data.charges}
         landlord={landlord}
         onChanged={() => {
+          // A charge can land on an open invoice: home, reports and the statement move too.
+          void invalidateMoneyCaches(queryClient);
           refetch();
-          queryClient.invalidateQueries({ queryKey: ['arrears', leaseId] });
         }}
       />
 
@@ -479,7 +562,9 @@ export function LeaseDetail() {
             value={payment.invoiceId}
             onChange={(e) => setPayment({ ...payment, invoiceId: e.target.value })}
             options={[
-              { value: '', label: 'Against the deposit' },
+              // A deliberate choice: an untouched default once credited rent to the deposit.
+              ...(payment.invoiceId === '' ? [{ value: '', label: 'Choose what this pays' }] : []),
+              { value: 'deposit', label: 'Against the deposit' },
               ...open.map((invoice) => ({
                 value: invoice.id,
                 label: `${invoice.period}, ${formatZar((invoice.totalCents - invoice.paidCents) / 100)} outstanding`,
@@ -504,16 +589,17 @@ export function LeaseDetail() {
           <Button
             block
             loading={busy}
-            disabled={payment.amountCents <= 0}
+            disabled={payment.amountCents <= 0 || payment.invoiceId === ''}
             onClick={() =>
               run(async () => {
+                const toDeposit = payment.invoiceId === 'deposit';
                 await api.post(`/leases/${leaseId}/payments`, {
-                  target: payment.invoiceId ? 'invoice' : 'deposit',
-                  invoiceId: payment.invoiceId || undefined,
+                  target: toDeposit ? 'deposit' : 'invoice',
+                  invoiceId: toDeposit ? undefined : payment.invoiceId,
                   amountCents: payment.amountCents,
                   method: 'eft',
                   reference: payment.reference || undefined,
-                  receivedOn: localToday(),
+                  receivedOn: today,
                   idempotencyKey: paymentKey,
                 });
                 setPaymentKey(randomId());
@@ -565,14 +651,13 @@ export function LeaseDetail() {
           <Select
             aria-label="Reason"
             value={notice.reason}
-            onChange={(e) => setNotice({ ...notice, reason: e.target.value })}
+            // A date picked for a tenant's letter does not carry over to a notice dated today.
+            onChange={(e) => setNotice({ ...notice, reason: e.target.value, givenOn: today })}
             options={noticeReasons}
           />
-          {landlord ? (
+          {backdatable ? (
             <label className="block space-y-1">
-              <span className="text-xs font-semibold text-ink-muted">
-                {initiatedBy() === 'tenant' ? 'Date the tenant’s notice reached you' : 'Date the notice was given'}
-              </span>
+              <span className="text-xs font-semibold text-ink-muted">Date the tenant’s notice reached you</span>
               <Input
                 type="date"
                 value={notice.givenOn}
@@ -607,13 +692,20 @@ export function LeaseDetail() {
             {rules.monthToMonth && notice.reason !== 'mutual'
               ? 'This lease has passed its end date and runs month to month, so 20 business days’ notice applies. '
               : ''}
+            {rules.landlordLate
+              ? 'Fewer than 40 business days are left on the lease, so it does not simply end on its end date: ' +
+                'it runs month to month past it, and 20 business days’ notice applies. '
+              : ''}
+            {rules.renewalUnsigned
+              ? 'The accepted renewal has not been signed, so giving notice cancels it. '
+              : ''}
             {notice.reason === 'early_tenant'
               ? 'Cancelling early needs 20 business days’ notice under the Consumer Protection Act. ' +
                 'The landlord may charge a reasonable cancellation penalty, deducted from the deposit at settlement.'
               : notice.reason === 'mutual'
                 ? 'An agreed end date can be any day from today, up to a month after the lease ends.'
                 : `The earliest lawful end date is worked out for you and cannot be brought forward${
-                    rules.latestEffectiveOn ? `, nor set after ${rules.latestEffectiveOn}` : ''
+                    rules.latestEffectiveOn ? `, nor set after ${formatDate(rules.latestEffectiveOn)}` : ''
                   }.`}
             {landlord ? ' A tenant’s notice must be in writing; keep the letter or email.' : ''}
           </p>
@@ -627,14 +719,14 @@ export function LeaseDetail() {
             block
             variant="danger"
             loading={busy}
-            disabled={!noticeConfirmed || !notice.reason || (landlord && !notice.givenOn)}
+            disabled={!noticeConfirmed || !notice.reason || (backdatable && !notice.givenOn)}
             onClick={() =>
               run(async () => {
                 const served = await api.post<{ effectiveOn: string }>(`/leases/${leaseId}/termination`, {
                   initiatedBy: initiatedBy(),
                   reason: notice.reason === 'tenant_end_of_term' ? 'end_of_term' : notice.reason,
-                  // The server dates a tenant's own notice today regardless.
-                  noticeGivenOn: landlord ? notice.givenOn : today,
+                  // Only a tenant's written notice, recorded by the landlord, carries an earlier date.
+                  noticeGivenOn,
                   effectiveOn: notice.effectiveOn || undefined,
                   penaltyCents: landlord && notice.reason === 'early_tenant' ? notice.penaltyCents : undefined,
                 });
@@ -647,6 +739,34 @@ export function LeaseDetail() {
             {landlord ? 'Record it' : 'Give notice'}
           </Button>
         </div>
+      </Modal>
+
+      <Modal
+        open={confirmWithdraw}
+        onOpenChange={(next) => !busy && setConfirmWithdraw(next)}
+        title="Withdraw the notice?"
+        description={
+          landlord
+            ? `${data.tenant}'s lease carries on as if notice had never been given. The tenant is told.`
+            : 'Your lease carries on as if notice had never been given. Your landlord is told.'
+        }
+      >
+        <Button
+          block
+          loading={busy}
+          onClick={() =>
+            run(async () => {
+              await api.post(`/terminations/${data.termination!.id}/withdraw`, {});
+              setConfirmWithdraw(false);
+              // Withdrawing re-rates invoices and lifts the end date everywhere it shows.
+              queryClient.invalidateQueries({ queryKey: ['leases'] });
+              queryClient.invalidateQueries({ queryKey: ['comparison', data.termination!.id] });
+              queryClient.invalidateQueries({ queryKey: ['settlement-preview', data.termination!.id] });
+            }, 'Notice withdrawn')
+          }
+        >
+          Withdraw the notice
+        </Button>
       </Modal>
     </main>
   );

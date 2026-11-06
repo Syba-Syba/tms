@@ -43,7 +43,8 @@ export const handler = route(async (event) => {
     if (block) throw conflict(block);
     const erased = await erasePerson(request.person_sub, { sub: person.sub, role: 'landlord' }, { landlordId });
     await query(
-      `update privacy_request set status = 'completed', decided_by = $2, decided_at = now(),
+      // The note goes too: it is free text by the person, often naming them.
+      `update privacy_request set status = 'completed', decided_by = $2, decided_at = now(), note = null,
               response = 'Your personal information has been erased from our records.' where id = $1`,
       [requestId, person.sub],
     );

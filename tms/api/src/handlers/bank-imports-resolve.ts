@@ -5,7 +5,7 @@ import { requireLandlord } from '../lib/auth';
 import { importDetail } from '../lib/bank';
 import { query, withTransaction } from '../lib/db';
 import { ApiError, badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
-import { allocatePayment, balanceLineFor, notifyPaymentReceived, type Allocation } from '../lib/payments';
+import { allocatePayment, assertDepositOpen, balanceLineFor, notifyPaymentReceived, type Allocation } from '../lib/payments';
 
 const schema = z.object({
   lines: z
@@ -47,6 +47,20 @@ export const handler = route(async (event) => {
   for (const item of input.lines) {
     try {
       const outcome = await withTransaction(async (run) => {
+        // The lease first, before the line: accepting a slip takes the same lease lock and then
+        // looks for a matched line, so a slip and its line confirmed at the same moment run one
+        // after the other and the second links to the first instead of recording it again.
+        const [lease] = 'ignore' in item
+          ? []
+          : await run<{ id: string }>(
+              `select l.id from lease l
+                 join unit u on u.id = l.unit_id
+                 join property p on p.id = u.property_id
+                where l.id = $1 and p.landlord_id = $2
+                  and l.status in ('out_for_signature', 'active', 'terminated')
+                  for update of l`,
+              [item.leaseId, landlordId],
+            );
         const [line] = await run<{ id: string; posted_on: string; amount_cents: string; description: string; status: string }>(
           `select id, posted_on::text, amount_cents, description, status
              from bank_line where id = $1 and import_id = $2 and landlord_id = $3 for update`,
@@ -63,14 +77,6 @@ export const handler = route(async (event) => {
           return null;
         }
 
-        const [lease] = await run<{ id: string }>(
-          `select l.id from lease l
-             join unit u on u.id = l.unit_id
-             join property p on p.id = u.property_id
-            where l.id = $1 and p.landlord_id = $2
-              and l.status in ('out_for_signature', 'active', 'terminated')`,
-          [item.leaseId, landlordId],
-        );
         if (!lease) throw notFound('Lease');
 
         const amountCents = Number(line.amount_cents);
@@ -130,6 +136,7 @@ export const handler = route(async (event) => {
         let allocations: Allocation[] = [];
         let balanceLine: string;
         if (proof?.target === 'deposit') {
+          await assertDepositOpen(run, lease.id);
           await run(
             `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note, proof_id, bank_line_id)
              values ($1, 'received', $2, $3, $4, $5, $6)`,

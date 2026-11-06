@@ -38,6 +38,29 @@ export const handler = route(async (event) => {
       throw conflict(`This lease is ${lease.status}. Inspections attach to a live lease.`);
     }
 
+    // The move-in inspection is the baseline every exit deduction is measured against. One
+    // opened on a renewal when the tenant's move-in was already recorded, or after notice, could
+    // only be a new baseline written at exit, so both are refused.
+    if (input.kind === 'incoming') {
+      const [blocked] = await run<{ earlier: boolean; noticed: boolean }>(
+        `with recursive chain(id, depth) as (
+           select previous_lease_id, 1 from lease where id = $1 and previous_lease_id is not null
+           union all
+           select l.previous_lease_id, chain.depth + 1
+             from chain join lease l on l.id = chain.id
+            where l.previous_lease_id is not null and chain.depth < 50
+         )
+         select exists (select 1 from chain join inspection i on i.lease_id = chain.id
+                         where i.kind = 'incoming' and i.status <> 'missed') as earlier,
+                exists (select 1 from termination t where t.lease_id = $1 and t.status <> 'withdrawn') as noticed`,
+        [leaseId],
+      );
+      if (blocked?.earlier) {
+        throw conflict('The tenant’s move-in inspection is on the lease this one renews, and it stays the baseline.');
+      }
+      if (blocked?.noticed) throw conflict('Notice has been served on this lease, so a move-in inspection can no longer be opened.');
+    }
+
     // The outgoing inspection is only valid in the statutory 3 day window before the tenancy ends.
     let window: ReturnType<typeof outgoingWindow> | null = null;
     if (input.kind === 'outgoing') {

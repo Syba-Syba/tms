@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, CardBody, Modal, Textarea, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { formatInstant } from '../lib/format';
+import { useLandlord } from '../lib/landlord';
 
 export interface PrivacyRequest {
   id: string;
@@ -29,6 +30,8 @@ export function PrivacyRequests() {
   const [confirming, setConfirming] = useState<PrivacyRequest | null>(null);
   const [refusing, setRefusing] = useState<{ request: PrivacyRequest; response: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The server lets only the owner answer, so an agent is not offered buttons that are refused.
+  const isOwner = useLandlord().data?.me.role === 'owner';
 
   const decide = async (id: string, body: Record<string, unknown>, done: string) => {
     setBusy(true);
@@ -72,7 +75,9 @@ export function PrivacyRequests() {
                   </Badge>
                 </div>
                 {request.note ? <p className="text-meta text-ink">"{request.note}"</p> : null}
-                {request.status === 'pending' ? (
+                {request.status === 'pending' && !isOwner ? (
+                  <p className="text-xs text-ink-muted">Only the account owner can answer this request.</p>
+                ) : request.status === 'pending' ? (
                   <>
                     {request.blockedBecause ? (
                       <p className="text-xs text-ink-muted">

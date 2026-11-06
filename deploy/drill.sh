@@ -110,6 +110,12 @@ sql tms_server DB_SERVER_PASSWORD "delete from deposit_ledger" 2>/dev/null && fa
 sql tms_server DB_SERVER_PASSWORD "update audit_log set action = action" 2>/dev/null && fail "tms_server can rewrite the audit log"
 sql tms_server DB_SERVER_PASSWORD "update audit_log set detail = detail where false" >/dev/null \
   || fail "tms_server cannot erase audit details (privacy requests need it)"
+sql tms_server DB_SERVER_PASSWORD "update audit_log set actor_sub = 'erased:drill', detail = detail where false" >/dev/null \
+  || fail "tms_server cannot move audit rows to an erased stand-in (a landlord's erasure needs it)"
+# One transaction again: the second update must fail, which rolls the drill's row back.
+sql tms_server DB_SERVER_PASSWORD "insert into audit_log (actor_sub, action, entity) values ('drill', 'drill.check', 'drill');
+  update audit_log set actor_sub = 'someone-else' where entity = 'drill'" 2>/dev/null \
+  && fail "tms_server can change who did something in the audit log"
 sql tms_backup DB_BACKUP_PASSWORD "select count(*) from local_credential" >/dev/null || fail "tms_backup cannot read"
 sql tms_backup DB_BACKUP_PASSWORD "update landlord set phone = '0'" 2>/dev/null && fail "tms_backup can write"
 echo "ok"

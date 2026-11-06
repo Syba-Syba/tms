@@ -66,6 +66,9 @@ provider:
     WHATSAPP_TOKEN: ${ssm:/tms/${self:provider.stage}/whatsapp-token, ''}
     WHATSAPP_PHONE_NUMBER_ID: ${ssm:/tms/${self:provider.stage}/whatsapp-phone-number-id, ''}
     WHATSAPP_TEMPLATE: ${ssm:/tms/${self:provider.stage}/whatsapp-template, 'threshold_update'}
+    # Erasure deletes the person's Cognito sign-in too (src/lib/cognito.ts); the pool id is the
+    # last part of the issuer the authorizer already trusts.
+    COGNITO_ISSUER: ${ssm:/tms/${self:provider.stage}/cognito-issuer}
   # The database sits in a private subnet behind an RDS Proxy, which a Lambda outside the VPC
   # cannot route to at all. Note that attaching a VPC also removes the default route to the
   # internet: Secrets Manager, S3, KMS and SES then need either interface endpoints in that
@@ -118,6 +121,10 @@ provider:
         - Effect: Allow
           Action: [ses:SendEmail]
           Resource: '*'
+        - Effect: Allow
+          # POPIA erasure removes the sign-in along with the records.
+          Action: [cognito-idp:AdminDeleteUser]
+          Resource: arn:aws:cognito-idp:${aws:region}:${aws:accountId}:userpool/*
 
 
 package:
@@ -151,47 +158,60 @@ functions:
       - httpApi:
           method: POST
           path: /billing/notify
+      # The uptime monitor has no token either. /health says nothing about anyone.
+      - httpApi:
+          method: GET
+          path: /health
 
 
+  # The scheduled jobs. Each points at src/handlers/scheduled.ts, which ignores the EventBridge
+  # event (arrears-run once took it for its date and crashed) and records the run for /health.
+  # Times match src/lib/scheduler.ts, which runs the same jobs self-hosted, in SAST (UTC+2):
+  # activation before invoicing, and invoicing daily, so a lease that starts after the 25th
+  # is billed the next morning rather than a month later.
   invoicesRun:
-    handler: src/handlers/invoices-run.handler
+    handler: src/handlers/scheduled.invoicesRun
     events:
-      - schedule: cron(0 6 25 * ? *)
+      # 06:00 SAST daily.
+      - schedule: cron(0 4 * * ? *)
 
   interestRun:
-    handler: src/handlers/interest-run.handler
+    handler: src/handlers/scheduled.interestRun
     events:
-      # Daily: a missed 1st catches up later in the month; a repeat run posts nothing twice.
+      # 05:30 SAST daily: a missed 1st catches up later in the month; a repeat run posts nothing twice.
       - schedule: cron(30 3 * * ? *)
 
   notificationsDispatch:
-    handler: src/handlers/notifications-dispatch.handler
+    handler: src/handlers/scheduled.notificationsDispatch
     events:
       - schedule: rate(5 minutes)
 
   notificationsSweep:
-    handler: src/handlers/notifications-sweep.handler
+    handler: src/handlers/scheduled.notificationsSweep
     events:
-      - schedule: cron(0 5 * * ? *)
+      # 05:00 SAST.
+      - schedule: cron(0 3 * * ? *)
 
   arrearsRun:
-    handler: src/handlers/arrears-run.handler
+    handler: src/handlers/scheduled.arrearsRun
     events:
-      # 05:15 in Johannesburg: reminders land before the working day starts.
+      # 05:15 SAST: reminders land before the working day starts.
       - schedule: cron(15 3 * * ? *)
 
   leasesActivate:
-    handler: src/handlers/leases-activate.handler
+    handler: src/handlers/scheduled.leasesActivate
     events:
-      - schedule: cron(10 3 * * ? *)
+      # 03:10 SAST.
+      - schedule: cron(10 1 * * ? *)
 
   privacySweep:
-    handler: src/handlers/privacy-sweep.handler
+    handler: src/handlers/scheduled.privacySweep
     events:
+      # 04:30 SAST.
       - schedule: cron(30 2 * * ? *)
 
   uploadsSweep:
-    handler: src/handlers/uploads-sweep.handler
+    handler: src/handlers/scheduled.uploadsSweep
     events:
       # Uploads started and never confirmed, older than an hour.
       - schedule: rate(1 hour)

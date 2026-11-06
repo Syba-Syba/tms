@@ -3,12 +3,15 @@ import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
 
-const isDate = (value: string | undefined) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value);
+/** Empty, or a real calendar day: 2026-99-99 has the shape, and Postgres answered it with a 500. */
+const isDate = (value: string | undefined) =>
+  !value || (/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value);
 
 export const handler = route(async (event) => {
   const landlordId = await landlordIdFor(requireLandlord(event));
   const { from, to, propertyId } = event.queryStringParameters ?? {};
   if (!isDate(from) || !isDate(to)) throw badRequest('Dates are YYYY-MM-DD.');
+  if (propertyId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(propertyId)) throw badRequest('propertyId must be a uuid.');
 
   const rows = await query<{
     id: string; property_id: string | null; property: string | null; unit_id: string | null; unit: string | null;

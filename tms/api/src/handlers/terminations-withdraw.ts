@@ -11,9 +11,12 @@ import { leaseParties } from '../lib/lease-parties';
 type Run = typeof query;
 
 /**
- * Withdraws a notice. Either party may, before the lease has ended and before the deposit is
- * settled: a tenant who changed their mind, a landlord whose notice was a mistake, a notice
- * recorded on the wrong lease. 'withdrawn' existed but nothing set it, and the one notice a
+ * Withdraws a notice, before the lease has ended and before the deposit is settled: a tenant
+ * who changed their mind, a landlord whose notice was a mistake. Only the party who gave it may:
+ * letting either side withdraw the other's let a tenant cancel every notice a landlord served,
+ * and a landlord undo a tenant's CPA s14 cancellation. A mutual notice is both parties', so
+ * either may. A notice the landlord recorded for the tenant and the tenant has not confirmed
+ * stays open to the tenant and to the landlord who recorded it, even on and after its end date. 'withdrawn' existed but nothing set it, and the one notice a
  * lease could hold blocked serving a corrected one. The lease carries on as if notice had never
  * been served, so what serving changed is put back: the invoices it trimmed are re-rated to
  * the full months the invoice run would have billed, and an exit inspection still booked for
@@ -40,21 +43,33 @@ export const handler = route(async (event) => {
       lease_status: string;
       lapsed_renewal_ids: string[];
       cancelled_lease_id: string | null;
+      initiated_by: 'tenant' | 'landlord' | 'mutual';
+      awaiting_tenant: boolean;
     }>(
       `select t.lease_id, t.status, t.effective_on::text, l.status as lease_status,
-              t.lapsed_renewal_ids, t.cancelled_lease_id
+              t.lapsed_renewal_ids, t.cancelled_lease_id, t.initiated_by,
+              (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant
          from termination t join lease l on l.id = t.lease_id
         where t.id = $1
         for update of t, l`,
       [terminationId],
     );
     if (!termination) throw notFound('Termination');
+    // A notice the landlord recorded that the tenant has not confirmed is still only the
+    // landlord's entry: the landlord may undo it at any time, or a tenant who never answers
+    // leaves the lease unbilled and unsettleable for good.
+    const landlordUndoesOwnEntry = termination.awaiting_tenant && withdrawnBy === 'landlord';
+    if (termination.initiated_by !== 'mutual' && termination.initiated_by !== withdrawnBy && !landlordUndoesOwnEntry) {
+      throw forbidden('Only the party who gave this notice can withdraw it.');
+    }
     if (termination.status === 'withdrawn') throw conflict('This notice has already been withdrawn.');
     if (termination.status === 'settled') throw conflict('The deposit is settled, so this notice can no longer be withdrawn.');
     if (termination.lease_status !== 'active') throw conflict(`This lease is ${termination.lease_status}.`);
     // On the last day the tenant is moving out; after it the tenancy has ended. A new lease is
     // the way back then, not undoing the notice.
-    if (today >= termination.effective_on) {
+    // A notice the tenant never agreed to does not bind them, so the day it named passing
+    // does not stop either side undoing it.
+    if (today >= termination.effective_on && !termination.awaiting_tenant) {
       throw conflict(`The lease ends on ${termination.effective_on}, so the notice can only be withdrawn before then.`);
     }
 

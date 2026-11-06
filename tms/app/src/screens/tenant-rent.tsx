@@ -274,7 +274,11 @@ export function TenantRent() {
 
       <Modal
         open={showSlip}
-        onOpenChange={(next) => setShowSlip(next)}
+        onOpenChange={(next) => {
+          setShowSlip(next);
+          // Closing unmounts the file picker, so a file kept in state would be sent unseen.
+          if (!next) setFile(null);
+        }}
         title="Send proof of payment"
         description="Upload the slip or screenshot your bank gave you."
       >

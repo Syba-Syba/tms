@@ -1,7 +1,13 @@
 /** The lease a tenant is living under now. The list is newest first, so an accepted renewal
-    that has not started yet would otherwise stand in for the current tenancy. */
+    that has not started yet would otherwise stand in for the current tenancy. With ended
+    leases in the list, one is chosen only when nothing else is left: a settled tenancy's
+    documents must stay reachable. */
 export function currentLease<T extends { status: string }>(items: T[]): T | undefined {
-  return items.find((item) => item.status === 'active') ?? items[0];
+  return (
+    items.find((item) => item.status === 'active') ??
+    items.find((item) => item.status !== 'terminated') ??
+    items[0]
+  );
 }
 
 /**

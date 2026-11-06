@@ -1,7 +1,7 @@
 import { landlordIdFor } from '../lib/access';
 import { requireLandlord } from '../lib/auth';
 import { query } from '../lib/db';
-import { json, route } from '../lib/http';
+import { badRequest, json, route } from '../lib/http';
 import { affordability } from '../domain/application';
 
 interface Row {
@@ -27,11 +27,15 @@ export const handler = route(async (event) => {
   // properties this landlord owns rather than to everyone in the landlord group.
   const landlordId = await landlordIdFor(person);
   const status = event.queryStringParameters?.status ?? 'submitted';
-  const limit = Math.min(Number(event.queryStringParameters?.limit ?? 50), 100);
+  const rawLimit = event.queryStringParameters?.limit;
+  const limit = rawLimit ? Number(rawLimit) : 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw badRequest('limit must be 1 to 100.');
 
   const rows = await query<Row>(
     `select a.id, a.status, a.submitted_at, a.preferred_move_in, a.occupants,
-            p.first_name, p.last_name, p.monthly_income_cents,
+            p.first_name, p.last_name,
+            -- What was given with this application; the shared applicant row holds the latest.
+            coalesce(a.monthly_income_cents, p.monthly_income_cents) as monthly_income_cents,
             u.code as unit_code, u.monthly_rent_cents, pr.name as property_name,
             (select count(*) from application_document d where d.application_id = a.id) as document_count,
             l.id as lease_id, l.status as lease_status

@@ -10,14 +10,18 @@ import { tooManyRequests } from './http';
  */
 export class AttemptLimiter {
   private readonly attempts = new Map<string, number[]>();
+  private recordsSinceSweep = 0;
 
   constructor(
     private readonly limit: number,
     private readonly windowMs: number,
     private readonly now: () => number = Date.now,
+    /** Keys kept at most; past it the oldest go first. */
+    private readonly maxKeys = 100_000,
   ) {}
 
-  private recent(key: string): number[] {
+  private recent(rawKey: string): number[] {
+    const key = limiterKey(rawKey);
     const cutoff = this.now() - this.windowMs;
     const kept = (this.attempts.get(key) ?? []).filter((at) => at > cutoff);
     if (kept.length > 0) this.attempts.set(key, kept);
@@ -30,8 +34,34 @@ export class AttemptLimiter {
     return this.recent(key).length < this.limit;
   }
 
-  record(key: string): void {
-    this.attempts.set(key, [...this.recent(key), this.now()]);
+  record(rawKey: string): void {
+    const key = limiterKey(rawKey);
+    const kept = this.recent(key);
+    // Re-inserted, so the Map's order stays oldest-touched first for the eviction below.
+    this.attempts.delete(key);
+    this.attempts.set(key, [...kept, this.now()]);
+    // A key only shrinks when it is looked up again, so one used once (a random email in a
+    // password-spraying run) stayed for the life of the process. Swept now and then, and capped.
+    this.recordsSinceSweep += 1;
+    if (this.recordsSinceSweep >= 1000) this.sweep();
+    while (this.attempts.size > this.maxKeys) {
+      const oldest = this.attempts.keys().next().value as string;
+      this.attempts.delete(oldest);
+    }
+  }
+
+  /** Drops every key whose attempts have all left the window. */
+  sweep(): void {
+    this.recordsSinceSweep = 0;
+    const cutoff = this.now() - this.windowMs;
+    for (const [key, times] of this.attempts) {
+      if ((times[times.length - 1] ?? 0) <= cutoff) this.attempts.delete(key);
+    }
+  }
+
+  /** Keys currently held, for tests. */
+  get size(): number {
+    return this.attempts.size;
   }
 
   /** Seconds until the oldest counted attempt leaves the window. */
@@ -47,8 +77,26 @@ export class AttemptLimiter {
   }
 
   clear(key: string): void {
-    this.attempts.delete(key);
+    this.attempts.delete(limiterKey(key));
   }
+}
+
+/**
+ * An IPv6 address counts by its /64: one connection usually holds the whole /64 and can move
+ * through it at will, so the full address was never limited. An IPv4 address written in IPv6
+ * form (::ffff:1.2.3.4) counts as the IPv4 address. Any other key (an email, a sub) is as given.
+ */
+export function limiterKey(key: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(key);
+  if (mapped) return mapped[1]!;
+  if (!/^[0-9a-f:]+$/i.test(key) || !key.includes('::') && key.split(':').length !== 8) return key;
+  const [head = '', tail] = key.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  if (tail === undefined && left.length !== 8) return key;
+  const groups = [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  if (groups.length !== 8 || groups.some((group) => group.length > 4)) return key;
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
 
 const MINUTE = 60_000;
@@ -117,6 +165,12 @@ export function requireUploadLinkAllowance(sub: string) {
     throw tooManyRequests('Too many uploads started in the last hour. Finish the ones in progress, or try again later.');
   }
 }
+
+/**
+ * PayFast notices that fail the signature (or are too big to be one) kept on file per address
+ * per hour. Anyone can post them; past this they are logged and not stored.
+ */
+export const unsignedNoticesByAddress = new AttemptLimiter(20, HOUR);
 
 /**
  * Tenancy imports per landlord account per hour, previews included. Each call parses up to

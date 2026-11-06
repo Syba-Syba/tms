@@ -553,12 +553,12 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
           <TextField control={control} name="bathrooms" label="Bathrooms" inputMode="numeric" required />
         </div>
         <div>
-          <p className="mb-1 text-meta font-medium">Monthly rent</p>
-          <CurrencyInput cents={rentCents} onCentsChange={(next) => setRentCents(next ?? 0)} />
+          <p className="mb-1 text-meta font-medium" aria-hidden>Monthly rent</p>
+          <CurrencyInput aria-label="Monthly rent" cents={rentCents} onCentsChange={(next) => setRentCents(next ?? 0)} />
         </div>
         <div>
-          <p className="mb-1 text-meta font-medium">Deposit</p>
-          <CurrencyInput cents={depositCents} onCentsChange={(next) => setDepositCents(next ?? 0)} />
+          <p className="mb-1 text-meta font-medium" aria-hidden>Deposit</p>
+          <CurrencyInput aria-label="Deposit" cents={depositCents} onCentsChange={(next) => setDepositCents(next ?? 0)} />
           <p className="mt-1 text-xs text-ink-muted">
             Usually one month. It sits in a ledger and earns the tenant interest.
           </p>

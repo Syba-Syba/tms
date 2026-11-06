@@ -49,15 +49,20 @@ export const handler = route(async (event) => {
   // and a later render replaces it, so the fingerprint is stored below only if neither
   // happened. Before, a save in between was missing from a draft that was then signed.
   const key = `inspections/${inspectionId}/draft-${randomUUID()}.pdf`;
-  await withTransaction(async (run) => {
-    const [row] = await run<{ status: string }>('select status from inspection where id = $1 for update', [
-      inspectionId,
-    ]);
+  const previous = await withTransaction(async (run) => {
+    const [row] = await run<{ status: string; draft_s3_key: string | null }>(
+      'select status, draft_s3_key from inspection where id = $1 for update',
+      [inspectionId],
+    );
     if (!['in_progress', 'awaiting_signatures'].includes(row!.status)) {
       throw conflict(`This inspection is ${row!.status}.`);
     }
     await run('update inspection set draft_s3_key = $2, draft_sha256 = null where id = $1', [inspectionId, key]);
+    return row!.draft_s3_key;
   });
+  // Each render used to leave the last draft (photos and all) in storage, where no row and so
+  // no erasure would ever find it again.
+  await removeDraft(previous);
 
   const { findings, photosOmitted } = await collectReportFindings(inspectionId);
   const rendered = await renderInspectionPdf({
@@ -79,8 +84,27 @@ export const handler = route(async (event) => {
     [inspectionId, key, rendered.sha256],
   );
   if (stored.length === 0) {
+    // A later render or a change took the key over, so nothing points at this file.
+    await removeDraft(key);
     throw conflict('The inspection changed while the report was rendering. Render it again.');
   }
 
   return json(200, { key, sha256: rendered.sha256 });
 });
+
+type Run = <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/**
+ * Withdraws the draft report when the findings, photos or status change. Call inside the
+ * transaction that holds the inspection row; returns the old file's key for removeDraft.
+ */
+export async function withdrawDraft(run: Run, inspectionId: string, extraSet = ''): Promise<string | null> {
+  const [row] = await run<{ draft_s3_key: string | null }>('select draft_s3_key from inspection where id = $1', [inspectionId]);
+  await run(`update inspection set ${extraSet}draft_s3_key = null, draft_sha256 = null where id = $1`, [inspectionId]);
+  return row?.draft_s3_key ?? null;
+}
+
+/** Removes a withdrawn draft file once its transaction has committed. */
+export async function removeDraft(key: string | null): Promise<void> {
+  if (key) await storage().remove(key).catch(() => undefined);
+}
