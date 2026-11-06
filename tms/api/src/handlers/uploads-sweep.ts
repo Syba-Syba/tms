@@ -25,7 +25,7 @@ const remove = async (key: string) => {
  * still 'uploading'. Confirmed uploads are never touched.
  */
 export async function handler() {
-  const removed = { documents: 0, ticketPhotos: 0, inspectionPhotos: 0, unitPhotos: 0, paymentSlips: 0 };
+  const removed = { documents: 0, ticketPhotos: 0, inspectionPhotos: 0, unitPhotos: 0, paymentSlips: 0, expenseSlips: 0 };
 
   // Documents: a pending entry no application_document took up is an abandoned upload. Each
   // entry is deleted only after its object, so a failed removal is tried again next run.
@@ -61,6 +61,27 @@ export async function handler() {
         select id from payment_proof where status = 'uploading' and created_at < ${STALE} limit ${BATCH})
       returning s3_key`],
   ];
+  // Expense slips: a slip never confirmed still has its upload key. The expense stays; only
+  // the unchecked file and the pointer to it go. Only the last two days are looked at: slips
+  // from before the confirm step existed also have raw keys, and those are real receipts.
+  // File first, then the row, so a failed removal is tried again next hour.
+  const slips = await query<{ id: string; slip_s3_key: string }>(
+    `select id, slip_s3_key from expense
+      where slip_s3_key is not null and slip_s3_key !~ '\\.kept\\.[a-z]+$'
+        and created_at < ${STALE} and created_at > now() - interval '2 days'
+      limit ${BATCH}`,
+  );
+  for (const row of slips) {
+    const gone = await storage()
+      .remove(row.slip_s3_key)
+      .then(() => true)
+      .catch((error) => (logger.warn('Upload sweep could not remove an object.', { key: row.slip_s3_key, error }), false));
+    if (!gone) continue;
+    // The key check skips a slip confirmed while the sweep ran.
+    await query('update expense set slip_s3_key = null where id = $1 and slip_s3_key = $2', [row.id, row.slip_s3_key]);
+    removed.expenseSlips += 1;
+  }
+
   for (const [kind, sql] of photos) {
     const rows = await query<{ s3_key: string }>(sql);
     for (const row of rows) await remove(row.s3_key);

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { requireLeaseAccessVia } from '../lib/access';
 import { audit } from '../lib/audit';
 import { query, withTransaction } from '../lib/db';
@@ -5,6 +6,7 @@ import { storage } from '../lib/storage';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import {
   incomingInspectionSql,
+  outgoingCountsSql,
   outgoingInWindowSql,
   pickRefundRule,
   reconcile,
@@ -18,6 +20,11 @@ import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { logger } from '../lib/logger';
 import { moveCreditToOpenInvoices } from '../lib/billing';
+
+/** A condition's rank, for the two-step wear-and-tear rule. A missing baseline ranks null, so
+    the comparison is null and the deduction is not backed. */
+const RANK_SQL = (expr: string) =>
+  `(case ${expr} when 'good' then 0 when 'fair' then 1 when 'poor' then 2 when 'damaged' then 3 when 'missing' then 4 end)`;
 
 /** The bytes decide whether a photo is a PNG or a JPEG. The key's extension used to, and a
     gallery PNG saved under a .jpg key made the statement render throw, blocking settlement. */
@@ -54,8 +61,10 @@ export async function settlementFigures(terminationId: string, today: string, re
     unit_label: string;
     trading_name: string;
     outgoing_completed: boolean;
+    awaiting_tenant: boolean;
   }>(
     `select t.lease_id, t.status, t.effective_on::text, t.reason, t.penalty_cents,
+            (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
             'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref,
             a.first_name || ' ' || a.last_name as tenant,
             p.name || ' ' || u.code as unit_label,
@@ -69,15 +78,7 @@ export async function settlementFigures(terminationId: string, today: string, re
             -- date (before a month-to-month lease was given notice) is not the move-out.
             exists (select 1 from inspection i
                      where i.lease_id = t.lease_id and ${outgoingInWindowSql('i', 't')}
-                       and (i.status = 'completed'
-                            or (i.scheduled_for < $2::date
-                                and (i.created_at at time zone 'UTC' + interval '2 hours')::date < i.scheduled_for
-                                and exists (select 1 from inspection_signature s
-                                             where s.inspection_id = i.id and s.party = 'landlord'
-                                               and (s.signed_at at time zone 'UTC' + interval '2 hours')::date
-                                                   >= i.scheduled_for)
-                                and not exists (select 1 from inspection_signature s
-                                                 where s.inspection_id = i.id and s.party = 'tenant'))))
+                       and ${outgoingCountsSql('i', '$2::date')})
               as outgoing_completed
        from termination t
        join lease l on l.id = t.lease_id
@@ -92,10 +93,37 @@ export async function settlementFigures(terminationId: string, today: string, re
   if (context.status === 'settled') throw conflict('This deposit is already settled.');
   if (context.status === 'withdrawn') throw conflict('This notice was withdrawn, so the lease carries on.');
 
-  const deductions = await query<{ description: string; amount_cents: string; finding_id: string | null }>(
-    'select description, amount_cents, finding_id from deposit_deduction where termination_id = $1 order by created_at',
+  // Restoration happens after the tenant leaves and before the deposit is settled. A date
+  // outside that put the statutory 14 days anywhere the landlord liked.
+  if (restoredOn) {
+    const restored = isoDate(restoredOn);
+    if (restored > today) throw badRequest('restoredOn cannot be in the future.', { restoredOn: `Use ${today} or earlier.` });
+    if (restored < context.effective_on) {
+      throw badRequest('restoredOn cannot be before the lease ended.', { restoredOn: `Use ${context.effective_on} or later.` });
+    }
+  }
+
+  // Each deduction is checked again here, against the findings as they stand now: one added
+  // while the exit inspection was open survived its finding being corrected to fair wear and
+  // tear, or the inspection being replaced by a rebooking.
+  const deductions = await query<{
+    description: string; amount_cents: string; finding_id: string | null; still_backed: boolean | null;
+  }>(
+    `select d.description, d.amount_cents, d.finding_id,
+            case when d.finding_id is null then null else exists (
+              select 1 from inspection_finding f
+                join inspection i on i.id = f.inspection_id
+                join termination t on t.id = d.termination_id and t.lease_id = i.lease_id
+               where f.id = d.finding_id and ${outgoingInWindowSql('i', 't')}
+                 and f.condition in ('poor', 'damaged', 'missing')
+                 and ${RANK_SQL('f.condition')} - ${RANK_SQL(`(select inc.condition from inspection_finding inc
+                      where inc.inspection_id = ${incomingInspectionSql('t.lease_id')}
+                        and inc.room = f.room and inc.item = f.item)`)} >= 2
+            ) end as still_backed
+       from deposit_deduction d where d.termination_id = $1 order by d.created_at`,
     [terminationId],
   );
+  const unbacked = deductions.filter((row) => row.still_backed === false).map((row) => row.description);
 
   // Skipping the outgoing inspection is deemed an acknowledgement of no damage, so the law
   // does not let the landlord keep anything for repairs afterwards.
@@ -123,10 +151,13 @@ export async function settlementFigures(terminationId: string, today: string, re
   // 14 days runs from restoration, the other two from the lease ending.
   const anchorIso = rule === 'with_deductions' ? (restoredOn ? isoDate(restoredOn) : today) : context.effective_on;
   const dueBy = refundDueBy(rule, dateFromIso(anchorIso));
-  const blocker =
-    rule === 'no_inspection' && deductions.length > 0
+  const blocker = context.awaiting_tenant
+    ? 'The landlord recorded this notice and the tenant has not confirmed it yet. The deposit is settled once they do.'
+    : rule === 'no_inspection' && deductions.length > 0
       ? 'No outgoing inspection was completed, so nothing may be deducted. Remove the deductions or hold the inspection.'
-      : null;
+      : unbacked.length > 0
+        ? `The exit inspection no longer supports: ${unbacked.join(', ')}. Remove ${unbacked.length > 1 ? 'these deductions' : 'this deduction'} to settle.`
+        : null;
   return { context, deductions, rule, balances, grossArrears, rentCredit, alreadyOut, summary, anchorIso, dueBy, blocker };
 }
 
@@ -235,132 +266,142 @@ export const handler = route(async (event) => {
     comparisons: comparisonRows,
   });
 
-  const key = `terminations/${terminationId}/deposit-statement.pdf`;
+  // A key of its own per attempt: a second settle running alongside wrote over a shared key
+  // after the first had committed. The hash alone is not enough: two renders in the same second
+  // are byte-identical, so the loser's cleanup below would delete the winner's statement.
+  const key = `terminations/${terminationId}/deposit-statement-${rendered.sha256}-${randomUUID()}.pdf`;
   await storage().put(key, rendered.bytes, 'application/pdf');
 
-  await withTransaction(async (run) => {
-    const [locked] = await run<{ status: string }>(
-      'select status from termination where id = $1 for update',
-      [terminationId],
-    );
-    if (!locked || locked.status === 'settled') throw conflict('This deposit is already settled.');
-    // The figures above were read before the statement rendered, and a payment recorded in
-    // that time was then taken off the deposit as arrears as well: the full stale arrears went
-    // to the ledger while only what was still owing paid the invoices. The invoices are locked
-    // so nothing more can land on them, and the statement is only good if nothing changed.
-    const current = await readBalances(run, context.lease_id, true);
-    if (
-      current.grossArrears !== grossArrears ||
-      current.rentCredit !== rentCredit ||
-      current.deposit !== balances.deposit ||
-      current.interest !== balances.interest ||
-      current.alreadyOut !== alreadyOut
-    ) {
-      throw conflict('Payments changed while the statement was prepared. Try again.');
-    }
-
-    // The ledger is the record. Every claim and the payout land in it as entries, and they
-    // must bring the held balance to zero: arrears and the penalty were missing from it, so
-    // a settled lease kept a positive balance and the interest run went on crediting it.
-    // Claims come off in the order repairs, arrears, penalty, and stop at what is held; the
-    // rest is a debt the statement shows as owed by the tenant, never a negative ledger.
-    let remaining = summary.heldCents - alreadyOut;
-    const post = async (amount: number, note: string) => {
-      const posted = Math.min(amount, Math.max(0, remaining));
-      if (posted <= 0) return 0;
-      await run(
-        `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
-         values ($1, 'deduction', $2, $3)`,
-        [context.lease_id, posted, note],
+  try {
+    await withTransaction(async (run) => {
+      const [locked] = await run<{ status: string }>(
+        'select status from termination where id = $1 for update',
+        [terminationId],
       );
-      remaining -= posted;
-      return posted;
-    };
-    for (const deduction of deductions) await post(Number(deduction.amount_cents), deduction.description);
-    // Rent paid above a re-rated month's total is the tenant's credit, and the statement nets it
-    // against arrears. The money has to move with it: left on the overpaid invoice, the unpaid
-    // ones stayed open and the arrears ladder went on chasing rent the tenant did not owe.
-    if (rentCredit > 0 && grossArrears > 0) await moveCreditToOpenInvoices(run, context.lease_id);
-    if (summary.arrearsCents > 0) {
-      // What came off the deposit for arrears pays the open invoices, oldest first. Left open,
-      // the statement still showed the tenant owing rent the deposit had already covered.
-      // The ledger records what was actually applied to them, never more.
-      const open = await run<{ id: string; owing: string }>(
-        `select i.id, (i.total_cents - coalesce((select sum(p.amount_cents) from payment p
-                                                  where p.invoice_id = i.id), 0))::text as owing
-           from invoice i
-          where i.lease_id = $1 and i.status in ('issued', 'part_paid')
-          order by i.due_on, i.period_start
-          for update`,
+      if (!locked || locked.status === 'settled') throw conflict('This deposit is already settled.');
+      // The figures above were read before the statement rendered, and a payment recorded in
+      // that time was then taken off the deposit as arrears as well: the full stale arrears went
+      // to the ledger while only what was still owing paid the invoices. The invoices are locked
+      // so nothing more can land on them, and the statement is only good if nothing changed.
+      const current = await readBalances(run, context.lease_id, true);
+      if (
+        current.grossArrears !== grossArrears ||
+        current.rentCredit !== rentCredit ||
+        current.deposit !== balances.deposit ||
+        current.interest !== balances.interest ||
+        current.alreadyOut !== alreadyOut
+      ) {
+        throw conflict('Payments changed while the statement was prepared. Try again.');
+      }
+
+      // The ledger is the record. Every claim and the payout land in it as entries, and they
+      // must bring the held balance to zero: arrears and the penalty were missing from it, so
+      // a settled lease kept a positive balance and the interest run went on crediting it.
+      // Claims come off in the order repairs, arrears, penalty, and stop at what is held; the
+      // rest is a debt the statement shows as owed by the tenant, never a negative ledger.
+      let remaining = summary.heldCents - alreadyOut;
+      const post = async (amount: number, note: string) => {
+        const posted = Math.min(amount, Math.max(0, remaining));
+        if (posted <= 0) return 0;
+        await run(
+          `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
+           values ($1, 'deduction', $2, $3)`,
+          [context.lease_id, posted, note],
+        );
+        remaining -= posted;
+        return posted;
+      };
+      for (const deduction of deductions) await post(Number(deduction.amount_cents), deduction.description);
+      // Rent paid above a re-rated month's total is the tenant's credit, and the statement nets it
+      // against arrears. The money has to move with it: left on the overpaid invoice, the unpaid
+      // ones stayed open and the arrears ladder went on chasing rent the tenant did not owe.
+      if (rentCredit > 0 && grossArrears > 0) await moveCreditToOpenInvoices(run, context.lease_id);
+      if (summary.arrearsCents > 0) {
+        // What came off the deposit for arrears pays the open invoices, oldest first. Left open,
+        // the statement still showed the tenant owing rent the deposit had already covered.
+        // The ledger records what was actually applied to them, never more.
+        const open = await run<{ id: string; owing: string }>(
+          `select i.id, (i.total_cents - coalesce((select sum(p.amount_cents) from payment p
+                                                    where p.invoice_id = i.id), 0))::text as owing
+             from invoice i
+            where i.lease_id = $1 and i.status in ('issued', 'part_paid')
+            order by i.due_on, i.period_start
+            for update`,
+          [context.lease_id],
+        );
+        const owing = open.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.owing)), 0);
+        let applied = await post(Math.min(summary.arrearsCents, owing), 'Rent arrears');
+        for (const invoice of open) {
+          const amount = Math.min(applied, Number(invoice.owing));
+          if (amount <= 0) continue;
+          await run(
+            `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
+             values ($1, $2, $3, 'deposit', 'From the deposit at settlement', $4, $5)`,
+            [context.lease_id, invoice.id, amount, today, access.person.sub],
+          );
+          await run('update invoice set status = $2 where id = $1', [
+            invoice.id,
+            amount === Number(invoice.owing) ? 'paid' : 'part_paid',
+          ]);
+          applied -= amount;
+        }
+      }
+      if (summary.penaltyCents > 0) await post(summary.penaltyCents, 'Cancellation penalty');
+      // The rent credit left after arrears is settled here too: refunded with the deposit, or set
+      // against what the tenant owes on it. Left on the overpaid invoices, the rent statement went
+      // on showing the landlord owing it after it had been paid back. It is recorded as a refund
+      // against each overpaid invoice, which brings the rent account to zero.
+      if (summary.rentCreditCents > 0) {
+        await refundRentCredit(run, context.lease_id, summary.rentCreditCents, today, access.person.sub,
+          summary.refundCents > 0 ? 'Rent credit refunded at settlement' : 'Rent credit set against the deposit statement');
+      }
+      // Only the deposit's share of the refund leaves the deposit; a rent credit is the
+      // landlord's own money, so it is on the statement but not in the ledger.
+      const fromDeposit = Math.min(summary.refundCents, Math.max(0, remaining));
+      if (fromDeposit > 0) {
+        await run(
+          `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
+           values ($1, 'refund', $2, $3)`,
+          [context.lease_id, fromDeposit, input.refundReference ?? 'Refund on termination'],
+        );
+      }
+
+      await run(
+        `update termination
+            set status = 'settled', refund_rule = $2, refund_anchor_on = $3, refund_due_by = $4,
+                settled_at = now(), statement_s3_key = $5, statement_sha256 = $6, refund_cents = $7
+          where id = $1`,
+        [terminationId, rule, anchorIso, isoDate(dueBy), key, rendered.sha256, summary.refundCents],
+      );
+      await run("update lease set status = 'terminated' where id = $1", [context.lease_id]);
+      await run(
+        "update unit set status = 'vacant' where id = (select unit_id from lease where id = $1)",
         [context.lease_id],
       );
-      const owing = open.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.owing)), 0);
-      let applied = await post(Math.min(summary.arrearsCents, owing), 'Rent arrears');
-      for (const invoice of open) {
-        const amount = Math.min(applied, Number(invoice.owing));
-        if (amount <= 0) continue;
-        await run(
-          `insert into payment (lease_id, invoice_id, amount_cents, method, reference, received_on, recorded_by)
-           values ($1, $2, $3, 'deposit', 'From the deposit at settlement', $4, $5)`,
-          [context.lease_id, invoice.id, amount, today, access.person.sub],
-        );
-        await run('update invoice set status = $2 where id = $1', [
-          invoice.id,
-          amount === Number(invoice.owing) ? 'paid' : 'part_paid',
-        ]);
-        applied -= amount;
-      }
-    }
-    if (summary.penaltyCents > 0) await post(summary.penaltyCents, 'Cancellation penalty');
-    // The rent credit left after arrears is settled here too: refunded with the deposit, or set
-    // against what the tenant owes on it. Left on the overpaid invoices, the rent statement went
-    // on showing the landlord owing it after it had been paid back. It is recorded as a refund
-    // against each overpaid invoice, which brings the rent account to zero.
-    if (summary.rentCreditCents > 0) {
-      await refundRentCredit(run, context.lease_id, summary.rentCreditCents, today, access.person.sub,
-        summary.refundCents > 0 ? 'Rent credit refunded at settlement' : 'Rent credit set against the deposit statement');
-    }
-    // Only the deposit's share of the refund leaves the deposit; a rent credit is the
-    // landlord's own money, so it is on the statement but not in the ledger.
-    const fromDeposit = Math.min(summary.refundCents, Math.max(0, remaining));
-    if (fromDeposit > 0) {
+      // An open ticket on a lease nobody lives in is noise.
       await run(
-        `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
-         values ($1, 'refund', $2, $3)`,
-        [context.lease_id, fromDeposit, input.refundReference ?? 'Refund on termination'],
+        `update ticket set status = 'cancelled'
+          where lease_id = $1 and status not in ('closed', 'cancelled')`,
+        [context.lease_id],
       );
-    }
-
-    await run(
-      `update termination
-          set status = 'settled', refund_rule = $2, refund_anchor_on = $3, refund_due_by = $4,
-              settled_at = now(), statement_s3_key = $5, statement_sha256 = $6
-        where id = $1`,
-      [terminationId, rule, anchorIso, isoDate(dueBy), key, rendered.sha256],
-    );
-    await run("update lease set status = 'terminated' where id = $1", [context.lease_id]);
-    await run(
-      "update unit set status = 'vacant' where id = (select unit_id from lease where id = $1)",
-      [context.lease_id],
-    );
-    // An open ticket on a lease nobody lives in is noise.
-    await run(
-      `update ticket set status = 'cancelled'
-        where lease_id = $1 and status not in ('closed', 'cancelled')`,
-      [context.lease_id],
-    );
-    await audit(
-      {
-        actorSub: access.person.sub,
-        actorRole: 'landlord',
-        action: 'termination.settled',
-        entity: 'termination',
-        entityId: terminationId,
-        detail: { rule, refundCents: summary.refundCents, tenantOwesCents: summary.tenantOwesCents, dueBy: isoDate(dueBy) },
-      },
-      run,
-    );
-  });
+      await audit(
+        {
+          actorSub: access.person.sub,
+          actorRole: 'landlord',
+          action: 'termination.settled',
+          entity: 'termination',
+          entityId: terminationId,
+          detail: { rule, refundCents: summary.refundCents, tenantOwesCents: summary.tenantOwesCents, dueBy: isoDate(dueBy) },
+        },
+        run,
+      );
+    });
+  } catch (error) {
+    // Nothing settled, so the statement written for it is no one's record.
+    await storage().remove(key).catch((removeError: unknown) =>
+      logger.warn('Unused exit statement left in storage.', { key, error: removeError }));
+    throw error;
+  }
 
   // Settled. A failure from here on is logged, not returned: a 500 now would invite a retry
   // of something that has already happened.
@@ -384,6 +425,8 @@ export const handler = route(async (event) => {
           breakdown: [
             `Deposit ${zar(summary.depositCents)}`,
             `Interest ${zar(summary.interestCents)}`,
+            // Part of the refund, so the lines add up to the headline.
+            summary.rentCreditCents > 0 ? `Plus rent paid in advance ${zar(summary.rentCreditCents)}` : null,
             summary.deductionsCents > 0 ? `Less repairs ${zar(summary.deductionsCents)}` : null,
             summary.arrearsCents > 0 ? `Less arrears ${zar(summary.arrearsCents)}` : null,
             summary.penaltyCents > 0 ? `Less cancellation penalty ${zar(summary.penaltyCents)}` : null,

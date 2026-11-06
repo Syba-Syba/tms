@@ -7,6 +7,9 @@ import { notify } from '../lib/notify';
 import { requireSecondStep, twoStepEnabled } from '../lib/two-step';
 import { updateAccountSchema } from '../domain/landlord';
 
+/** How long two-step must have been on before it can approve a new bank account. */
+export const TWO_STEP_SETTLE_HOURS = 48;
+
 /**
  * The owner edits the business details. The bank account prints on every invoice, so only the
  * owner changes it, and changing one already on file needs a current two-step code: a stolen
@@ -32,6 +35,20 @@ export const handler = route(async (event) => {
   if (replacing && process.env.AUTH_DRIVER === 'local') {
     if (!(await twoStepEnabled(person.sub))) {
       throw new ApiError(403, 'two_step_required', 'Turn on two-step sign-in under Settings, You, before changing the bank account.');
+    }
+    // Turning two-step on needs only the password, so someone who has the password could add
+    // their own authenticator and then redirect the rent. Two-step has to be older than that.
+    // Turning it off clears totp_enabled_at, so turning it back on restarts the wait.
+    const [settled] = await query<{ ok: boolean }>(
+      `select totp_enabled_at < now() - interval '${TWO_STEP_SETTLE_HOURS} hours' as ok from local_credential where sub = $1`,
+      [person.sub],
+    );
+    if (!settled?.ok) {
+      throw new ApiError(
+        403,
+        'two_step_too_new',
+        `Two-step sign-in was turned on less than ${TWO_STEP_SETTLE_HOURS / 24} days ago. The bank account can be changed once it has been on for ${TWO_STEP_SETTLE_HOURS / 24} days.`,
+      );
     }
     await requireSecondStep(person.sub, code);
   }

@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, PageHeader, useToast,
+  Alert, Badge, Button, Card, CardBody, ConfirmDialog, CurrencyInput, Input, PageHeader, useToast,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { Money } from '../components/money';
 import { formatDate } from '../lib/format';
+import { localToday } from '../lib/dates';
 import { QueryState } from '../components/query-state';
 import { useOpenDocument } from '../lib/open-document';
 import { invalidateMoneyCaches } from '../lib/money-caches';
@@ -43,13 +44,13 @@ interface Comparison {
 interface SettlementFigures {
   heldCents: number; deductionsCents: number; arrearsCents: number; penaltyCents: number;
   rentCreditCents: number; refundCents: number; tenantOwesCents: number;
-  refundRule: string; refundDueBy: string; blocker: string | null;
+  refundRule: string; refundDueBy: string; blocker: string | null; effectiveOn: string;
 }
 
 interface Settlement {
   depositCents: number; interestCents: number; heldCents: number;
   deductionsCents: number; arrearsCents: number; penaltyCents: number;
-  refundCents: number; tenantOwesCents: number;
+  rentCreditCents: number; refundCents: number; tenantOwesCents: number;
   refundRule: string; refundDueBy: string; statementKey: string | null;
 }
 
@@ -68,12 +69,42 @@ export function Termination() {
   const [settled, setSettled] = useState<Settlement | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // The day the repairs were finished. With deductions the 14-day refund clock runs from it
+  // (RHA s5(3)), not from the day the landlord settles. Null: not chosen, the server uses today.
+  const [restoredOn, setRestoredOn] = useState<string | null>(null);
+  // What the date field shows. A half-typed date (Chrome fires year 0002, 0020, ...) stays here
+  // and never reaches the preview query, which the server would refuse.
+  const [restoredInput, setRestoredInput] = useState<string | null>(null);
+  // The rule and end date from the last figures. The date field keys off these, not the live
+  // preview, so it stays on screen while new figures load.
+  const [ruleSeen, setRuleSeen] = useState<{ withDeductions: boolean; effectiveOn: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['comparison', terminationId],
     queryFn: () => api.get<Comparison>(`/terminations/${terminationId}/comparison`),
   });
-  const preview = useSettlementPreview(terminationId!, confirming);
+  const preview = useSettlementPreview(terminationId!, confirming, restoredOn);
+  const openConfirm = () => {
+    // A reopened dialog starts from loading, never from the figures it showed last time.
+    queryClient.removeQueries({ queryKey: ['settlement-preview', terminationId] });
+    setRestoredOn(null);
+    setRestoredInput(null);
+    setRuleSeen(null);
+    setConfirming(true);
+  };
+  useEffect(() => {
+    if (preview.data) {
+      setRuleSeen({ withDeductions: preview.data.refundRule === 'with_deductions', effectiveOn: preview.data.effectiveOn });
+    }
+  }, [preview.data]);
+  const withDeductions = ruleSeen?.withDeductions ?? false;
+  const today = localToday();
+  const restoredShown = restoredInput ?? restoredOn ?? today;
+  const restoredValid = (day: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(day) && !!ruleSeen && day >= ruleSeen.effectiveOn && day <= today;
+  // A typed day outside the range is on screen, so the figures shown are not for it.
+  // Untouched, the field shows today and the server checks that.
+  const restoredBad = withDeductions && restoredInput !== null && !restoredValid(restoredInput);
 
   // Settling moves money, so nothing here runs twice at once.
   const guarded = async (fn: () => Promise<void>) => {
@@ -111,7 +142,10 @@ export function Termination() {
   const settle = () =>
     guarded(async () => {
       try {
-        const result = await api.post<Settlement>(`/terminations/${terminationId}/settle`, {});
+        const result = await api.post<Settlement>(
+          `/terminations/${terminationId}/settle`,
+          withDeductions && restoredOn ? { restoredOn } : {},
+        );
         setConfirming(false);
         setSettled(result);
         toast.show({ title: 'Deposit settled', tone: 'success' });
@@ -178,6 +212,10 @@ export function Termination() {
               ) : null}
               {settled.penaltyCents > 0 ? (
                 <p className="text-danger">Less cancellation penalty <Money cents={settled.penaltyCents} /></p>
+              ) : null}
+              {/* The refund includes it, so the lines must too or they do not add up. */}
+              {settled.rentCreditCents > 0 ? (
+                <p>Plus rent paid in advance <Money cents={settled.rentCreditCents} /></p>
               ) : null}
             </div>
             <Alert tone="info" title={`Payable by ${formatDate(settled.refundDueBy)}`}>
@@ -283,6 +321,7 @@ export function Termination() {
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[160px] flex-1">
                     <CurrencyInput
+                      aria-label={`Deduction amount for ${item.room} ${item.item}`}
                       cents={draft.findingId === item.findingId ? draft.amountCents : 0}
                       onCentsChange={(next) =>
                         setDraft({ description: '', amountCents: next ?? 0, findingId: item.findingId ?? '' })
@@ -305,7 +344,7 @@ export function Termination() {
       </div>
 
       {!settled && data.status !== 'settled' ? (
-        <Button className="mt-5" loading={busy} onClick={() => setConfirming(true)}>
+        <Button className="mt-5" loading={busy} onClick={openConfirm}>
           Settle the deposit
         </Button>
       ) : null}
@@ -318,10 +357,34 @@ export function Termination() {
         description="This ends the lease, frees the unit and fixes the refund. It cannot be undone."
         confirmLabel="Settle and end the lease"
         loading={busy}
-        disabled={!preview.data || !!preview.data.blocker}
+        // Only the figures just fetched for what is on screen may be confirmed.
+        disabled={!preview.data || preview.isFetching || preview.isError || !!preview.data.blocker || restoredBad}
         onConfirm={settle}
       >
-        <SettlementPreview terminationId={terminationId!} open={confirming} deductions={data.deductions} />
+        {withDeductions && ruleSeen ? (
+          <div className="mb-3 space-y-1">
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-ink-muted">Repairs finished on</span>
+              <Input
+                type="date"
+                value={restoredShown}
+                min={ruleSeen.effectiveOn}
+                max={today}
+                onChange={(event) => {
+                  const day = event.target.value;
+                  setRestoredInput(day);
+                  if (restoredValid(day)) setRestoredOn(day);
+                }}
+              />
+            </label>
+            {restoredBad ? (
+              <span className="block text-xs text-danger">
+                Pick a day from {formatDate(ruleSeen.effectiveOn)} to today.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <SettlementPreview preview={preview} deductions={data.deductions} />
       </ConfirmDialog>
 
       {settled?.statementKey ? (
@@ -334,18 +397,27 @@ export function Termination() {
 }
 
 /** Fetched each time the dialog opens, so it reflects payments and deductions made since. */
-const useSettlementPreview = (terminationId: string, open: boolean) =>
+const useSettlementPreview = (terminationId: string, open: boolean, restoredOn: string | null) =>
   useQuery({
-    queryKey: ['settlement-preview', terminationId],
-    queryFn: () => api.get<SettlementFigures>(`/terminations/${terminationId}/settlement`),
+    queryKey: ['settlement-preview', terminationId, restoredOn],
+    queryFn: () =>
+      api.get<SettlementFigures>(`/terminations/${terminationId}/settlement`, {
+        query: restoredOn ? { restoredOn } : {},
+      }),
     enabled: open,
     staleTime: 0,
     gcTime: 0,
   });
 
 /** The settlement in figures before it happens: the same numbers the statement will carry. */
-function SettlementPreview({ terminationId, open, deductions }: { terminationId: string; open: boolean; deductions: Deduction[] }) {
-  const { data, isLoading, isError, error } = useSettlementPreview(terminationId, open);
+function SettlementPreview({
+  preview,
+  deductions,
+}: {
+  preview: ReturnType<typeof useSettlementPreview>;
+  deductions: Deduction[];
+}) {
+  const { data, isLoading, isError, error } = preview;
   if (isLoading) return <p className="text-meta text-ink-muted">Working out the refund…</p>;
   if (isError || !data) {
     return <Alert tone="danger" title="The figures could not be loaded">{humanError(error)}</Alert>;

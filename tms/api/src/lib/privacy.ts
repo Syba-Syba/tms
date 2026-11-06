@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { audit } from './audit';
 import { query, withTransaction } from './db';
 import { logger } from './logger';
+import { removeSignIn } from './cognito';
 import { storage } from './storage';
 import { sastToday } from '../domain/dates';
 import { erasureBlock, type LeaseForRetention } from '../domain/privacy';
@@ -114,7 +115,12 @@ export async function erasePerson(
       await collect('select s3_key as key from application_document where application_id = any($1)', apps);
       await run('delete from credit_check where application_id = any($1)', apps);
       await run('delete from application_document where application_id = any($1)', apps);
-      await run('update application set notes = null where id = any($1)', apps);
+      // The figures given with each application (applications-create.ts) go with the paperwork.
+      await run(
+        `update application set notes = null, monthly_income_cents = null, employment_status = null, employer = null
+          where id = any($1)`,
+        apps,
+      );
 
       // Files on the leases: slips, the lease and invoice PDFs, signatures, inspection reports,
       // the deposit statement, letters of demand, and the photos they took reporting repairs.
@@ -140,6 +146,51 @@ export async function erasePerson(
           where ph.phase = 'report' and t.created_by = $2 and t.lease_id = any($1)`,
         [leases, sub],
       );
+
+      // Their name, email and phone wherever they typed or were quoted in free text. A blank
+      // phone must not match (and blank out) everything. The number is stored as +27…, and text
+      // often carries it as dialled locally, 08….
+      const fullName = `${applicant.first_name} ${applicant.last_name}`.trim();
+      const phone = applicant.phone || 'no phone on record';
+      const localPhone = phone.startsWith('+27') ? `0${phone.slice(3)}` : phone;
+      const scrub = (column: string) =>
+        `replace(replace(replace(replace(${column}, $2, 'the tenant'), $3, '[email removed]'), $4, '[phone removed]'), $5, '[phone removed]')`;
+
+      // Payment references carry their name ("N PHIRI LSE-00101"). Before they are cleared below,
+      // they go from the activity log, whoever recorded them, and from the messages quoting them.
+      const references = [
+        ...new Set(
+          (
+            await run<{ reference: string | null }>(
+              `select reference from payment where lease_id = any($1)
+               union select reference from payment_proof where lease_id = any($1)`,
+              ls,
+            )
+          )
+            .map((row) => row.reference?.trim() ?? '')
+            .filter((reference) => reference.length >= 3),
+        ),
+      ];
+      await run(
+        `update audit_log set detail = detail - 'reference'
+          where jsonb_typeof(detail) = 'object' and detail ? 'reference'
+            and entity_id in (select unnest($1::uuid[])
+                              union select id from payment where lease_id = any($1)
+                              union select id from payment_proof where lease_id = any($1))`,
+        ls,
+      );
+      for (const reference of references) {
+        // Whole references only: a plain replace() turned a reference such as 'RENT' inside
+        // 'CURRENT' into '[reference removed]'.
+        const escaped = reference.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        const pattern = `(?<![[:alnum:]])${escaped}(?![[:alnum:]])`;
+        await run(
+          `update notification set subject = regexp_replace(subject, $2, '[reference removed]', 'g'),
+                                   body = regexp_replace(body, $2, '[reference removed]', 'g')
+            where lease_id = any($1) and (subject ~ $2 or body ~ $2)`,
+          [leases, pattern],
+        );
+      }
 
       // Required keys point at nothing rather than being cleared.
       await run(`update payment_proof set s3_key = 'erased/' || id, reference = null where lease_id = any($1)`, ls);
@@ -169,10 +220,12 @@ export async function erasePerson(
             and ticket_id in (select id from ticket where created_by = $2 and lease_id = any($1))`,
         [leases, sub],
       );
+      // The title is theirs too ("Naledi - burst geyser, call 082…"), but it names the repair,
+      // so it loses their details rather than going.
       await run(
-        `update ticket set description = '[Removed at the tenant''s request]', rating_note = null
-          where created_by = $2 and lease_id = any($1)`,
-        [leases, sub],
+        `update ticket set description = '[Removed at the tenant''s request]', rating_note = null, title = ${scrub('title')}
+          where created_by = $6 and lease_id = any($1)`,
+        [leases, fullName, applicant.email, phone, localPhone, sub],
       );
       await run(
         `update ticket_event set note = '[Removed at the tenant''s request]'
@@ -186,13 +239,6 @@ export async function erasePerson(
 
       // The landlord's own messages about this person ("Proof of payment from Naledi Phiri,
       // call 082…") keep their purpose but lose the details.
-      const fullName = `${applicant.first_name} ${applicant.last_name}`.trim();
-      // A blank phone must not match (and blank out) every message. The number is stored as
-      // +27…, and messages often carry it as dialled locally, 08….
-      const phone = applicant.phone || 'no phone on record';
-      const localPhone = phone.startsWith('+27') ? `0${phone.slice(3)}` : phone;
-      const scrub = (column: string) =>
-        `replace(replace(replace(replace(${column}, $2, 'the tenant'), $3, '[email removed]'), $4, '[phone removed]'), $5, '[phone removed]')`;
       await run(
         `update notification set subject = ${scrub('subject')}, body = ${scrub('body')}
           where lease_id = any($1) and recipient_sub is distinct from $6`,
@@ -288,18 +334,31 @@ export async function erasePerson(
     await run('delete from notification where recipient_sub = $1', [sub]);
     // Messages sent to their address under another name: invites, and notices to an imported
     // tenant before they had an account.
+    // Not another landlord's messages to the same address on a record of their own (a tenancy
+    // they imported for this email, never claimed): that landlord still holds the tenancy.
     for (const email of emails) {
-      await run('delete from notification where lower(recipient_to) = lower($1)', [email]);
+      await run(
+        `delete from notification n
+          where lower(n.recipient_to) = lower($1)
+            and not exists (
+              select 1 from applicant o
+               where o.id is distinct from $2::uuid and o.erased_at is null
+                 and (n.recipient_sub = 'applicant:' || o.id
+                      or n.lease_id in (select l.id from lease l where l.applicant_id = o.id)))`,
+        [email, applicant?.id ?? null],
+      );
     }
     if (applicant) await run(`delete from notification where recipient_sub = 'applicant:' || $1`, [applicant.id]);
     await run('delete from notification_preference where person_sub = $1', [sub]);
+    // What they wrote when asking for erasure ("I am Naledi Phiri, ID …").
+    await run('update privacy_request set note = null where person_sub = $1', [sub]);
     // Password reset links and recovery codes go with the sign-in (on delete cascade).
     await run('delete from local_credential where sub = $1', [sub]);
     return { keys: files, identityErased: true };
   });
 
-  // After the commit: a file that fails to delete is logged and retried by hand, never a reason
-  // to leave the person's details in the database.
+  // After the commit: a file or sign-in that fails to delete is logged and retried by hand,
+  // never a reason to leave the person's details in the database.
   for (const key of keys) {
     await storage()
       .remove(key)
@@ -314,6 +373,9 @@ export async function erasePerson(
     entityId: null,
     detail: { personSub: sub, files: keys.length, landlordId, identityErased },
   });
+  // Last: Cognito sits outside the VPC. A slow call that ran into the Lambda timeout used to
+  // leave the files and the privacy.erased row (which the sweep relies on) undone.
+  if (identityErased) await removeSignIn(sub);
   return { files: keys.length, identityErased };
 }
 

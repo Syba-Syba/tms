@@ -47,8 +47,10 @@ export const handler = route(async (event) => {
   const [termination] = await query<{
     id: string; status: string; reason: string; notice_given_on: string; effective_on: string;
     refund_due_by: string | null; deductions: string; statement_s3_key: string | null;
+    initiated_by: string; awaiting_tenant: boolean;
   }>(
     `select t.id, t.status, t.reason, t.notice_given_on::text, t.effective_on::text, t.statement_s3_key,
+            t.initiated_by, (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
             t.refund_due_by::text,
             (select count(*) from deposit_deduction d where d.termination_id = t.id)::text as deductions
        from termination t where t.lease_id = $1 and t.status <> 'withdrawn'`,
@@ -143,6 +145,10 @@ export const handler = route(async (event) => {
           id: termination.id,
           status: termination.status,
           reason: termination.reason,
+          // Who may withdraw it: the party who gave it, either for a mutual one.
+          initiatedBy: termination.initiated_by,
+          // A notice the landlord recorded for the tenant that the tenant has not yet confirmed.
+          awaitingTenant: termination.awaiting_tenant,
           noticeGivenOn: termination.notice_given_on,
           effectiveOn: termination.effective_on,
           refundDueBy: termination.refund_due_by,

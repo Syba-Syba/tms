@@ -4,6 +4,7 @@ import { withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, json, notFound, parseBody, route } from '../lib/http';
 import { sniffImageType } from '../lib/images';
+import { MAX_OTHER_DOCUMENTS } from './documents-presign';
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
@@ -68,7 +69,16 @@ export const handler = route(async (event) => {
     // its file goes with it. Left in storage, an old ID copy survived erasure and the sweep,
     // which only find files through these rows.
     let old: { s3_key: string }[] = [];
-    if (kind !== 'other') {
+    if (kind === 'other') {
+      // Presign checks this too, but several links can be issued before any is confirmed.
+      const [kept] = await run<{ n: number }>(
+        `select count(*)::int as n from application_document where application_id = $1 and kind = 'other'`,
+        [applicationId],
+      );
+      if (kept!.n >= MAX_OTHER_DOCUMENTS) {
+        throw await refuse(`An application holds up to ${MAX_OTHER_DOCUMENTS} other documents. Remove one first.`);
+      }
+    } else {
       old = await run<{ s3_key: string }>(
         'delete from application_document where application_id = $1 and kind = $2 returning s3_key',
         [applicationId, kind],

@@ -8,6 +8,11 @@ import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelim
 
 /** Unconfirmed document uploads one application may have in the last hour. */
 export const MAX_PENDING_DOCUMENTS = 20;
+/**
+ * 'Other' documents one application may keep. Every other kind is one per application (a new
+ * one replaces the old), but 'other' adds up, and a loop of 10 MB files filled the disk.
+ */
+export const MAX_OTHER_DOCUMENTS = 10;
 
 const schema = z.object({
   kind: z.enum(['id_copy', 'payslip', 'bank_statement', 'proof_of_address', 'other', 'credit_report']),
@@ -47,6 +52,16 @@ export const handler = route(async (event) => {
   );
   if (pending!.n >= MAX_PENDING_DOCUMENTS) {
     throw conflict('Too many uploads are waiting to be confirmed on this application. Finish those first, or try again in an hour.');
+  }
+
+  if (input.kind === 'other') {
+    const [kept] = await query<{ n: number }>(
+      `select count(*)::int as n from application_document where application_id = $1 and kind = 'other'`,
+      [applicationId],
+    );
+    if (kept!.n >= MAX_OTHER_DOCUMENTS) {
+      throw conflict(`An application holds up to ${MAX_OTHER_DOCUMENTS} other documents. Remove one first.`);
+    }
   }
 
   const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' }[

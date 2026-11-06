@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, Link } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
@@ -26,6 +27,7 @@ export function Login() {
   }, []);
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   // Someone who followed a landlord's listings link and has no account yet keeps the link
   // through sign-up, so they land on that landlord's units afterwards.
@@ -42,7 +44,12 @@ export function Login() {
     ? `/register?landlord=${encodeURIComponent(listing)}${listedUnit ? `&unit=${encodeURIComponent(listedUnit)}` : ''}`
     : '/register';
 
+  // A ref, not the busy state: a held Enter key repeats before React re-renders, and each
+  // extra /auth/login counted towards the lockout.
+  const inFlight = useRef(false);
   const signIn = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       const result = await api.post<{ token: string; user: SessionUser }>('/auth/login', {
@@ -51,6 +58,8 @@ export function Login() {
         ...(code ? { code } : {}),
       });
       await startSession(result.token, result.user);
+      // A new identity: nothing cached for whoever was signed in before may be shown to this one.
+      queryClient.clear();
       // Back to wherever the guard caught them, e.g. a copied /apply?unit= link. The target
       // came out of the address bar, so anything leaving this origin falls back to home.
       navigate(safeReturnPath(returnTo), {
@@ -73,6 +82,7 @@ export function Login() {
         tone: 'danger',
       });
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };

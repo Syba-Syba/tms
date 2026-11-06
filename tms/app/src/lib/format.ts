@@ -1,4 +1,5 @@
 import { formatZar } from '@hlonie/toolbox/utils';
+import { localToday } from './dates';
 /**
  * How the app writes dates and statuses for people. The API speaks ISO dates and database
  * statuses; nobody in Johannesburg reads "2026-10-07" or "part_paid" as words.
@@ -74,8 +75,9 @@ export function formatMonth(value: string | null | undefined): string {
 
 /** Whole days from today to a date: negative when it has passed. */
 export function daysUntil(value: string): number {
-  const today = new Date();
-  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  // Counted from today in Johannesburg, the calendar the deadlines are set on.
+  const [ty, tm, td] = localToday().split('-').map(Number) as [number, number, number];
+  const start = Date.UTC(ty, tm - 1, td);
   const [y, m, d] = value.slice(0, 10).split('-').map(Number) as [number, number, number];
   return Math.round((Date.UTC(y, m - 1, d) - start) / 86_400_000);
 }

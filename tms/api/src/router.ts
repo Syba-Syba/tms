@@ -89,6 +89,7 @@ import { handler as credit_check } from './handlers/credit-check';
 import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
 import { handler as terminations_comparison } from './handlers/terminations-comparison';
+import { handler as terminations_confirm } from './handlers/terminations-confirm';
 import { handler as terminations_deduction } from './handlers/terminations-deduction';
 import { handler as terminations_serve } from './handlers/terminations-serve';
 import { handler as terminations_settle } from './handlers/terminations-settle';
@@ -172,6 +173,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['GET', '/terminations/{id}/settlement', terminations_settlement_preview],
   ['POST', '/terminations/{id}/settle', terminations_settle],
   ['POST', '/terminations/{id}/withdraw', terminations_withdraw],
+  ['POST', '/terminations/{id}/confirm', terminations_confirm],
   ['GET', '/notifications/preferences', notifications_preferences],
   ['PUT', '/notifications/preferences', notifications_preferences],
   ['POST', '/leases/{id}/renewal', renewals_offer],

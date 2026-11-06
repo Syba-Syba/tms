@@ -279,7 +279,8 @@ export const addDeductionSchema = z.object({
 });
 
 export const settleSchema = z.object({
-  // Set when repairs are finished; it anchors the 14 day clock.
+  // Set when repairs are finished; it anchors the 14 day clock. Bounded by the lease end and
+  // today in settlementFigures.
   restoredOn: z.coerce.date().optional(),
   refundReference: z.string().max(60).optional(),
 });
@@ -288,8 +289,11 @@ export const settleSchema = z.object({
  * The move-in inspection that is the baseline for a lease's exit, as a scalar subquery giving
  * its id. A renewal is a new lease row, but the tenant moved in once: the incoming inspection
  * sits on the first lease of the chain. Looking only at the current lease left every renewed
- * lease without a baseline, so no deduction could ever be backed by an inspection. The nearest
- * one up the previous_lease_id chain wins, so a lease with its own move-in inspection keeps it.
+ * lease without a baseline, so no deduction could ever be backed by an inspection.
+ * Only a completed one counts, which means both parties signed it: an unsigned report is the
+ * landlord's word alone, and one opened at exit with every item left at 'good' made any damage
+ * deductible. The earliest one in the chain wins, so an inspection added on a renewal cannot
+ * replace the one the tenant signed when they moved in.
  * `leaseExpr` is SQL for the current lease id (a column or a parameter).
  */
 export const incomingInspectionSql = (leaseExpr: string) => `(
@@ -301,8 +305,8 @@ export const incomingInspectionSql = (leaseExpr: string) => `(
      where l.previous_lease_id is not null and chain.depth < 50
   )
   select ii.id from chain join inspection ii on ii.lease_id = chain.id
-   where ii.kind = 'incoming' and ii.status <> 'missed'
-   order by chain.depth, ii.created_at desc
+   where ii.kind = 'incoming' and ii.status = 'completed'
+   order by chain.depth desc, ii.completed_at nulls last, ii.created_at
    limit 1
 )`;
 
@@ -312,3 +316,17 @@ export const incomingInspectionSql = (leaseExpr: string) => `(
 export const outgoingInWindowSql = (i: string, t: string) =>
   `(${i}.kind = 'outgoing' and ${i}.status <> 'missed'
     and ${i}.scheduled_for between ${t}.effective_on - 3 and ${t}.effective_on)`;
+
+/** SQL true when the outgoing inspection `i` counts as done for the refund deadline: both
+    signed it, or the tenant was told the date in advance, stayed away, and the landlord signed
+    alone on or after it. Settlement and the unsettled-deposit reminder share it, so the
+    reminder never gives a later deadline than settlement applies. `todayExpr` is a SAST date. */
+export const outgoingCountsSql = (i: string, todayExpr: string) =>
+  `(${i}.status = 'completed'
+    or (${i}.scheduled_for < ${todayExpr}
+        and (${i}.created_at at time zone 'UTC' + interval '2 hours')::date < ${i}.scheduled_for
+        and exists (select 1 from inspection_signature s
+                     where s.inspection_id = ${i}.id and s.party = 'landlord'
+                       and (s.signed_at at time zone 'UTC' + interval '2 hours')::date >= ${i}.scheduled_for)
+        and not exists (select 1 from inspection_signature s
+                         where s.inspection_id = ${i}.id and s.party = 'tenant')))`;

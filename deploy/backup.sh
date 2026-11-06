@@ -46,7 +46,10 @@ backup() {
   # A dump that pg_restore cannot list is not a backup.
   pg_restore --list "$db.partial" >/dev/null || { log "FAILED: pg_restore cannot read $db.partial"; return 1; }
   mv "$db.partial" "$db" || { log "FAILED: mv $db"; return 1; }
-  tar -czf "$files.partial" -C /data storage || { log "FAILED: tar of /data/storage"; rm -f "$files.partial"; return 1; }
+  # What a restore leaves beside the documents is not part of them: a backup that held
+  # .restore-prev could not itself be restored (restore.sh moves the live files there).
+  tar -czf "$files.partial" -C /data --exclude=storage/.restore-prev --exclude=storage/.restore-new \
+    --exclude=storage/.restore-state storage || { log "FAILED: tar of /data/storage"; rm -f "$files.partial"; return 1; }
   mv "$files.partial" "$files" || { log "FAILED: mv $files"; return 1; }
   find "$DIR" -name 'db-*.dump' -mtime +"$KEEP_DAYS" -delete || return 1
   find "$DIR" -name 'storage-*.tar.gz' -mtime +"$KEEP_DAYS" -delete || return 1
@@ -72,8 +75,12 @@ check() {
   pg_restore --no-owner --no-acl --exit-on-error --dbname=tms_restore_check "$newest"
   failed=0
   for table in landlord property unit lease invoice payment deposit_ledger audit_log; do
-    live="$(psql -At -c "select count(*) from $table")"
-    restored="$(psql -At -d tms_restore_check -c "select count(*) from $table")"
+    # The privacy sweep deletes failed sign-ins older than 90 days from audit_log after the
+    # dump, so those are left out of its count; everything else in it only grows.
+    count="select count(*) from $table"
+    [ "$table" = audit_log ] && count="$count where action <> 'auth.login_failed'"
+    live="$(psql -At -c "$count")"
+    restored="$(psql -At -d tms_restore_check -c "$count")"
     echo "  $table: live $live, restored $restored"
     case "$table" in
       # A landlord may delete a property or unit after the dump, so the live count can drop.

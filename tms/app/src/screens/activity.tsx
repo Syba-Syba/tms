@@ -5,6 +5,7 @@ import { Button, Card, CardBody, EmptyState, PageHeader, SegmentedControl, Spinn
 import { api } from '../api/client';
 import { QueryError } from '../components/query-state';
 import { describeAction } from '../lib/activity';
+import { toIsoInstant } from '../lib/format';
 import { PAGE } from '../lib/layout';
 
 interface Entry {
@@ -23,8 +24,10 @@ const FILTERS = [
   { label: 'Sign-ins', value: 'credential' },
 ] as const;
 
-const when = (at: string) =>
-  new Date(at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' });
+// The API sends Postgres's own timestamp text ('2026-10-07 22:33:06+00'), which Safari will not
+// parse; every row read 'Invalid Date' on an iPhone.
+export const activityTime = (at: string) =>
+  new Date(toIsoInstant(at)).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', dateStyle: 'medium', timeStyle: 'short' });
 
 /** The audit log, read back: who did what, and when, on your properties and your account. */
 export function Activity() {
@@ -87,7 +90,7 @@ export function Activity() {
                   </p>
                 </div>
                 <time className="text-xs text-ink-muted" dateTime={entry.at}>
-                  {when(entry.at)}
+                  {activityTime(entry.at)}
                 </time>
               </CardBody>
             </li>

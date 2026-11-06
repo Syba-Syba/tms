@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { Alert, Badge, Button, Card, EmptyState } from '@hlonie/toolbox/ui';
-import { api } from '../api/client';
+import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, useToast } from '@hlonie/toolbox/ui';
+import { api, humanError } from '../api/client';
 import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, formatInstant } from '../lib/format';
@@ -22,9 +23,11 @@ interface LeaseRow {
  */
 export function TenantHome() {
   const navigate = useNavigate();
+  // Ended tenancies too: once the deposit is settled the lease is terminated, and the tenant
+  // still needs their deposit statement and documents.
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['leases'],
-    queryFn: () => api.get<{ items: LeaseRow[] }>('/leases'),
+    queryKey: ['leases', 'with-ended'],
+    queryFn: () => api.get<{ items: LeaseRow[] }>('/leases', { query: { include: 'ended' } }),
   });
 
   if (!data) {
@@ -33,9 +36,10 @@ export function TenantHome() {
 
   // The list is newest first, so an accepted renewal that has not started yet would otherwise
   // take over the home screen, with a zero deposit and none of the current lease's invoices.
-  const lease = data.items.find((item) => item.status === 'active') ?? data.items[0];
-  const upcoming = data.items.find((item) => item.status === 'scheduled' && item.id !== lease?.id);
-  if (!lease) return <NoLeaseYet />;
+  const live = data.items.filter((item) => item.status !== 'terminated');
+  const lease = live.find((item) => item.status === 'active') ?? live[0];
+  const upcoming = live.find((item) => item.status === 'scheduled' && item.id !== lease?.id);
+  if (!lease) return <NoLeaseYet ended={data.items.find((item) => item.status === 'terminated')} />;
 
   // Generated but not yet signed: the one thing to do is sign. Showing "You owe nothing" and a
   // R0 deposit here read as if they had moved in, and the lease to sign was three taps away.
@@ -219,18 +223,66 @@ export function applicationStatus(item: Pick<MyApplication, 'id' | 'status' | 'l
   return { ...known, link: null };
 }
 
+/** Who may still withdraw: the applicant, until a lease has gone out for signing. */
+export const applicantCanWithdraw = (item: Pick<MyApplication, 'status' | 'leaseId' | 'leaseStatus'>) =>
+  ['submitted', 'screening', 'approved'].includes(item.status) && (!item.leaseId || item.leaseStatus === 'draft');
+
+/** A tenancy that has ended: where its deposit statement and documents are. */
+function EndedLease({ lease }: { lease: LeaseRow }) {
+  return (
+    <Card className="mb-4">
+      <div className="space-y-2 p-4">
+        <p className="text-lead font-semibold text-ink">Your lease of {lease.unit} has ended</p>
+        <p className="text-body text-ink-muted">
+          {lease.ref} ran to {formatDate(lease.endDate)}. Your deposit statement, inspections and invoices are kept.
+        </p>
+        <Link className="inline-block text-body font-semibold text-brand-600" to="/documents">
+          Deposit statement and documents
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
 /** Before there is a lease: what they applied for and where it stands, rather than an empty page. */
-function NoLeaseYet() {
+function NoLeaseYet({ ended }: { ended?: LeaseRow }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [withdrawing, setWithdrawing] = useState<MyApplication | null>(null);
+  const [busy, setBusy] = useState(false);
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['my-applications'],
     queryFn: () => api.get<{ items: MyApplication[] }>('/me/applications'),
   });
+  // Changing their mind used to leave the unit held until the landlord declined.
+  const withdraw = async (item: MyApplication) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.post(`/applications/${item.id}/withdraw`, {});
+      setWithdrawing(null);
+      toast.show({ title: 'Application withdrawn', tone: 'info' });
+      queryClient.invalidateQueries({ queryKey: ['my-applications'] });
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    } catch (error) {
+      toast.show({ title: 'Not withdrawn', description: humanError(error), tone: 'danger' });
+    } finally {
+      setBusy(false);
+    }
+  };
   // "No lease yet" is only true once the list has answered; a failure used to read as it.
   if (!data) {
     return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your applications" />;
   }
   const items = data.items;
   if (items.length === 0) {
+    if (ended) {
+      return (
+        <main className={PAGE.narrow}>
+          <EndedLease lease={ended} />
+        </main>
+      );
+    }
     return (
       <main className={PAGE.narrow}>
         <EmptyState
@@ -242,6 +294,7 @@ function NoLeaseYet() {
   }
   return (
     <main className={PAGE.narrow}>
+      {ended ? <EndedLease lease={ended} /> : null}
       <h1 className="mb-5 font-display text-display font-medium leading-tight tracking-[-0.01em] text-ink">Your applications</h1>
       <ul className="space-y-3">
         {items.map((item) => {
@@ -268,12 +321,28 @@ function NoLeaseYet() {
                       {status.link.label}
                     </Link>
                   ) : null}
+                  {applicantCanWithdraw(item) ? (
+                    <div>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => setWithdrawing(item)}>
+                        Withdraw application
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </Card>
             </li>
           );
         })}
       </ul>
+      <ConfirmDialog
+        open={Boolean(withdrawing)}
+        onOpenChange={(next) => !next && !busy && setWithdrawing(null)}
+        title="Withdraw this application?"
+        description={withdrawing ? `The landlord is no longer asked to decide, and ${withdrawing.unit} is no longer held for you.` : ''}
+        confirmLabel="Withdraw the application"
+        loading={busy}
+        onConfirm={() => withdrawing && withdraw(withdrawing)}
+      />
     </main>
   );
 }

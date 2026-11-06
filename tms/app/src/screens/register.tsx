@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router';
 import { Button, Card, CardBody, Checkbox, Input, SegmentedControl, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
@@ -21,6 +22,7 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const create = async () => {
     setBusy(true);
@@ -31,6 +33,8 @@ export function Register() {
         ...(kind === 'landlord' ? { landlord: business, termsVersion: TERMS_VERSION } : {}),
       });
       await startSession(result.token, result.user);
+      // A new identity: nothing cached for whoever was signed in before may be shown to this one.
+      queryClient.clear();
       // A landlord lands on the dashboard, where the setup checklist waits. An applicant goes
       // back to the listing they came from, if they followed a landlord's link.
       const listing = params.get('landlord');

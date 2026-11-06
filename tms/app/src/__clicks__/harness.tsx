@@ -81,7 +81,7 @@ const SIG =
  * This arranges the shared fixture through the API: the fixed applicant approved on a unit
  * with a rendered lease — created from scratch when absent, reused when present.
  */
-export async function ensureLease(options: { signed?: boolean } = {}): Promise<string> {
+export async function ensureLease(options: { signed?: boolean; withoutNotice?: boolean } = {}): Promise<string> {
   await signInAs('landlord@example.co.za');
 
   const pick = async (): Promise<string | null> => {
@@ -91,9 +91,11 @@ export async function ensureLease(options: { signed?: boolean } = {}): Promise<s
     );
     for (const item of mine) {
       const lease = await call<any>('GET', `/leases/${item.leaseId}`);
-      if (lease.status !== 'terminated' && (!lease.termination || lease.termination.status !== 'settled')) {
-        return item.leaseId;
-      }
+      if (lease.status === 'terminated' || lease.termination?.status === 'settled') continue;
+      // A move-in inspection is refused once notice is served, and another suite may have
+      // served notice on the shared lease, so a suite that books one asks for a lease without.
+      if (options.withoutNotice && lease.termination && lease.termination.status !== 'withdrawn') continue;
+      return item.leaseId;
     }
     return null;
   };

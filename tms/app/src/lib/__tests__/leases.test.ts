@@ -14,6 +14,11 @@ describe('currentLease', () => {
     expect(currentLease([{ id: 'new', status: 'out_for_signature' }])?.id).toBe('new');
     expect(currentLease([])).toBeUndefined();
   });
+
+  it('falls back to an ended lease only when nothing else is left (audit 4, item 42)', () => {
+    expect(currentLease([{ id: 'old', status: 'terminated' }, { id: 'new', status: 'out_for_signature' }])?.id).toBe('new');
+    expect(currentLease([{ id: 'old', status: 'terminated' }])?.id).toBe('old');
+  });
 });
 
 describe('leaseDocumentBadge', () => {

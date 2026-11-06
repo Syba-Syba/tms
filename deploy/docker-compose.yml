@@ -61,6 +61,7 @@ services:
       - db-socket:/var/run/postgresql
       # Read-only, for the health check's view of how old the last backup is.
       - ./backups:/backups:ro
+    networks: [edge]
     depends_on:
       db:
         condition: service_healthy
@@ -73,6 +74,7 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    networks: [edge]
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env.production}
     volumes:
@@ -111,6 +113,15 @@ services:
       # The app creates the tms_backup role on start; backup.sh waits for it.
       app:
         condition: service_started
+
+# Caddy and the app. With IPv6 on, Docker forwards an IPv6 visitor to Caddy with their own
+# address. Without it Docker relays them over IPv4, every IPv6 visitor arrives as the network's
+# gateway, and all of them share one rate-limit bucket: one of them could lock out the rest.
+# Needs Docker 27 or later (it picks the IPv6 subnet itself). The database and backups reach
+# Postgres through its socket, so they stay on the default network.
+networks:
+  edge:
+    enable_ipv6: true
 
 volumes:
   db:

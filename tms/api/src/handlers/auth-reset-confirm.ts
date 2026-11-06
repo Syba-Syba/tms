@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { audit } from '../lib/audit';
 import { credentialVersion, signToken } from '../lib/authtoken';
-import { withTransaction } from '../lib/db';
+import { query, withTransaction } from '../lib/db';
 import { ApiError, json, parseBody, route, tooManyRequests } from '../lib/http';
 import { hashResetToken, requireLocalDriver } from '../lib/password-reset';
 import { hashPassword } from '../lib/passwords';
@@ -67,6 +67,12 @@ export const handler = route(async (event) => {
     entityId: null,
     detail: { email: user.email },
   });
+  // Sign-in refuses an agent the owner removed (auth-login.ts); a reset must not be the way
+  // round that. The new password stands, but no session is handed out.
+  if (user.role === 'landlord') {
+    const [member] = await query('select 1 from landlord_member where sub = $1', [user.sub]);
+    if (!member) throw new ApiError(403, 'forbidden', 'Your password is changed, but your access to this landlord account has ended.');
+  }
   // With two-step on, the emailed link alone must not sign anyone in: whoever reads the inbox
   // would be in. The password is changed; signing in still needs the code.
   if (user.two_step) return json(200, { token: null, user: null, signInWithCode: true });

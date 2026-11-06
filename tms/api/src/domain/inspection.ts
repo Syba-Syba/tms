@@ -15,9 +15,15 @@ export const createInspectionSchema = z.object({
   scheduledFor: z.coerce.date(),
 });
 
+/** Findings one inspection may hold. The template has under 40; every render and seal walks them all. */
+export const MAX_FINDINGS = 300;
+
+// Room and item make up a unique index key, which Postgres refuses past about 8 KB.
+export const roomName = z.string().min(1).max(80, 'Use at most 80 characters.');
+
 export const findingSchema = z.object({
-  room: z.string().min(1),
-  item: z.string().min(1),
+  room: roomName,
+  item: roomName,
   condition: z.enum(['good', 'fair', 'poor', 'damaged', 'missing']),
   note: z.string().max(1000).optional(),
 });

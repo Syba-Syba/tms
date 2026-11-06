@@ -3,7 +3,7 @@ import { FULLY_SIGNED_SQL } from '../lib/activation';
 import { billableUntil, RENEWAL_STARTS_SQL } from '../lib/billing';
 import { zar } from '../domain/money';
 import { billingWindow, describeWindow, rentForWindow } from '../domain/renewal';
-import { dateFromIso, nextMonthStart, sastDayOfMonth, sastMonthStart } from '../domain/dates';
+import { dateFromIso, nextMonthStart, sastDayOfMonth, sastMonthStart, sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
 import { jobLogger } from '../lib/logger';
 
@@ -62,6 +62,7 @@ interface BillableLease {
   tenant_sub: string | null;
   tenant_email: string;
   tenant_phone: string;
+  activated_on: string | null;
 }
 
 export const handler = async (input?: { periods?: string[]; now?: Date }) => {
@@ -70,8 +71,10 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
   let issued = 0;
   let considered = 0;
 
+  const currentMonth = sastMonthStart(input?.now);
   for (const periodIso of periods) {
     const period = dateFromIso(periodIso);
+    const catchUpDue = periodIso < currentMonth ? sastToday(input?.now) : null;
     const leases = await query<BillableLease>(
       // A lease stays 'active' until the deposit is settled, which can be weeks after the
       // tenant moves out. Without the termination join this run bills months nobody lived
@@ -89,7 +92,8 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
               'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref,
               p.name || ' ' || u.code as unit_label,
               -- An imported tenant has no sign-in yet, and is told by email all the same.
-              coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub, a.email as tenant_email, a.phone as tenant_phone
+              coalesce(a.cognito_sub, 'applicant:' || a.id) as tenant_sub, a.email as tenant_email, a.phone as tenant_phone,
+              (l.activated_at at time zone 'Africa/Johannesburg')::date::text as activated_on
          from lease l
          join unit u on u.id = l.unit_id
          join property p on p.id = u.property_id
@@ -140,12 +144,16 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
           // the pending_charge sweep below and this commit found no invoice yet, went into
           // pending_charge after the sweep, and was never billed.
           await run('select id from lease where id = $1 for update', [lease.id]);
-          const [invoice] = await run<{ id: string }>(
+          // Rent for a month that began before the lease went live (signed after its start
+          // date) falls due on the day it went live, not on the 1st. Dated the 1st, the
+          // invoice was born weeks overdue and the next arrears run sent the final reminder.
+          // A month billed late (catching up after missed runs) falls due today, for the same reason.
+          const [invoice] = await run<{ id: string; due_on: string }>(
             `insert into invoice (lease_id, period_start, due_on, total_cents, covers_from, covers_to)
-             values ($1, $2, $2, $3, $4, $5)
+             values ($1, $2, greatest($2::date, coalesce($6::date, $2::date), coalesce($7::date, $2::date)), $3, $4, $5)
              on conflict (lease_id, period_start) do nothing
-             returning id`,
-            [lease.id, periodIso, rent, window.from, window.to],
+             returning id, due_on::text`,
+            [lease.id, periodIso, rent, window.from, window.to, lease.activated_on, catchUpDue],
           );
           if (!invoice) return null;
           await run(
@@ -175,7 +183,7 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
               [invoice.id, extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0)],
             );
           }
-          return { totalCents: rent + extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0) };
+          return { dueOn: invoice.due_on, totalCents: rent + extras.reduce((sum, extra) => sum + Number(extra.amount_cents), 0) };
         });
         if (!created) continue;
         issued += 1;
@@ -188,7 +196,7 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
             data: {
               period: periodIso.slice(0, 7),
               amount: zar(created.totalCents),
-              dueOn: periodIso,
+              dueOn: created.dueOn,
               reference: lease.lease_ref,
               unit: lease.unit_label,
             },

@@ -2,9 +2,16 @@ import { query } from '../lib/db';
 import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { jobLogger } from '../lib/logger';
-import { dateFromIso, isoDate, sastToday } from '../domain/dates';
+import { addDaysIso, dateFromIso, isoDate, sastToday } from '../domain/dates';
 import { sastDateTime } from '../domain/notification';
-import { addBusinessDays, businessDaysBetween } from '../domain/termination';
+import {
+  addBusinessDays,
+  businessDaysBetween,
+  outgoingCountsSql,
+  outgoingInWindowSql,
+  refundDueBy,
+  type RefundRule,
+} from '../domain/termination';
 
 const log = jobLogger('notifications-sweep');
 
@@ -126,7 +133,7 @@ export const handler = async () => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`Bad date ${today}`);
   const sqlToday = `'${today}'::date`;
   const counts = { slaSoon: 0, slaBreached: 0, inspections: 0, refunds: 0,
-                   leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
+                   unsettled: 0, leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
   const failures: string[] = [];
 
   // Unpaid rent is chased by the arrears run, which keeps the ladder on the lease.
@@ -196,7 +203,9 @@ export const handler = async () => {
               pr.name || ' ' || u.code as unit,
               a.first_name || ' ' || a.last_name as tenant,
               ll.cognito_sub as landlord_sub, ll.email as landlord_email,
-              coalesce((select sum(d.amount_cents) from deposit_ledger d
+              -- The statement's refund, rent credit included. Settlements from before it was
+              -- stored fall back to the deposit ledger's refund.
+              coalesce(t.refund_cents, (select sum(d.amount_cents) from deposit_ledger d
                          where d.lease_id = t.lease_id and d.entry_type = 'refund'), 0)::text as refund
          from termination t
          join lease l on l.id = t.lease_id
@@ -225,6 +234,59 @@ export const handler = async () => {
     });
   });
 
+  /* Deposits nobody has settled. The refund clock (RHA s5(3)) runs from the lease end whether
+     or not the landlord settles, and the reminder above only fires once they have. The landlord
+     is told when the lease has ended, three days before the provisional deadline, and once it
+     has passed. The deadline is 7 days with a completed exit inspection and no deductions, 21
+     with no exit inspection, and with deductions at the earliest 14 days from the lease end,
+     since the unit cannot be restored before the tenant leaves. */
+  await runStep('unsettled', failures, async () => {
+    const open = await query<{
+      id: string; lease_id: string; effective_on: string; unit: string; tenant: string;
+      landlord_sub: string; landlord_email: string; inspected: boolean; deductions: boolean;
+    }>(
+      `select t.id, t.lease_id, t.effective_on::text,
+              pr.name || ' ' || u.code as unit,
+              a.first_name || ' ' || a.last_name as tenant,
+              ll.cognito_sub as landlord_sub, ll.email as landlord_email,
+              exists (select 1 from inspection i
+                       where i.lease_id = t.lease_id and ${outgoingInWindowSql('i', 't')}
+                         and ${outgoingCountsSql('i', sqlToday)}) as inspected,
+              exists (select 1 from deposit_deduction d where d.termination_id = t.id) as deductions
+         from termination t
+         join lease l on l.id = t.lease_id
+         join applicant a on a.id = l.applicant_id
+         join unit u on u.id = l.unit_id
+         join property pr on pr.id = u.property_id
+         join landlord ll on ll.id = pr.landlord_id
+        where t.status not in ('settled', 'withdrawn')
+          and l.status = 'active'
+          and t.effective_on <= ${sqlToday}
+          -- Waiting on the tenant's confirmation it cannot be settled; nothing to remind of.
+          and not (t.needs_tenant_confirmation and t.tenant_confirmed_at is null)
+          and ll.cognito_sub is not null`,
+    );
+    await eachRow('unsettled', open, failures, async (row) => {
+      const rule: RefundRule = !row.inspected ? 'no_inspection' : row.deductions ? 'with_deductions' : 'no_deductions';
+      const deadline = isoDate(refundDueBy(rule, dateFromIso(row.effective_on)));
+      const threshold = today > deadline ? 'overdue' : today >= addDaysIso(deadline, -3) ? 'due_soon' : 'ended';
+      const deadlineLine =
+        rule === 'with_deductions'
+          ? `With deductions the refund is due 14 days after the unit is restored, so no later than ${deadline} if it was restored the day the lease ended.`
+          : threshold === 'overdue'
+            ? `The refund was due by ${deadline}.`
+            : `The refund is due by ${deadline}.`;
+      await notify({
+        leaseId: row.lease_id,
+        to: { sub: row.landlord_sub, email: row.landlord_email },
+        kind: 'deposit_unsettled',
+        dedupeKey: `deposit_unsettled:${row.id}:${row.effective_on}:${threshold}`,
+        data: { unit: row.unit, tenant: row.tenant, effectiveOn: row.effective_on, deadlineLine },
+      });
+      counts.unsettled += 1;
+    });
+  });
+
   /* Leases running out, so a renewal or notice is given inside the CPA window and the exit
      inspection gets booked. Each reminder covers a range rather than one exact day, so a sweep
      that missed its day still sends it the next morning; the key names the threshold, so it
@@ -243,6 +305,8 @@ export const handler = async () => {
          join landlord ll on ll.id = pr.landlord_id
          left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
         where l.status = 'active' and t.id is null
+          -- A renewal already accepted or signed: the tenant is staying, nothing to decide.
+          and not exists (select 1 from lease n where n.previous_lease_id = l.id and n.status in ('scheduled', 'active'))
           and l.end_date between ${sqlToday} and $1::date
           and ll.cognito_sub is not null`,
       [isoDate(addBusinessDays(dateFromIso(today), LEASE_ENDING_FIRST_BUSINESS_DAYS))],

@@ -208,6 +208,11 @@ const HEADERS = {
   reference: /^(reference|ref|statement\s*reference|their\s*reference|beneficiary\s*reference)$/i,
 };
 
+/** The widest row a statement may have. */
+export const MAX_CELLS = 60;
+/** Rows looked at to find the columns of a statement with no header. */
+const DETECT_ROWS = 500;
+
 interface Columns {
   date: number;
   amount: number;
@@ -233,8 +238,11 @@ function columnsFromHeader(header: string[]): Columns | null {
  * column that parses as dates, the amount is the first amount after it, and the description
  * is the column with the most letters in it.
  */
-function columnsFromValues(rows: string[][]): Columns | null {
-  const width = Math.max(...rows.map((row) => row.length));
+function columnsFromValues(allRows: string[][]): Columns | null {
+  // Every column is scored against every row, so both are bounded: a sample of rows is enough
+  // to tell the columns apart, and parseCsv has already refused rows wider than MAX_CELLS.
+  const rows = allRows.slice(0, DETECT_ROWS);
+  const width = rows.reduce((widest, row) => Math.max(widest, row.length), 0);
   const share = (test: (cell: string) => boolean, column: number) =>
     rows.filter((row) => row[column] !== undefined && test(row[column]!)).length / rows.length;
   let date = -1;
@@ -270,7 +278,19 @@ function parseCsv(text: string): ParsedStatement {
   const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
   if (lines.length === 0) throw new StatementError('That file is empty.');
   const delimiter = detectDelimiter(lines);
-  const rows = lines.map((line) => splitRow(line, delimiter));
+  // Spreadsheet exports pad rows with empty cells out to the used range; those are dropped
+  // so only real columns count against the ceiling.
+  const rows = lines.map((line) => {
+    const row = splitRow(line, delimiter);
+    let end = row.length;
+    while (end > 0 && row[end - 1]!.trim() === '') end -= 1;
+    return end === row.length ? row : row.slice(0, end);
+  });
+  // No bank exports anything near this wide. Without a ceiling, a header-less file of one very
+  // wide row and many short ones made column detection quadratic and stalled the server.
+  if (rows.some((row) => row.length > MAX_CELLS)) {
+    throw new StatementError(`That file has rows of more than ${MAX_CELLS} columns, which is not a bank statement.`);
+  }
 
   // The header is the first row that names a date and an amount. FNB puts account details
   // above it, so it is not always the first row.

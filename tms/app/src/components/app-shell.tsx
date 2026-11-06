@@ -62,7 +62,7 @@ export function AppShell() {
       <header className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-5">
           <Wordmark />
-          <nav className="hidden h-full flex-1 gap-6 md:flex" aria-label="Main">
+          <nav className="hidden h-full flex-1 gap-6 lg:flex" aria-label="Main">
             {items.map((item) => (
               <NavLink
                 key={item.to}
@@ -78,11 +78,11 @@ export function AppShell() {
               </NavLink>
             ))}
           </nav>
-          <span className="ml-auto truncate text-meta text-ink-muted md:ml-0">{currentUser()?.name}</span>
+          <span className="ml-auto truncate text-meta text-ink-muted lg:ml-0">{currentUser()?.name}</span>
           <button
             type="button"
             onClick={() => endSession()}
-            className="hidden min-h-6 px-1 text-meta text-ink-muted underline-offset-4 hover:text-ink hover:underline md:block"
+            className="hidden min-h-6 px-1 text-meta text-ink-muted underline-offset-4 hover:text-ink hover:underline lg:block"
           >
             Log out
           </button>
@@ -91,13 +91,13 @@ export function AppShell() {
       <PlanBanner />
 
       {/* Room for the bottom bar on phones, so the last card is never hidden behind it. */}
-      <div id="content" tabIndex={-1} className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] outline-none md:pb-0">
+      <div id="content" tabIndex={-1} className="pb-[calc(4.5rem+env(safe-area-inset-bottom))] outline-none lg:pb-0">
         <Outlet />
       </div>
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
         <div className="mx-auto flex max-w-lg">
           {bar.map((item) => (

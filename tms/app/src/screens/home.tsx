@@ -10,6 +10,7 @@ import { QueryState } from '../components/query-state';
 import { SetupChecklist } from '../components/setup-checklist';
 import { isLandlord } from '../lib/session';
 import { localToday } from '../lib/dates';
+import { useLandlord } from '../lib/landlord';
 import { TenantHome } from './tenant-home';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
@@ -26,6 +27,11 @@ interface LeaseRow {
   monthlyRentCents: number;
   depositBalanceCents: number;
   outstandingCents: number;
+  /** Of outstandingCents, what is past its due date. Rent issued on the 25th is not late yet. */
+  overdueCents: number;
+  previousLeaseId: string | null;
+  terminationId: string | null;
+  awaitingTenant?: boolean;
   openTickets: number;
   terminationEffectiveOn: string | null;
   renewalOffered: boolean;
@@ -102,6 +108,7 @@ function LandlordHome() {
       api.get<{ items: { leaseId: string; stage: string | null; pausedUntil: string | null }[] }>('/reports/arrears'),
   });
 
+  const landlordAccount = useLandlord();
   const privacy = useQuery({
     queryKey: ['privacy-requests'],
     queryFn: () => api.get<{ items: { status: string }[] }>('/privacy-requests'),
@@ -120,8 +127,17 @@ function LandlordHome() {
   }
 
   const rows = leases.data?.items ?? [];
-  const arrears = rows.reduce((sum, lease) => sum + lease.outstandingCents, 0);
-  const owing = rows.filter((lease) => lease.outstandingCents > 0).length;
+  // Behind means past the due date. Next month's rent is issued on the 25th; counting it made
+  // every tenant look behind until the 1st.
+  const arrears = rows.reduce((sum, lease) => sum + lease.overdueCents, 0);
+  const notYetDue = rows.reduce((sum, lease) => sum + Math.max(0, lease.outstandingCents - lease.overdueCents), 0);
+  const owing = rows.filter((lease) => lease.overdueCents > 0).length;
+  // A renewal or a new tenancy waiting to start is not a lease running yet.
+  const running = rows.filter((lease) => lease.status === 'active').length;
+  // Leases already followed by a scheduled renewal: no "Offer a renewal" prompt for them.
+  const renewed = new Set(
+    rows.filter((lease) => lease.status === 'scheduled' && lease.previousLeaseId).map((lease) => lease.previousLeaseId!),
+  );
   const slipCount = slips.data?.items.length ?? 0;
   const waiting = applications.data?.items.filter((item) => ['submitted', 'screening'].includes(item.status)).length ?? 0;
   const unmatched = imports.data?.items.reduce((sum, item) => sum + item.unmatched, 0) ?? 0;
@@ -131,7 +147,7 @@ function LandlordHome() {
   const stageOf = new Map((ladder.data?.items ?? []).map((item) => [item.leaseId, item]));
   const letterReady = rows.filter((lease) => {
     const stage = stageOf.get(lease.id);
-    return lease.outstandingCents > 0 && stage?.stage === 'reminder_7' && !stage.pausedUntil;
+    return lease.overdueCents > 0 && stage?.stage === 'reminder_7' && !stage.pausedUntil;
   });
 
   const tasks: Task[] = [];
@@ -139,7 +155,7 @@ function LandlordHome() {
     tasks.push({
       key: `letter-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
       title: `Letter of demand ready: ${lease.tenant}`,
-      detail: `${lease.unit}, ${zar(lease.outstandingCents)}, final reminder sent.`,
+      detail: `${lease.unit}, ${zar(lease.overdueCents)}, final reminder sent.`,
     });
   }
   if (slipCount > 0) {
@@ -163,11 +179,11 @@ function LandlordHome() {
     });
   }
   const ready = new Set(letterReady.map((lease) => lease.id));
-  for (const lease of [...rows].filter((l) => l.outstandingCents > 0 && !ready.has(l.id)).sort((a, b) => b.outstandingCents - a.outstandingCents).slice(0, 3)) {
+  for (const lease of [...rows].filter((l) => l.overdueCents > 0 && !ready.has(l.id)).sort((a, b) => b.overdueCents - a.overdueCents).slice(0, 3)) {
     const stage = stageOf.get(lease.id);
     tasks.push({
       key: `arrears-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
-      title: `${lease.tenant} owes ${zar(lease.outstandingCents)}`,
+      title: `${lease.tenant} owes ${zar(lease.overdueCents)}`,
       detail: [lease.unit, stage?.pausedUntil ? `reminders paused to ${formatDate(stage.pausedUntil)}` : stage?.stage ? STAGE[stage.stage] : null]
         .filter(Boolean)
         .join(', '),
@@ -175,10 +191,14 @@ function LandlordHome() {
   }
   const privacyWaiting = privacy.data?.items.filter((item) => item.status === 'pending').length ?? 0;
   if (privacyWaiting > 0) {
+    // Only the owner can answer one; an agent who tapped Erase was refused.
+    const owner = landlordAccount.data?.me.role === 'owner';
     tasks.push({
       key: 'privacy', to: '/settings/notifications', tone: 'warning',
-      title: `${privacyWaiting} privacy request${privacyWaiting === 1 ? '' : 's'} to answer`,
-      detail: 'POPIA expects an answer within a reasonable time.',
+      title: `${privacyWaiting} privacy request${privacyWaiting === 1 ? '' : 's'} ${owner ? 'to answer' : 'waiting'}`,
+      detail: owner
+        ? 'POPIA expects an answer within a reasonable time.'
+        : 'Only the account owner can answer. Ask them to, as POPIA expects an answer within a reasonable time.',
     });
   }
   if (waiting > 0) {
@@ -196,11 +216,27 @@ function LandlordHome() {
           title: `${lease.unit} ends ${formatDate(lease.terminationEffectiveOn)}`,
           detail: 'Book the exit inspection for the last three days, with the tenant there.',
         });
+      } else if (lease.awaitingTenant) {
+        // Settling is refused until the tenant confirms the notice the landlord recorded.
+        tasks.push({
+          key: `confirm-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning',
+          title: `${lease.unit}: waiting for the tenant to confirm the notice`,
+          detail: 'The deposit can be settled once the tenant confirms it in the app.',
+        });
+      } else if (days < 0) {
+        // Still listed, so not settled: settling ends the lease. The refund deadline is running.
+        tasks.push({
+          key: `settle-${lease.id}`,
+          to: lease.terminationId ? `/terminations/${lease.terminationId}` : `/leases/${lease.id}`,
+          tone: 'danger',
+          title: `Settle the deposit for ${lease.unit}`,
+          detail: `The lease ended ${formatDate(lease.terminationEffectiveOn)}. The Rental Housing Act refund deadline is running.`,
+        });
       }
       continue;
     }
     const days = daysUntil(lease.endDate);
-    if (!lease.renewalOffered && days >= 0 && days <= 60) {
+    if (!lease.renewalOffered && !renewed.has(lease.id) && days >= 0 && days <= 60) {
       tasks.push({
         key: `renew-${lease.id}`, to: `/leases/${lease.id}`, tone: 'info',
         title: `${lease.unit} ends in ${days} days`, detail: 'Offer a renewal, or plan the exit.',
@@ -210,11 +246,12 @@ function LandlordHome() {
 
   return (
     <main className={PAGE.wide}>
-      <PageHeader title="Overview" description={`${rows.length} lease${rows.length === 1 ? '' : 's'} running.`} />
+      <PageHeader title="Overview" description={`${running} lease${running === 1 ? '' : 's'} running.`} />
       <SetupChecklist />
 
       <Headline
         arrearsCents={arrears}
+        notYetDueCents={notYetDue}
         owing={owing}
         collectedCents={month.data?.totals.collectedCents}
         invoicedCents={month.data?.totals.invoicedCents}
@@ -271,8 +308,9 @@ function LandlordHome() {
  * One figure leads: what tenants owe, or when nobody owes, what came in this month. The other
  * counts follow as a line of text, so the page opens on the number that needs a decision.
  */
-function Headline({ arrearsCents, owing, collectedCents, invoicedCents, slips, openTickets, lateTickets }: {
+function Headline({ arrearsCents, notYetDueCents, owing, collectedCents, invoicedCents, slips, openTickets, lateTickets }: {
   arrearsCents: number;
+  notYetDueCents: number;
   owing: number;
   collectedCents?: number;
   invoicedCents?: number;
@@ -296,7 +334,8 @@ function Headline({ arrearsCents, owing, collectedCents, invoicedCents, slips, o
       <p className="text-meta text-ink-muted">
         {owed
           ? `${owing} tenant${owing === 1 ? '' : 's'} behind on rent.`
-          : invoicedCents === undefined ? '' : `of ${headlineZar(invoicedCents)} invoiced. Nobody owes anything.`}
+          : invoicedCents === undefined ? '' : `of ${headlineZar(invoicedCents)} invoiced. Nobody is behind.`}
+        {notYetDueCents > 0 ? ` ${headlineZar(notYetDueCents)} more is invoiced and not yet due.` : ''}
       </p>
       <ul className="mt-3 flex flex-wrap gap-x-5 text-meta text-ink-muted">
         {owed ? <li><Link to="/payments" className={link}>{collected} collected this month</Link></li> : null}
@@ -389,8 +428,13 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">{lease.tenant}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-right"><Money cents={lease.monthlyRentCents} /></td>
-                  <td className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${lease.outstandingCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
-                    {lease.outstandingCents > 0 ? zar(lease.outstandingCents) : '-'}
+                  <td className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${lease.overdueCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
+                    {lease.overdueCents > 0 ? zar(lease.overdueCents) : '-'}
+                    {lease.outstandingCents > lease.overdueCents ? (
+                      <span className="block text-xs font-normal text-ink-muted">
+                        {zar(lease.outstandingCents - lease.overdueCents)} not yet due
+                      </span>
+                    ) : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">
                     {formatDate(lease.terminationEffectiveOn ?? lease.endDate)}
@@ -417,7 +461,7 @@ function endNote(lease: LeaseRow): string | null {
 }
 
 function LeaseFlag({ lease }: { lease: LeaseRow }) {
-  if (lease.outstandingCents > 0) return <Badge tone="danger">Owes {zar(lease.outstandingCents)}</Badge>;
+  if (lease.overdueCents > 0) return <Badge tone="danger">Owes {zar(lease.overdueCents)}</Badge>;
   if (lease.terminationEffectiveOn) return <Badge tone="warning">Notice served</Badge>;
   if (lease.renewalOffered) return <Badge tone="info">Renewal offered</Badge>;
   const days = daysUntil(lease.endDate);

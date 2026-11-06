@@ -64,14 +64,29 @@ export function addMonth(iso: string): string {
 export async function assertUnitRoom(landlordId: string, adding: number): Promise<void> {
   if (adding <= 0) return;
   const subscription = await subscriptionOf(landlordId);
-  const allowance = unitAllowance(subscription, await standingOf(landlordId));
+  let allowance = unitAllowance(subscription, await standingOf(landlordId));
   if (!Number.isFinite(allowance)) return;
+  // A smaller plan waiting for its first payment caps the units too. Otherwise a landlord
+  // could ask for Starter, fill up to the old plan's limit, and pay Starter's price for it.
+  const [pending] = await query<{ pending_plan: string | null }>(
+    'select pending_plan from subscription where landlord_id = $1',
+    [landlordId],
+  );
+  const pendingPlan = planById(pending?.pending_plan);
+  if (pendingPlan) allowance = Math.min(allowance, pendingPlan.maxUnits);
   const [count] = await query<{ units: string }>(
     'select count(*)::text as units from unit u join property p on p.id = u.property_id where p.landlord_id = $1',
     [landlordId],
   );
   const units = Number(count!.units);
   if (units + adding > allowance) {
+    if (pendingPlan && pendingPlan.maxUnits === allowance) {
+      throw new ApiError(
+        402,
+        'plan_limit',
+        `Your change to ${pendingPlan.name} covers ${allowance} units and you have ${units}. Cancel the change under Settings, Plan to add more.`,
+      );
+    }
     const next = PLANS.find((plan) => plan.maxUnits >= units + adding);
     throw new ApiError(
       402,

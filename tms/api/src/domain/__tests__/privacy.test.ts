@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { erasureBlock, PRIVACY_VERSION, retainedUntil } from '../privacy';
+import { erasureBlock, PRIVACY_VERSION, retainedUntil, STILL_RUNNING } from '../privacy';
 
 describe('retention', () => {
   it('holds records for five years after the lease ends', () => {
@@ -19,9 +19,18 @@ describe('retention', () => {
     expect(
       retainedUntil([
         { status: 'terminated', endDate: '2020-01-31', terminationEffectiveOn: null },
-        { status: 'active', endDate: '2027-03-31', terminationEffectiveOn: null },
+        { status: 'terminated', endDate: '2027-03-31', terminationEffectiveOn: null },
       ]),
     ).toBe('2032-03-31');
+  });
+
+  it('holds a live lease without end, whatever its end date says', () => {
+    expect(
+      retainedUntil([
+        { status: 'terminated', endDate: '2020-01-31', terminationEffectiveOn: null },
+        { status: 'active', endDate: '2021-03-31', terminationEffectiveOn: null },
+      ]),
+    ).toBe(STILL_RUNNING);
   });
 
   it('ignores leases that never took effect', () => {

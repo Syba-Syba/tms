@@ -52,7 +52,8 @@ describe('serverless.yml', () => {
     }
     // PayFast has no token to send. That handler checks the signature, the sender and PayFast's
     // own confirmation instead; nothing else may join this list without the same.
-    expect(open).toEqual(['api POST /billing/notify']);
+    // /health is the uptime monitor's, and says nothing about anyone.
+    expect(open).toEqual(['api POST /billing/notify', 'api GET /health']);
   });
 
   /* The suite below was green while the package held .ts files and no dependencies, because

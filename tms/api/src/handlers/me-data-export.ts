@@ -40,7 +40,8 @@ export const handler = route(async (event) => {
       : null,
     applications: await byApplicant(
       `select a.id, p.name || ' ' || u.code as unit, a.status, a.occupants, a.preferred_move_in, a.pets,
-              a.notes, a.submitted_at, a.decided_at, a.decline_reason
+              a.notes, a.monthly_income_cents, a.employment_status, a.employer,
+              a.submitted_at, a.decided_at, a.decline_reason
          from application a join unit u on u.id = a.unit_id join property p on p.id = u.property_id
         where a.applicant_id = $1 order by a.submitted_at`,
     ),
@@ -124,11 +125,25 @@ export const handler = route(async (event) => {
     messagesSentToYou: await query(
       // A reset or invite link in a message is a live credential: shown here, a stolen session
       // could use it to set a new password. The text stays, the token does not.
+      // Messages from before they had an account went to a stand-in address: 'applicant:<id>'
+      // for an imported tenant, 'tenant-invite:<id>' for the invite. Those count too, and so
+      // does anything on their leases sent to their email or phone (an imported row that was
+      // merged into theirs on claiming leaves no applicant id to match).
       `select channel, recipient_to, subject,
               regexp_replace(body, '([?&](token|sig)=)[^[:space:]&]+', '\\1[removed]', 'g') as body,
-              status, created_at from notification where recipient_sub = $1
+              status, created_at from notification n
+        where n.recipient_sub = $1
+           or ($2::uuid is not null and n.recipient_sub = 'applicant:' || $2::uuid)
+           or n.recipient_sub in (select 'tenant-invite:' || ti.id from tenant_invite ti where ti.accepted_sub = $1)
+           or (n.lease_id in (select l.id from lease l join applicant p on p.id = l.applicant_id where p.cognito_sub = $1)
+               and (lower(n.recipient_to) = any($3::text[]) or n.recipient_to = $4))
         order by created_at desc limit 500`,
-      [person.sub],
+      [
+        person.sub,
+        applicantId,
+        [account?.email, applicant?.email].filter((e): e is string => typeof e === 'string' && e.length > 0).map((e) => e.toLowerCase()),
+        typeof applicant?.phone === 'string' && applicant.phone ? applicant.phone : null,
+      ],
     ),
     notificationPreferences: await query(
       'select category, channel, enabled from notification_preference where person_sub = $1',

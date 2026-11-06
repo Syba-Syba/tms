@@ -45,6 +45,18 @@ appsh "tar -tzf /backups/$files >/dev/null && test ! -e /data/storage/.restore-p
   exit 1
 }
 
+# The database an earlier restore kept is the only copy of what was live before it. Dropping
+# it here, as this script used to, lost anything newer than the dump for good.
+previous="$(pgsh "psql -d postgres -Atc \"select 1 from pg_database where datname = 'tms_previous'\"")" || {
+  echo "Could not reach the database to check for an earlier restore. Nothing was changed."
+  exit 1
+}
+if [ "$previous" = 1 ]; then
+  echo "The database tms_previous from an earlier restore still exists. Drop it once that restore"
+  echo "is confirmed good (the command was printed at the end of that restore). Nothing was changed."
+  exit 1
+fi
+
 printf 'This replaces everything in the live database with %s. Type RESTORE to go on: ' "$dump"
 read -r answer
 [ "$answer" = "RESTORE" ] || { echo "Stopped."; exit 1; }
@@ -91,7 +103,6 @@ trap 'exit 130' INT TERM
 
 echo "Stopping the app and backups so nothing writes while the data is replaced."
 compose stop app backup
-pgsh "dropdb --if-exists tms_previous"
 pgsh "psql -d postgres -c 'alter database tms rename to tms_previous'"
 db_renamed=1
 pgsh "createdb tms"
@@ -107,7 +118,9 @@ appsh "set -e; cd /data/storage
   echo old-out > .restore-state
   find . -mindepth 1 -maxdepth 1 ! -name .restore-prev ! -name .restore-new ! -name .restore-state -exec mv -t .restore-prev -- {} +
   echo new-in > .restore-state
-  find .restore-new/storage -mindepth 1 -maxdepth 1 -exec mv -t . -- {} +
+  # Older backups can hold a .restore-prev of their own; it is not a document, and moving it
+  # onto the one just filled failed every restore of such a backup.
+  find .restore-new/storage -mindepth 1 -maxdepth 1 ! -name .restore-prev ! -name .restore-new ! -name .restore-state -exec mv -t . -- {} +
   rm -rf .restore-new .restore-state"
 storage_done=1
 

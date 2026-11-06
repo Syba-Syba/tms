@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
@@ -12,6 +12,7 @@ export function Join() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [password, setPassword] = useState('');
   const [consent, setConsent] = useState(false);
@@ -35,6 +36,8 @@ export function Join() {
         token, password, consentVersion: PRIVACY_VERSION, ...(code ? { code } : {}),
       });
       await startSession(result.token, result.user);
+      // A new identity: nothing cached for whoever was signed in before may be shown to this one.
+      queryClient.clear();
       navigate('/', { replace: true });
     } catch (failure) {
       if (errorCode(failure) === 'code_required') {

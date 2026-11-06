@@ -2,7 +2,8 @@ import { requireLeaseAccessVia } from '../lib/access';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
-import { upsertFindingsSchema } from '../domain/inspection';
+import { MAX_FINDINGS, upsertFindingsSchema } from '../domain/inspection';
+import { removeDraft, withdrawDraft } from './inspections-render';
 
 export const handler = route(async (event) => {
   const inspectionId = event.pathParameters?.id;
@@ -34,12 +35,13 @@ export const handler = route(async (event) => {
         [inspectionId, finding.room, finding.item, finding.condition, finding.note ?? null],
       );
     }
+    // Each finding is a page section in every render and seal, so an inspection holds a bounded number.
+    const [count] = await run<{ n: number }>('select count(*)::int as n from inspection_finding where inspection_id = $1', [inspectionId]);
+    if (count!.n > MAX_FINDINGS) throw conflict(`An inspection holds up to ${MAX_FINDINGS} findings.`);
     // The draft both parties review no longer describes these findings. Withdrawing its
     // fingerprint means a signature needs a fresh render; before this, findings could change
     // after review and a signature over the old draft would still have been accepted.
-    await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [
-      inspectionId,
-    ]);
+    const draft = await withdrawDraft(run, inspectionId);
     // A finding is the evidence a deposit deduction rests on, so who recorded what goes on file.
     await audit(
       {
@@ -52,8 +54,9 @@ export const handler = route(async (event) => {
       },
       run,
     );
-    return { saved: input.findings.length };
+    return { saved: input.findings.length, draft };
   });
+  await removeDraft(result.draft);
 
-  return json(200, result);
+  return json(200, { saved: result.saved });
 });

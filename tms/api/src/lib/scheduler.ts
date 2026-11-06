@@ -77,12 +77,23 @@ const recordRun = async (job: Job, why: string, result: unknown) => {
   }
 };
 
-export async function runJob(name: string): Promise<unknown> {
+export async function runJob(name: string, why = 'by hand'): Promise<unknown> {
   const job = JOBS.find((candidate) => candidate.name === name);
   if (!job) throw new Error(`No job named "${name}". Jobs: ${JOBS.map((j) => j.name).join(', ')}.`);
   const result = await job.run();
-  if (job.dailyAt) await recordRun(job, 'by hand', result);
+  if (job.dailyAt) await recordRun(job, why, result);
   return result;
+}
+
+/**
+ * A job as an EventBridge Lambda handler. Lambda passes its event as the first argument, which
+ * a handler would take for its own options: arrears-run read it as `now` and crashed every day.
+ * This ignores it, and writes the same job.finished row the in-process scheduler does, which
+ * /health reads.
+ */
+export function lambdaJob(name: string): () => Promise<unknown> {
+  if (!JOBS.some((job) => job.name === name)) throw new Error(`No job named "${name}".`);
+  return () => runJob(name, 'scheduled');
 }
 
 export function startScheduler(

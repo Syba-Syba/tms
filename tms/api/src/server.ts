@@ -134,6 +134,7 @@ const CONTENT_TYPES: Record<string, string> = {
  * cannot reach the validator past this.
  */
 const JSON_LIMIT = 1024 * 1024;
+const NOTIFY_LIMIT = 16 * 1024;
 // Photos and PDFs come in through signed PUTs; a phone photo is a few megabytes.
 const FILE_LIMIT = 15 * 1024 * 1024;
 
@@ -173,7 +174,7 @@ const sendJson = (response: ServerResponse, status: number, body: unknown) => {
 
 const tooLarge = (request: IncomingMessage, response: ServerResponse, limit: number) => {
   sendJson(response, 413, {
-    error: { code: 'too_large', message: `Requests are limited to ${Math.round(limit / 1024 / 1024)} MB.` },
+    error: { code: 'too_large', message: `Requests are limited to ${limit >= 1024 * 1024 ? `${Math.round(limit / 1024 / 1024)} MB` : `${Math.round(limit / 1024)} KB`}.` },
   });
   // The rest of the body is never read; close once the answer is on the wire.
   response.once('finish', () => request.destroy());
@@ -250,7 +251,21 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, url
         if (error instanceof BodyTooLarge) return tooLarge(request, response, FILE_LIMIT);
         throw error;
       }
-      await writeFile(path, body);
+      // Write-once: an upload link stays valid for five minutes, and a second PUT after the
+      // confirm checked the bytes would swap in a file nobody checked.
+      try {
+        await writeFile(path, body, { flag: 'wx' });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        // The same bytes again is a retry after a lost answer, not a swap.
+        if (Buffer.compare(await readFile(path), body) === 0) {
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        sendJson(response, 409, { error: { code: 'already_uploaded', message: 'This file was already uploaded. Start a new upload.' } });
+        return;
+      }
       response.writeHead(204);
       response.end();
     } else {
@@ -322,11 +337,13 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   }
 
   let body: string | undefined;
+  // PayFast's notice is a few KB and needs no sign-in, so anyone could post a megabyte to it.
+  const limitFor = `${method} ${url.pathname}` === 'POST /billing/notify' ? NOTIFY_LIMIT : JSON_LIMIT;
   if (!['GET', 'HEAD'].includes(method)) {
     try {
-      body = (await readBody(request, JSON_LIMIT)).toString('utf8');
+      body = (await readBody(request, limitFor)).toString('utf8');
     } catch (error) {
-      if (error instanceof BodyTooLarge) return tooLarge(request, response, JSON_LIMIT);
+      if (error instanceof BodyTooLarge) return tooLarge(request, response, limitFor);
       throw error;
     }
   }

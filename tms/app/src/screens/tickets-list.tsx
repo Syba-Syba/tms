@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Card, CardBody, EmptyState, PageHeader, SegmentedControl, Spinner } from '@hlonie/toolbox/ui';
 import { api } from '../api/client';
@@ -76,7 +77,13 @@ export function TicketsList() {
             <CardBody className="space-y-2">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-lead font-semibold">{ticket.title}</p>
+                  {/* The list is the only way into a ticket that is not overdue. */}
+                  <Link
+                    to={`/tickets/${ticket.id}`}
+                    className="text-lead font-semibold text-ink hover:text-brand-500 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  >
+                    {ticket.title}
+                  </Link>
                   <p className="text-xs text-ink-muted">
                     {ticket.unit} · {capitalise(ticket.category)}
                     {ticket.contractor ? ` · ${ticket.contractor}` : ''}

@@ -5,7 +5,9 @@ import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { sniffImageType } from '../lib/images';
+import { removeDraft, withdrawDraft } from './inspections-render';
 import { isEmbeddableImage } from '../lib/pdf';
+import { MAX_TICKET_PHOTOS } from './tickets-photo-presign';
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
@@ -73,7 +75,39 @@ export const handler = route(async (event) => {
   const keptKey = `${photo.s3_key.replace(/\.[a-z]+$/, '')}.kept.${type === 'png' ? 'png' : 'jpg'}`;
   await storage().put(keptKey, bytes, contentType);
 
-  if (input.scope === 'ticket' || input.scope === 'unit') {
+  if (input.scope === 'ticket') {
+    // The presign cap counts only photos already confirmed, so links issued together could
+    // pass it. Counted again here, under the ticket's lock, so the cap holds.
+    const full = await withTransaction(async (run) => {
+      const [ticket] = await run<{ id: string; phase: string }>(
+        `select t.id, p.phase from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1 for update of t`,
+        [input.photoId],
+      );
+      if (!ticket) throw notFound('Photo');
+      const [kept] = await run<{ n: number }>(
+        `select count(*)::int as n from ticket_photo where ticket_id = $1 and phase = $2 and uploaded`,
+        [ticket.id, ticket.phase],
+      );
+      if (kept!.n >= MAX_TICKET_PHOTOS) {
+        await run('delete from ticket_photo where id = $1', [input.photoId]);
+        return true;
+      }
+      await run(
+        `update ticket_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
+        [input.photoId, contentType, size, keptKey],
+      );
+      return false;
+    });
+    if (full) {
+      await storage().remove(keptKey).catch(() => undefined);
+      await removeUpload(photo.s3_key, keptKey);
+      throw conflict(`A ticket holds up to ${MAX_TICKET_PHOTOS} photos for each stage.`);
+    }
+    await removeUpload(photo.s3_key, keptKey);
+    return json(200, { confirmed: true, key: keptKey });
+  }
+
+  if (input.scope === 'unit') {
     await query(
       `update ${table} set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
       [input.photoId, contentType, size, keptKey],
@@ -85,7 +119,7 @@ export const handler = route(async (event) => {
   // A confirmed photo goes into the report, so it is evidence only while the findings are
   // open, and it withdraws the draft's fingerprint as a findings change does. Before this, a
   // photo confirmed after the draft was signed ended up in a sealed report nobody had seen.
-  await withTransaction(async (run) => {
+  const draft = await withTransaction(async (run) => {
     const [inspection] = await run<{ id: string; status: string }>(
       `select i.id, i.status from inspection i
          join inspection_finding f on f.inspection_id = i.id
@@ -102,8 +136,9 @@ export const handler = route(async (event) => {
       `update inspection_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
       [input.photoId, contentType, size, keptKey],
     );
-    await run('update inspection set draft_s3_key = null, draft_sha256 = null where id = $1', [inspection.id]);
+    return withdrawDraft(run, inspection.id);
   });
+  await removeDraft(draft);
   await removeUpload(photo.s3_key, keptKey);
   return json(200, { confirmed: true, key: keptKey });
 });

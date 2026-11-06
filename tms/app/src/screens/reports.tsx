@@ -403,9 +403,17 @@ function Expenses() {
           ...body,
           slip: file ? { contentType: file.type, sizeBytes: file.size } : undefined,
         });
+        // The expense exists now. Remember it, so a retry after a failed upload edits this one
+        // rather than creating a second.
+        setEditing({ id: created.id, form: editing.form });
         if (file && created.uploadUrl) {
-          const uploaded = await fetch(created.uploadUrl, { method: 'PUT', body: file, headers: { 'content-type': file.type } });
-          if (!uploaded.ok) {
+          let uploaded: Response | null = null;
+          try {
+            uploaded = await fetch(created.uploadUrl, { method: 'PUT', body: file, headers: { 'content-type': file.type } });
+          } catch {
+            uploaded = null;
+          }
+          if (!uploaded?.ok) {
             toast.show({ title: 'Expense saved, slip not uploaded', tone: 'warning' });
           } else {
             // The server checks the bytes and keeps its own copy. A refused slip is detached,
@@ -520,6 +528,7 @@ function Expenses() {
               options={Object.entries(CATEGORIES).map(([value, label]) => ({ value, label }))}
             />
             <Input
+              aria-label="Description"
               placeholder="What it was for"
               maxLength={200}
               value={editing.form.description}

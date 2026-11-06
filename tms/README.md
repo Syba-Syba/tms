@@ -278,10 +278,11 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/render | both | prepare the unsigned draft report both parties review |
 | POST | /inspections/{id}/reopen | both | back to in progress to fix a disputed finding; withdraws any signature, refused once both have signed |
 | GET | /terminations/{id}/settlement | landlord | preview of the settlement: deposit held, each claim, and the exact refund or amount owed, with the refund due date |
-| POST | /terminations/{id}/withdraw | both | withdraw a notice before its end date and before settlement; restores the invoices it trimmed and any renewal it lapsed that still stands, cancels the booked exit inspection, tells the other party |
+| POST | /terminations/{id}/withdraw | both | the party who gave the notice (either, for a mutual one) withdraws it before its end date and before settlement; a tenant may also withdraw a notice the landlord recorded for them and they never confirmed. Restores the invoices it trimmed and any renewal it lapsed that still stands, cancels the booked exit inspection, tells the other party |
+| POST | /terminations/{id}/confirm | tenant | confirm a mutual notice, or a backdated tenant notice, that the landlord recorded; until then the deposit cannot be settled |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and eleven routes in all; the table lists the shape of each family rather than every verb.
+One hundred and twelve routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 
