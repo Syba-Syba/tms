@@ -7,6 +7,7 @@ import { Money } from '../components/money';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, formatInstant } from '../lib/format';
 import { QueryState } from '../components/query-state';
+import { ConfirmNotice, needsTenantConfirmation, type NoticeToConfirm } from '../components/confirm-notice';
 import { PAGE } from '../lib/layout';
 
 interface LeaseRow {
@@ -28,6 +29,18 @@ export function TenantHome() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leases', 'with-ended'],
     queryFn: () => api.get<{ items: LeaseRow[] }>('/leases', { query: { include: 'ended' } }),
+  });
+
+  // The list row says only that notice is served. Whether the tenant must still confirm it, and
+  // what it says, comes with the lease itself, so it is fetched once there is a notice.
+  const noticeLease = data?.items.find((item) => item.status === 'active' && item.terminationEffectiveOn);
+  const { data: noticeDetail } = useQuery({
+    queryKey: ['lease', noticeLease?.id],
+    queryFn: () =>
+      api.get<{ id: string; viewer: { isLandlord: boolean; isTenant: boolean }; termination: NoticeToConfirm | null }>(
+        `/leases/${noticeLease!.id}`,
+      ),
+    enabled: Boolean(noticeLease),
   });
 
   if (!data) {
@@ -135,6 +148,12 @@ export function TenantHome() {
           The exit inspection must happen in the final three days, with you there. If it does not
           happen, the law treats the place as undamaged and nothing can be deducted from your
           deposit.
+          {noticeDetail && noticeDetail.id === lease.id && needsTenantConfirmation(noticeDetail.viewer, noticeDetail.termination) ? (
+            <div className="mt-3 space-y-2">
+              <p>Your landlord recorded this notice for you and needs you to confirm it.</p>
+              <ConfirmNotice leaseId={lease.id} termination={noticeDetail.termination} />
+            </div>
+          ) : null}
         </Alert>
       ) : endingIn >= 0 && endingIn <= 60 ? (
         <Alert tone="info" title={`Your lease ends in ${endingIn} days`} className="mb-4">

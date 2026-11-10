@@ -152,13 +152,13 @@ describe('items 8 and 17: only the party who gave a notice withdraws it', () => 
     expect((await call('POST', `/terminations/${served.body.id}/withdraw`, asTenant(tenantSub))).status).toBe(200);
   });
 
-  it('either party withdraws a mutual notice', async () => {
+  // Audit 5: an agreed (confirmed) mutual notice is undone by neither side alone.
+  it('neither party withdraws an agreed mutual notice alone', async () => {
     const tenantSub = `sub-${randomUUID()}`;
     const { lease } = await leaseFor({ start: plus(-300), end: plus(300), tenantSub });
     const id = await termination(lease, plus(20), 'mutual', today());
-    expect((await call('POST', `/terminations/${id}/withdraw`, asTenant(tenantSub))).status).toBe(200);
-    const again = await termination(lease, plus(20), 'mutual', today());
-    expect((await call('POST', `/terminations/${again}/withdraw`)).status).toBe(200);
+    expect((await call('POST', `/terminations/${id}/withdraw`, asTenant(tenantSub))).status).toBe(409);
+    expect((await call('POST', `/terminations/${id}/withdraw`)).status).toBe(409);
   });
 
   it('GET /leases/{id} says who gave the notice', async () => {
@@ -219,13 +219,13 @@ describe('items 9 and 18: a landlord cannot end the lease alone by calling it mu
     expect((await call('POST', `/terminations/${served.body.id}/withdraw`, asTenant(tenantSub))).status).toBe(200);
   });
 
-  it('a tenant notice the landlord records dated today does not', async () => {
+  // Audit 5: dated today it waits too; only the tenant serving it themselves does not.
+  it('a tenant notice the landlord records dated today waits as well', async () => {
     const tenantSub = `sub-${randomUUID()}`;
     const { lease } = await leaseFor({ start: plus(-100), end: plus(265), tenantSub });
     const served = await call('POST', `/leases/${lease}/termination`, { body: { initiatedBy: 'tenant', reason: 'early_tenant' } });
     expect(served.status).toBe(201);
-    const preview = await call('GET', `/terminations/${served.body.id}/settlement`);
-    expect(preview.body.blocker).not.toMatch(/confirm/);
+    expect(served.body.awaitingTenant).toBe(true);
   });
 });
 
@@ -239,7 +239,7 @@ describe('items 8 and 9 (review): a landlord’s unconfirmed entry is never stuc
   });
 
   it('the landlord withdraws a backdated tenant notice they recorded while it waits for the tenant', async () => {
-    const { lease } = await leaseFor({ start: plus(-100), end: plus(265) });
+    const { lease } = await leaseFor({ start: plus(-100), end: plus(265), tenantSub: `sub-${randomUUID()}` });
     const served = await call('POST', `/leases/${lease}/termination`, {
       body: { initiatedBy: 'tenant', reason: 'early_tenant', noticeGivenOn: plus(-30), effectiveOn: today() },
     });
@@ -352,7 +352,7 @@ describe('item 11: deductions are checked again at settlement', () => {
 
 describe('item 12: a cancellation penalty only when a fixed term is cut short', () => {
   it('refuses one on a lease already month to month', async () => {
-    const { lease } = await leaseFor({ start: plus(-400), end: plus(-10) });
+    const { lease } = await leaseFor({ start: plus(-400), end: plus(-10), tenantSub: `sub-${randomUUID()}` });
     const served = await call('POST', `/leases/${lease}/termination`, {
       body: { initiatedBy: 'tenant', reason: 'early_tenant', penaltyCents: 500000 },
     });
@@ -361,7 +361,7 @@ describe('item 12: a cancellation penalty only when a fixed term is cut short', 
   });
 
   it('refuses one when the notice runs to the end date anyway', async () => {
-    const { lease } = await leaseFor({ start: plus(-355), end: plus(10) });
+    const { lease } = await leaseFor({ start: plus(-355), end: plus(10), tenantSub: `sub-${randomUUID()}` });
     const served = await call('POST', `/leases/${lease}/termination`, {
       body: { initiatedBy: 'tenant', reason: 'early_tenant', penaltyCents: 500000 },
     });
@@ -369,7 +369,7 @@ describe('item 12: a cancellation penalty only when a fixed term is cut short', 
   });
 
   it('still allows one for a real early cancellation', async () => {
-    const { lease } = await leaseFor({ start: plus(-100), end: plus(265) });
+    const { lease } = await leaseFor({ start: plus(-100), end: plus(265), tenantSub: `sub-${randomUUID()}` });
     const served = await call('POST', `/leases/${lease}/termination`, {
       body: { initiatedBy: 'tenant', reason: 'early_tenant', penaltyCents: 500000 },
     });

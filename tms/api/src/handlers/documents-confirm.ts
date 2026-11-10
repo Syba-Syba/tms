@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { requireApplicationAccess } from '../lib/access';
 import { withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
-import { badRequest, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { sniffImageType } from '../lib/images';
-import { MAX_OTHER_DOCUMENTS } from './documents-presign';
+import { APPLICANT_KINDS, MAX_OTHER_DOCUMENTS, keptKeySql } from './documents-presign';
+import { query } from '../lib/db';
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
@@ -28,6 +29,14 @@ export const handler = route(async (event) => {
   if (!parts || parts[1] !== applicationId) throw badRequest('That upload is not for this application.');
   const kind = parts[2]!;
   if (kind === 'credit_report' && !access.isLandlord) throw badRequest('Only the landlord files a credit report.');
+  if (!access.isApplicant && APPLICANT_KINDS.includes(kind)) throw forbidden('Only the applicant files their own documents.');
+
+  // A confirm sent twice is one document. Checked first: the upload itself is gone by then.
+  const [done] = await query<{ id: string }>(
+    `select id from application_document where s3_key in ($1, ${keptKeySql('$1')})`,
+    [input.key],
+  );
+  if (done) return json(200, { confirmed: true });
 
   let size: number | null;
   try {
@@ -49,6 +58,14 @@ export const handler = route(async (event) => {
   const image = sniffImageType(bytes);
   const contentType = image === 'png' ? 'image/png' : image === 'jpg' ? 'image/jpeg' : isPdf(bytes) ? 'application/pdf' : null;
   if (!contentType) throw await refuse('That upload is not a JPEG, PNG or PDF.');
+  // The object may have been replaced between the size check and the read.
+  if (bytes.length > MAX_DOCUMENT_BYTES) throw await refuse('Files must be under 10 MB.');
+
+  // On S3 the upload link can write to its key again for five minutes, so the document on file
+  // is a copy of the bytes checked here, under a key no upload link was ever issued for.
+  const extension = image ?? 'pdf';
+  const keptKey = `${input.key.replace(/\.[a-z]+$/, '')}.kept.${extension}`;
+  await storage().put(keptKey, bytes, contentType);
 
   const replaced = await withTransaction(async (run) => {
     const [application] = await run<{ status: string }>(
@@ -61,8 +78,8 @@ export const handler = route(async (event) => {
     }
     // A confirm sent twice is one document.
     const [existing] = await run<{ id: string }>(
-      'select id from application_document where s3_key = $1',
-      [input.key],
+      'select id from application_document where s3_key in ($1, $2)',
+      [input.key, keptKey],
     );
     if (existing) return [];
     // The upload screen keeps one document per kind, so Replace supersedes the earlier one, and
@@ -87,11 +104,17 @@ export const handler = route(async (event) => {
     await run(
       `insert into application_document (application_id, kind, s3_key, content_type, size_bytes)
        values ($1, $2, $3, $4, $5)`,
-      [applicationId, kind, input.key, contentType, size],
+      [applicationId, kind, keptKey, contentType, bytes.length],
     );
     return old.map((row) => row.s3_key);
+  }).catch(async (error) => {
+    // No row names the kept copy, so nothing would ever remove it.
+    await storage().remove(keptKey).catch(() => undefined);
+    throw error;
   });
   for (const key of replaced) await storage().remove(key).catch(() => undefined);
+  // The raw upload: no row points at it now. The pending sweep removes it if this fails.
+  await storage().remove(input.key).catch(() => undefined);
 
-  return json(200, { confirmed: true });
+  return json(200, { confirmed: true, key: keptKey });
 });

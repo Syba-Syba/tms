@@ -106,7 +106,7 @@ describe('credit checks', () => {
 
     // The applicant sees what was recorded about them, report included.
     const seen = await call('GET', `/applications/${applicationId}/credit-check`, applicant);
-    expect(seen.body.check).toMatchObject({ bureau: 'transunion', score: 655, outcome: 'minor', defaults: 1, reportKey: presigned.body.key });
+    expect(seen.body.check).toMatchObject({ bureau: 'transunion', score: 655, outcome: 'minor', defaults: 1, reportKey: presigned.body.key.replace(/\.pdf$/, '.kept.pdf') });
     const [audit] = await db.query<{ action: string }>(
       `select action from audit_log where entity_id = $1 and action = 'application.credit_checked'`, [applicationId],
     );

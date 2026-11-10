@@ -45,14 +45,20 @@ export async function lockLease(run: Run, leaseId: string): Promise<void> {
  * the ledger with no way out. Call inside the transaction that records it.
  */
 export async function assertDepositOpen(run: Run, leaseId: string): Promise<void> {
-  const [row] = await run<{ status: string; settled: boolean }>(
-    `select l.status,
+  const [row] = await run<{ status: string; settled: boolean; renewal: boolean }>(
+    `select l.status, l.previous_lease_id is not null as renewal,
             exists (select 1 from termination t where t.lease_id = l.id and t.status = 'settled') as settled
        from lease l where l.id = $1`,
     [leaseId],
   );
   if (!row || row.settled || row.status === 'terminated' || row.status === 'cancelled') {
     throw conflict('The deposit on this lease has been settled. Pay any money back to the tenant directly.');
+  }
+  // Until a renewal starts, the deposit ledger is on the lease it replaces and moves across on
+  // the start date. A top-up on the renewal earned its own interest for the same month, and the
+  // move then broke the one-interest-row-a-month rule, so activation failed every morning.
+  if (row.status === 'scheduled' && row.renewal) {
+    throw conflict('The deposit is held on the current lease until the renewal starts. Record the top-up there.');
   }
 }
 

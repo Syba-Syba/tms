@@ -20,6 +20,8 @@ import { notify } from '../lib/notify';
 import { zar } from '../domain/money';
 import { logger } from '../lib/logger';
 import { moveCreditToOpenInvoices } from '../lib/billing';
+import { lockLease } from '../lib/payments';
+import { invoiceStatus } from '../domain/charge';
 
 /** A condition's rank, for the two-step wear-and-tear rule. A missing baseline ranks null, so
     the comparison is null and the deduction is not backed. */
@@ -44,6 +46,44 @@ const photoOrNull = async (key: string | null): Promise<InspectionPhoto | null> 
   }
 };
 
+/** SQL true while the lease has a payment slip waiting for the landlord (or one still uploading).
+    Settling first took the deposit for rent the slip had paid, and the slip could then never be
+    accepted: nothing was owed any more. */
+const pendingSlipsSql = (leaseExpr: string) =>
+  `exists (select 1 from payment_proof pp
+            where pp.lease_id = ${leaseExpr}
+              and (pp.status = 'pending' or (pp.status = 'uploading' and pp.created_at > now() - interval '1 hour')))`;
+
+const AWAITING_TENANT =
+  'The landlord recorded this notice and the tenant has not confirmed it yet. The deposit is settled once they do.';
+const PENDING_SLIPS = 'Accept or reject the tenant’s payment slips before settling the deposit.';
+
+type Deduction = {
+  id: string; description: string; amount_cents: string; finding_id: string | null; still_backed: boolean | null;
+};
+
+/**
+ * Each deduction, checked against the findings as they stand now: one added while the exit
+ * inspection was open survived its finding being corrected to fair wear and tear, or the
+ * inspection being replaced by a rebooking.
+ */
+const readDeductions = (run: SettleRun, terminationId: string) =>
+  run<Deduction>(
+    `select d.id, d.description, d.amount_cents, d.finding_id,
+            case when d.finding_id is null then null else exists (
+              select 1 from inspection_finding f
+                join inspection i on i.id = f.inspection_id
+                join termination t on t.id = d.termination_id and t.lease_id = i.lease_id
+               where f.id = d.finding_id and ${outgoingInWindowSql('i', 't')}
+                 and f.condition in ('poor', 'damaged', 'missing')
+                 and ${RANK_SQL('f.condition')} - ${RANK_SQL(`(select inc.condition from inspection_finding inc
+                      where inc.inspection_id = ${incomingInspectionSql('t.lease_id')}
+                        and inc.room = f.room and inc.item = f.item)`)} >= 2
+            ) end as still_backed
+       from deposit_deduction d where d.termination_id = $1 order by d.created_at, d.id`,
+    [terminationId],
+  );
+
 /**
  * The figures a settlement rests on: the deposit held, the claims against it, the refund rule
  * and its due date. Shared by the settlement and its preview, so the dialog shows the landlord
@@ -62,9 +102,11 @@ export async function settlementFigures(terminationId: string, today: string, re
     trading_name: string;
     outgoing_completed: boolean;
     awaiting_tenant: boolean;
+    pending_slips: boolean;
   }>(
     `select t.lease_id, t.status, t.effective_on::text, t.reason, t.penalty_cents,
             (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
+            ${pendingSlipsSql('t.lease_id')} as pending_slips,
             'LSE-' || lpad(l.ref_no::text, 5, '0') as lease_ref,
             a.first_name || ' ' || a.last_name as tenant,
             p.name || ' ' || u.code as unit_label,
@@ -103,26 +145,7 @@ export async function settlementFigures(terminationId: string, today: string, re
     }
   }
 
-  // Each deduction is checked again here, against the findings as they stand now: one added
-  // while the exit inspection was open survived its finding being corrected to fair wear and
-  // tear, or the inspection being replaced by a rebooking.
-  const deductions = await query<{
-    description: string; amount_cents: string; finding_id: string | null; still_backed: boolean | null;
-  }>(
-    `select d.description, d.amount_cents, d.finding_id,
-            case when d.finding_id is null then null else exists (
-              select 1 from inspection_finding f
-                join inspection i on i.id = f.inspection_id
-                join termination t on t.id = d.termination_id and t.lease_id = i.lease_id
-               where f.id = d.finding_id and ${outgoingInWindowSql('i', 't')}
-                 and f.condition in ('poor', 'damaged', 'missing')
-                 and ${RANK_SQL('f.condition')} - ${RANK_SQL(`(select inc.condition from inspection_finding inc
-                      where inc.inspection_id = ${incomingInspectionSql('t.lease_id')}
-                        and inc.room = f.room and inc.item = f.item)`)} >= 2
-            ) end as still_backed
-       from deposit_deduction d where d.termination_id = $1 order by d.created_at`,
-    [terminationId],
-  );
+  const deductions = await readDeductions(query, terminationId);
   const unbacked = deductions.filter((row) => row.still_backed === false).map((row) => row.description);
 
   // Skipping the outgoing inspection is deemed an acknowledgement of no damage, so the law
@@ -152,12 +175,14 @@ export async function settlementFigures(terminationId: string, today: string, re
   const anchorIso = rule === 'with_deductions' ? (restoredOn ? isoDate(restoredOn) : today) : context.effective_on;
   const dueBy = refundDueBy(rule, dateFromIso(anchorIso));
   const blocker = context.awaiting_tenant
-    ? 'The landlord recorded this notice and the tenant has not confirmed it yet. The deposit is settled once they do.'
-    : rule === 'no_inspection' && deductions.length > 0
-      ? 'No outgoing inspection was completed, so nothing may be deducted. Remove the deductions or hold the inspection.'
-      : unbacked.length > 0
-        ? `The exit inspection no longer supports: ${unbacked.join(', ')}. Remove ${unbacked.length > 1 ? 'these deductions' : 'this deduction'} to settle.`
-        : null;
+    ? AWAITING_TENANT
+    : context.pending_slips
+      ? PENDING_SLIPS
+      : rule === 'no_inspection' && deductions.length > 0
+        ? 'No outgoing inspection was completed, so nothing may be deducted. Remove the deductions or hold the inspection.'
+        : unbacked.length > 0
+          ? `The exit inspection no longer supports: ${unbacked.join(', ')}. Remove ${unbacked.length > 1 ? 'these deductions' : 'this deduction'} to settle.`
+          : null;
   return { context, deductions, rule, balances, grossArrears, rentCredit, alreadyOut, summary, anchorIso, dueBy, blocker };
 }
 
@@ -274,11 +299,45 @@ export const handler = route(async (event) => {
 
   try {
     await withTransaction(async (run) => {
-      const [locked] = await run<{ status: string }>(
-        'select status from termination where id = $1 for update',
-        [terminationId],
+      // The lease first, then the termination, then the invoices: the order every payment path
+      // takes, so the two cannot deadlock. Held, no payment, slip or deposit money lands on this
+      // lease until settlement commits, and the reads below see everything committed before.
+      await lockLease(run, context.lease_id);
+      const [locked] = await run<{
+        status: string; awaiting_tenant: boolean; outgoing_completed: boolean; pending_slips: boolean;
+      }>(
+        `select t.status,
+                (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
+                exists (select 1 from inspection i
+                         where i.lease_id = t.lease_id and ${outgoingInWindowSql('i', 't')}
+                           and ${outgoingCountsSql('i', '$2::date')}) as outgoing_completed,
+                ${pendingSlipsSql('t.lease_id')} as pending_slips
+           from termination t where t.id = $1
+           for update of t`,
+        [terminationId, today],
       );
       if (!locked || locked.status === 'settled') throw conflict('This deposit is already settled.');
+      if (locked.status === 'withdrawn') throw conflict('This notice was withdrawn, so the lease carries on.');
+      if (locked.awaiting_tenant) throw conflict(AWAITING_TENANT);
+      if (locked.pending_slips) throw conflict(PENDING_SLIPS);
+      // The deductions and the inspection were read before the statement rendered. The
+      // deduction handlers lock the termination row, so under that lock this read is final.
+      const currentDeductions = await readDeductions(run, terminationId);
+      const sameDeductions =
+        currentDeductions.length === deductions.length &&
+        currentDeductions.every(
+          (row, index) =>
+            row.id === deductions[index]!.id &&
+            row.amount_cents === deductions[index]!.amount_cents &&
+            row.still_backed !== false,
+        );
+      const currentRule = pickRefundRule({
+        outgoingInspectionCompleted: locked.outgoing_completed,
+        deductionCount: currentDeductions.length,
+      });
+      if (!sameDeductions || currentRule !== rule) {
+        throw conflict('The deductions changed while the statement was prepared. Try again.');
+      }
       // The figures above were read before the statement rendered, and a payment recorded in
       // that time was then taken off the deposit as arrears as well: the full stale arrears went
       // to the ledger while only what was still owing paid the invoices. The invoices are locked
@@ -303,15 +362,21 @@ export const handler = route(async (event) => {
       const post = async (amount: number, note: string) => {
         const posted = Math.min(amount, Math.max(0, remaining));
         if (posted <= 0) return 0;
+        // Dated in SAST, like the payments beside it; the database's current_date is UTC.
         await run(
-          `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
-           values ($1, 'deduction', $2, $3)`,
-          [context.lease_id, posted, note],
+          `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
+           values ($1, 'deduction', $2, $3, $4)`,
+          [context.lease_id, posted, today, note],
         );
         remaining -= posted;
         return posted;
       };
-      for (const deduction of deductions) await post(Number(deduction.amount_cents), deduction.description);
+      // Repairs and the penalty that the deposit could not cover, so the shortfall can be billed.
+      let unrecovered = 0;
+      for (const deduction of deductions) {
+        const amount = Number(deduction.amount_cents);
+        unrecovered += amount - (await post(amount, deduction.description));
+      }
       // Rent paid above a re-rated month's total is the tenant's credit, and the statement nets it
       // against arrears. The money has to move with it: left on the overpaid invoice, the unpaid
       // ones stayed open and the arrears ladder went on chasing rent the tenant did not owe.
@@ -346,7 +411,9 @@ export const handler = route(async (event) => {
           applied -= amount;
         }
       }
-      if (summary.penaltyCents > 0) await post(summary.penaltyCents, 'Cancellation penalty');
+      if (summary.penaltyCents > 0) {
+        unrecovered += summary.penaltyCents - (await post(summary.penaltyCents, 'Cancellation penalty'));
+      }
       // The rent credit left after arrears is settled here too: refunded with the deposit, or set
       // against what the tenant owes on it. Left on the overpaid invoices, the rent statement went
       // on showing the landlord owing it after it had been paid back. It is recorded as a refund
@@ -355,14 +422,21 @@ export const handler = route(async (event) => {
         await refundRentCredit(run, context.lease_id, summary.rentCreditCents, today, access.person.sub,
           summary.refundCents > 0 ? 'Rent credit refunded at settlement' : 'Rent credit set against the deposit statement');
       }
+      // What the deposit did not cover is a debt. Shown only on the statement, it could not be
+      // paid (nothing was owed), and the arrears ladder and age analysis never saw it. It goes
+      // on an invoice. Any rent credit left was set against it on the statement; unpaid arrears
+      // already sit on their own invoices. Billed after the credit refund: before it, the line would
+      // soak up the latest invoice's overpayment and the credit would count twice.
+      const shortfall = Math.min(summary.tenantOwesCents, Math.max(0, unrecovered - summary.rentCreditCents));
+      if (shortfall > 0) await billShortfall(run, context.lease_id, shortfall, today);
       // Only the deposit's share of the refund leaves the deposit; a rent credit is the
       // landlord's own money, so it is on the statement but not in the ledger.
       const fromDeposit = Math.min(summary.refundCents, Math.max(0, remaining));
       if (fromDeposit > 0) {
         await run(
-          `insert into deposit_ledger (lease_id, entry_type, amount_cents, note)
-           values ($1, 'refund', $2, $3)`,
-          [context.lease_id, fromDeposit, input.refundReference ?? 'Refund on termination'],
+          `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
+           values ($1, 'refund', $2, $3, $4)`,
+          [context.lease_id, fromDeposit, today, input.refundReference ?? 'Refund on termination'],
         );
       }
 
@@ -378,10 +452,18 @@ export const handler = route(async (event) => {
         "update unit set status = 'vacant' where id = (select unit_id from lease where id = $1)",
         [context.lease_id],
       );
-      // An open ticket on a lease nobody lives in is noise.
+      // An open ticket on a lease nobody lives in is noise. That includes tickets left on the
+      // leases a renewal replaced: the SLA sweep went on reporting them breached every day.
       await run(
-        `update ticket set status = 'cancelled'
-          where lease_id = $1 and status not in ('closed', 'cancelled')`,
+        `with recursive chain(id, depth) as (
+           select $1::uuid, 0
+           union all
+           select l.previous_lease_id, chain.depth + 1
+             from chain join lease l on l.id = chain.id
+            where l.previous_lease_id is not null and chain.depth < 50
+         )
+         update ticket set status = 'cancelled'
+          where lease_id in (select id from chain) and status not in ('closed', 'cancelled')`,
         [context.lease_id],
       );
       await audit(
@@ -491,6 +573,43 @@ async function readBalances(run: SettleRun, leaseId: string, lock = false) {
     grossArrears,
     rentCredit,
   };
+}
+
+/**
+ * Bills what the tenant still owes after the deposit as an 'other' line on the lease's latest
+ * invoice, or on a new invoice due today when there is none, so it can be paid and chased.
+ */
+async function billShortfall(run: SettleRun, leaseId: string, amountCents: number, today: string): Promise<void> {
+  const description = 'Owed after the deposit: repairs and cancellation penalty';
+  const [latest] = await run<{ id: string }>(
+    `select id from invoice where lease_id = $1 and status <> 'void' order by period_start desc limit 1 for update`,
+    [leaseId],
+  );
+  if (latest) {
+    await run(`insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, 'other', $2, $3)`,
+      [latest.id, description, amountCents]);
+    const [row] = await run<{ total: string; paid: string }>(
+      `update invoice set total_cents = total_cents + $2 where id = $1
+       returning total_cents::text as total,
+                 coalesce((select sum(amount_cents) from payment where invoice_id = $1), 0)::text as paid`,
+      [latest.id, amountCents],
+    );
+    await run('update invoice set status = $2 where id = $1', [latest.id, invoiceStatus(Number(row!.paid), Number(row!.total))]);
+    return;
+  }
+  const [created] = await run<{ id: string }>(
+    `insert into invoice (lease_id, period_start, due_on, total_cents, status)
+     values ($1, date_trunc('month', $2::date)::date, $2::date, $3, 'issued')
+     on conflict (lease_id, period_start) do nothing
+     returning id`,
+    [leaseId, today, amountCents],
+  );
+  if (!created) {
+    logger.warn('Shortfall after the deposit not billed: the month holds a void invoice.', { leaseId, amountCents });
+    return;
+  }
+  await run(`insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, 'other', $2, $3)`,
+    [created.id, description, amountCents]);
 }
 
 /**

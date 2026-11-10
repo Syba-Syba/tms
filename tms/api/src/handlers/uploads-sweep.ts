@@ -1,19 +1,19 @@
 import { query } from '../lib/db';
 import { logger } from '../lib/logger';
 import { storage } from '../lib/storage';
+import { keptKeySql } from './documents-presign';
 
 /** An upload link lasts five minutes; an hour is ample for the confirm to follow it. */
 const STALE = `now() - interval '1 hour'`;
 /** Rows per kind per run, so one run after a long outage cannot hold the database for minutes. */
 const BATCH = 500;
 
-const remove = async (key: string) => {
-  // Removing a key that is already gone is not an error; a failure here is retried next hour
-  // only for application documents (the pending entry stays), so it is logged, not thrown.
-  await storage()
+/** True once the object is gone. Removing a key that is already gone is not an error. */
+const remove = (key: string) =>
+  storage()
     .remove(key)
-    .catch((error) => logger.warn('Upload sweep could not remove an object.', { key, error }));
-};
+    .then(() => true)
+    .catch((error) => (logger.warn('Upload sweep could not remove an object.', { key, error }), false));
 
 /**
  * Hourly: deletes uploads that were started and never confirmed, and the rows that pointed at
@@ -29,16 +29,24 @@ export async function handler() {
 
   // Documents: a pending entry no application_document took up is an abandoned upload. Each
   // entry is deleted only after its object, so a failed removal is tried again next run.
-  const documents = await query<{ s3_key: string; confirmed: boolean }>(
-    `select pu.s3_key, exists (select 1 from application_document d where d.s3_key = pu.s3_key) as confirmed
+  const documents = await query<{ s3_key: string; confirmed: boolean; kept: boolean }>(
+    `select pu.s3_key,
+            exists (select 1 from application_document d where d.s3_key = pu.s3_key) as confirmed,
+            exists (select 1 from application_document d where d.s3_key in (${keptKeySql('pu.s3_key')})) as kept
        from pending_upload pu
       where pu.created_at < ${STALE}
       order by pu.created_at
       limit ${BATCH}`,
   );
   for (const row of documents) {
-    if (!row.confirmed) {
-      await remove(row.s3_key);
+    if (row.kept) {
+      // Confirm keeps a checked copy and removes the upload; this catches one it missed.
+      // A document filed before copies were kept is stored under the upload key itself.
+      // On a failed remove the entry stays, so the next run retries it.
+      if (!row.confirmed && !(await remove(row.s3_key))) continue;
+    } else if (!row.confirmed) {
+      // The pending entry is the only record of this object: kept until the object is gone.
+      if (!(await remove(row.s3_key))) continue;
       removed.documents += 1;
     }
     await query('delete from pending_upload where s3_key = $1', [row.s3_key]);

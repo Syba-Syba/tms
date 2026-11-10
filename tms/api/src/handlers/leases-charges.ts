@@ -82,6 +82,16 @@ export const handler = route(async (event) => {
       [leaseId],
     );
     if (!lease || !['active', 'terminated'].includes(lease.status)) throw conflict('Charges go on a running lease.');
+    // A lease a renewal replaced has billed its last month. A charge here landed on that old,
+    // often paid invoice: overdue at once, chased by arrears, and missed by the exit settlement,
+    // which reads only the live lease.
+    if (lease.status === 'terminated') {
+      const [renewal] = await run<{ id: string }>(
+        `select id from lease where previous_lease_id = $1 and status = 'active'`,
+        [leaseId],
+      );
+      if (renewal) throw conflict('This lease was renewed. Add the charge on the renewal, the lease now running.');
+    }
     if (input.period < lease.start_date.slice(0, 7)) throw badRequest('That month is before the lease started.');
     if (monthsBetween(today.slice(0, 7), input.period) > MONTHS_AHEAD) {
       throw badRequest(`Add charges at most ${MONTHS_AHEAD} months ahead.`);

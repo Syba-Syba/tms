@@ -64,7 +64,8 @@ describe('the portfolio screen', () => {
     // Copy the application link.
     fireEvent.click(within(unitRow()).getByRole('button', { name: /^Copy the application link/ }));
     await screen.findByText('Application link copied');
-    expect(copied.at(-1)).toContain('/apply?unit=');
+    // The landlord's slug too: without it a multi-landlord server shows no form.
+    expect(copied.at(-1)).toMatch(/\/apply\?landlord=[^&]+&unit=/);
 
     // Remove the unit: Edit -> Remove this unit -> the dialog's own Remove.
     fireEvent.click(within(unitRow()).getByRole('button', { name: /^Edit / }));

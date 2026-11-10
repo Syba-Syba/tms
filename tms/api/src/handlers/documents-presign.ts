@@ -3,7 +3,7 @@ import { requireApplicationAccess } from '../lib/access';
 import { hasCreditConsent } from './credit-check';
 import { query } from '../lib/db';
 import { storage } from '../lib/storage';
-import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
+import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
 import { requireUploadLinkAllowance, uploadLinksByAccount } from '../lib/ratelimit';
 
 /** Unconfirmed document uploads one application may have in the last hour. */
@@ -13,12 +13,23 @@ export const MAX_PENDING_DOCUMENTS = 20;
  * one replaces the old), but 'other' adds up, and a loop of 10 MB files filled the disk.
  */
 export const MAX_OTHER_DOCUMENTS = 10;
+/**
+ * The applicant's own evidence. Filed by the landlord, a new one replaced (and deleted) the
+ * applicant's, with nothing to show who uploaded it.
+ */
+export const APPLICANT_KINDS = ['id_copy', 'payslip', 'bank_statement', 'proof_of_address'];
 
 const schema = z.object({
   kind: z.enum(['id_copy', 'payslip', 'bank_statement', 'proof_of_address', 'other', 'credit_report']),
   contentType: z.enum(['image/jpeg', 'image/png', 'application/pdf']),
   sizeBytes: z.number().int().positive().max(10 * 1024 * 1024, 'Files must be under 10 MB.'),
 });
+
+/** SQL for every kept key an upload key may have become: confirm stores a checked copy. */
+export const keptKeySql = (uploadKey: string) =>
+  `regexp_replace(${uploadKey}, '\\.(jpg|png|pdf)$', '.kept.jpg'),
+   regexp_replace(${uploadKey}, '\\.(jpg|png|pdf)$', '.kept.png'),
+   regexp_replace(${uploadKey}, '\\.(jpg|png|pdf)$', '.kept.pdf')`;
 
 export const handler = route(async (event) => {
   const applicationId = event.pathParameters?.id;
@@ -27,6 +38,9 @@ export const handler = route(async (event) => {
 
   const access = await requireApplicationAccess(event, applicationId);
   requireUploadLinkAllowance(access.person.sub);
+  if (!access.isApplicant && APPLICANT_KINDS.includes(input.kind)) {
+    throw forbidden('Only the applicant files their own documents.');
+  }
   // A bureau report is the landlord's to file, and only once the applicant agreed to the check.
   if (input.kind === 'credit_report') {
     if (!access.isLandlord) throw badRequest('Only the landlord files a credit report.');
@@ -47,7 +61,7 @@ export const handler = route(async (event) => {
   const [pending] = await query<{ n: number }>(
     `select count(*)::int as n from pending_upload pu
       where pu.application_id = $1 and pu.created_at > now() - interval '1 hour'
-        and not exists (select 1 from application_document d where d.s3_key = pu.s3_key)`,
+        and not exists (select 1 from application_document d where d.s3_key in (pu.s3_key, ${keptKeySql('pu.s3_key')}))`,
     [applicationId],
   );
   if (pending!.n >= MAX_PENDING_DOCUMENTS) {

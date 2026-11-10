@@ -17,6 +17,14 @@ const reply = (status: number, body: unknown): APIGatewayProxyResultV2 => ({
  * old; 503 otherwise, saying which.
  * No sign-in, and nothing in it about any landlord or tenant.
  */
+/**
+ * The last run of each job. entity = 'job' (scheduler.ts writes it) lets audit_log_entity_idx
+ * serve this: without it every call, open to anyone, read the whole activity log.
+ */
+export const JOB_RUNS_SQL = `select detail->>'job' as job, max(at)::text as at from audit_log
+  where entity = 'job' and entity_id is null and action = 'job.finished' and at > now() - interval '2 days'
+  group by detail->>'job'`;
+
 export const handler = async (): Promise<APIGatewayProxyResultV2> => {
   const version = process.env.APP_VERSION ?? 'dev';
   try {
@@ -24,11 +32,7 @@ export const handler = async (): Promise<APIGatewayProxyResultV2> => {
   } catch {
     return reply(503, { ok: false, version, database: 'down' });
   }
-  const runs = await query<{ job: string; at: string }>(
-    `select detail->>'job' as job, max(at)::text as at from audit_log
-      where action = 'job.finished' and at > now() - interval '2 days'
-      group by detail->>'job'`,
-  );
+  const runs = await query<{ job: string; at: string }>(JOB_RUNS_SQL);
   const lastRun = Object.fromEntries(runs.map((row) => [row.job, row.at]));
   // A job that only runs on one day of the month cannot be judged on a two-day window.
   const daily = JOBS.filter((job) => job.dailyAt && !job.onDay).map((job) => job.name);

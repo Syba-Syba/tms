@@ -221,10 +221,13 @@ describe('application documents', () => {
     await storage.storage().put(key(2), pdf, 'application/pdf');
     expect((await call('POST', `/applications/${id}/documents/confirm`, as, { key: key(2) })).status).toBe(200);
 
+    // Confirm files a checked copy under a '.kept.' key and removes the upload itself.
+    const kept = (n: number) => key(n).replace(/\.pdf$/, '.kept.pdf');
     expect(existsSync(storage.localPathFor(key(1)))).toBe(false);
-    expect(existsSync(storage.localPathFor(key(2)))).toBe(true);
+    expect(existsSync(storage.localPathFor(kept(1)))).toBe(false);
+    expect(existsSync(storage.localPathFor(kept(2)))).toBe(true);
     const rows = await db.query<{ s3_key: string }>('select s3_key from application_document where application_id = $1', [id]);
-    expect(rows.map((row) => row.s3_key)).toEqual([key(2)]);
+    expect(rows.map((row) => row.s3_key)).toEqual([kept(2)]);
 
     await storage.storage().put(key(3), new TextEncoder().encode('not a document'), 'application/pdf');
     expect((await call('POST', `/applications/${id}/documents/confirm`, as, { key: key(3) })).status).toBe(400);

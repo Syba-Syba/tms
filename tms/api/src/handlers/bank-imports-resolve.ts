@@ -86,7 +86,8 @@ export const handler = route(async (event) => {
         const [recorded] = await run<{ id: string }>(
           `select pp.id from payment_proof pp
             where pp.lease_id = $1 and pp.status = 'accepted' and pp.target = 'invoice' and pp.amount_cents = $2
-              and pp.paid_on between $3::date - 14 and $3::date + 3
+              -- A transfer is posted on or after the day the slip says it was paid (a day's grace).
+              and pp.paid_on between $3::date - 14 and $3::date + 1
               and exists (select 1 from payment p where p.proof_id = pp.id)
               and not exists (select 1 from payment p where p.proof_id = pp.id and p.bank_line_id is not null)
             order by abs(pp.paid_on - $3::date) limit 1

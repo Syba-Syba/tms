@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { zar } from '../domain/money';
+import { hasSafeDimensions, isWellFormedPng } from './images';
 
 const INK = rgb(0.137, 0.125, 0.11);
 const MUTED = rgb(0.49, 0.463, 0.424);
@@ -248,6 +249,10 @@ export interface InspectionPhoto {
  * is left out here instead (and refused at upload, see isEmbeddableImage).
  */
 async function embedPhoto(doc: PDFDocument, photo: InspectionPhoto) {
+  // pdf-lib decodes a PNG in full, so a small file naming huge dimensions could exhaust memory.
+  if (!hasSafeDimensions(photo.bytes)) return null;
+  // pdf-lib never returns on a truncated PNG, so a broken one is caught first.
+  if (photo.type === 'png' && !isWellFormedPng(photo.bytes)) return null;
   try {
     return photo.type === 'png' ? await doc.embedPng(photo.bytes) : await doc.embedJpg(photo.bytes);
   } catch {
@@ -361,10 +366,14 @@ export async function renderInspectionPdf(input: InspectionData) {
   text(ctx, data.draft ? 'To be signed jointly' : 'Signed jointly', { bold: true, size: 12, gap: 10 });
   for (const signature of data.signatures) {
     ensureRoom(ctx, 64);
-    if (signature.png) {
-      const image = await ctx.doc.embedPng(signature.png);
+    // A bad image stored before sign checked it must not block the seal for good: the line
+    // and the signature record still stand without the picture.
+    const image = signature.png ? await embedPhoto(ctx.doc, { bytes: signature.png, type: 'png' }) : null;
+    if (image) {
       const dims = image.scale(42 / image.height);
       ctx.page.drawImage(image, { x: MARGIN, y: ctx.y - 42, width: dims.width, height: dims.height });
+    } else if (signature.png) {
+      draw(ctx, 'Signed electronically; the signature image could not be shown.', { x: MARGIN, y: ctx.y - 40, size: 8.5, font: ctx.body, color: MUTED });
     }
     ctx.page.drawLine({ start: { x: MARGIN, y: ctx.y - 46 }, end: { x: MARGIN + 200, y: ctx.y - 46 }, thickness: 0.7, color: INK });
     draw(ctx, `${signature.name} · ${signature.party} · ${signature.signedAt}`, { x: MARGIN, y: ctx.y - 58, size: 8.5, font: ctx.body, color: MUTED });

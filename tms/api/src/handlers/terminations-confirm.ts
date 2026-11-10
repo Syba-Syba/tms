@@ -7,7 +7,7 @@ import { leaseParties } from '../lib/lease-parties';
 
 /**
  * The tenant confirms a notice the landlord recorded for them: a mutual one, or the tenant's own
- * notice entered with an earlier date. Until then it is the landlord's word alone, so the
+ * notice (with any penalty on it) entered by the landlord. Until then it is the landlord's word alone, so the
  * deposit cannot be settled and the tenant may withdraw it. Only the tenant confirms.
  */
 export const handler = route(async (event) => {

@@ -4,10 +4,11 @@ import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
-import { sniffImageType } from '../lib/images';
+import { hasSafeDimensions, sniffImageType } from '../lib/images';
 import { removeDraft, withdrawDraft } from './inspections-render';
 import { isEmbeddableImage } from '../lib/pdf';
 import { MAX_TICKET_PHOTOS } from './tickets-photo-presign';
+import { MAX_INSPECTION_PHOTOS, MAX_INSPECTION_PHOTOS_PER_FINDING } from './inspections-photo-presign';
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
@@ -63,6 +64,8 @@ export const handler = route(async (event) => {
   const bytes = await storage().get(photo.s3_key);
   const type = sniffImageType(bytes);
   if (!type) throw badRequest('That upload is not a JPEG or PNG photo.');
+  // Read from the header before anything decodes it: a 35 KB PNG can name 36 megapixels.
+  if (!hasSafeDimensions(bytes)) throw badRequest('That photo is too large. Take it again at a normal size.');
   // The header alone passed a truncated file, which then failed every render of the report.
   if (!(await isEmbeddableImage(bytes, type))) {
     throw badRequest('That photo could not be read. It may be damaged; take it again and retry.');
@@ -97,6 +100,9 @@ export const handler = route(async (event) => {
         [input.photoId, contentType, size, keptKey],
       );
       return false;
+    }).catch(async (error) => {
+      await storage().remove(keptKey).catch(() => undefined);
+      throw error;
     });
     if (full) {
       await storage().remove(keptKey).catch(() => undefined);
@@ -119,9 +125,11 @@ export const handler = route(async (event) => {
   // A confirmed photo goes into the report, so it is evidence only while the findings are
   // open, and it withdraws the draft's fingerprint as a findings change does. Before this, a
   // photo confirmed after the draft was signed ended up in a sealed report nobody had seen.
+  let refused: string | null = null;
+  let dropped = false;
   const draft = await withTransaction(async (run) => {
-    const [inspection] = await run<{ id: string; status: string }>(
-      `select i.id, i.status from inspection i
+    const [inspection] = await run<{ id: string; status: string; finding_id: string }>(
+      `select i.id, i.status, f.id as finding_id from inspection i
          join inspection_finding f on f.inspection_id = i.id
          join inspection_photo p on p.finding_id = f.id
         where p.id = $1
@@ -130,14 +138,39 @@ export const handler = route(async (event) => {
     );
     if (!inspection) throw notFound('Photo');
     if (inspection.status !== 'in_progress') {
-      throw conflict('This inspection is closed to changes.');
+      refused = 'This inspection is closed to changes.';
+      return null;
+    }
+    // Presign counts these too, but links issued together could pass it. Counted again here,
+    // under the inspection's lock, so confirmed photos cannot grow without bound.
+    const [kept] = await run<{ finding: number; total: number }>(
+      `select count(*) filter (where p.finding_id = $2)::int as finding, count(*)::int as total
+         from inspection_photo p join inspection_finding f on f.id = p.finding_id
+        where f.inspection_id = $1 and p.uploaded`,
+      [inspection.id, inspection.finding_id],
+    );
+    if (kept!.finding >= MAX_INSPECTION_PHOTOS_PER_FINDING || kept!.total >= MAX_INSPECTION_PHOTOS) {
+      await run('delete from inspection_photo where id = $1', [input.photoId]);
+      dropped = true;
+      refused = `An inspection holds up to ${MAX_INSPECTION_PHOTOS_PER_FINDING} photos for each item and ${MAX_INSPECTION_PHOTOS} in all.`;
+      return null;
     }
     await run(
       `update inspection_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
       [input.photoId, contentType, size, keptKey],
     );
     return withdrawDraft(run, inspection.id);
+  }).catch(async (error) => {
+    // No row points at the kept copy yet, so nothing (sweep or erasure) would ever find it.
+    await storage().remove(keptKey).catch(() => undefined);
+    throw error;
   });
+  if (refused) {
+    // Returned rather than thrown above, so the delete of a photo over the cap commits.
+    await storage().remove(keptKey).catch(() => undefined);
+    if (dropped) await removeUpload(photo.s3_key, keptKey);
+    throw conflict(refused);
+  }
   await removeDraft(draft);
   await removeUpload(photo.s3_key, keptKey);
   return json(200, { confirmed: true, key: keptKey });

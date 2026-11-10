@@ -29,6 +29,14 @@ export async function pickPhoto(
   return reencode(source, maxEdge, quality);
 }
 
+/** A file the person already chose, redrawn the same way as pickPhoto's. */
+export async function photoFromFile(
+  file: Blob,
+  options: { maxEdge?: number; quality?: number } = {},
+): Promise<PickedPhoto> {
+  return reencode(file, options.maxEdge ?? 1600, options.quality ?? 0.7);
+}
+
 async function fromCamera(): Promise<Blob | null> {
   try {
     const photo = await Camera.getPhoto({

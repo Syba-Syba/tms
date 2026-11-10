@@ -47,7 +47,11 @@ export async function owingLeases(today: string, leaseId?: string): Promise<Owin
     `select i.lease_id, i.due_on::text,
             (i.total_cents - coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0))::text as owed,
             ${RENT_CREDIT_SQL('i.lease_id')}::text as credit,
-            exists (select 1 from payment_proof pp where pp.lease_id = i.lease_id and pp.status = 'pending')
+            -- Only a recent slip for rent holds the reminders. A deposit slip says nothing about
+            -- rent, and a slip left undecided for a week should not hold them for ever.
+            exists (select 1 from payment_proof pp
+                     where pp.lease_id = i.lease_id and pp.status = 'pending' and pp.target = 'invoice'
+                       and coalesce(pp.submitted_at, pp.created_at) >= $1::date - 7)
               as slip_pending
        from invoice i
        join lease l on l.id = i.lease_id

@@ -162,6 +162,15 @@ functions:
       - httpApi:
           method: GET
           path: /health
+      # Public pages, as PUBLIC_ROUTES in src/server.ts: a landlord's shared listings link and
+      # the terms page are opened by visitors with no sign-in. Behind the catch-all's authorizer
+      # they got a 401 before reaching the function. A specific route wins over /{proxy+}.
+      - httpApi:
+          method: GET
+          path: /listings
+      - httpApi:
+          method: GET
+          path: /company
 
 
   # The scheduled jobs. Each points at src/handlers/scheduled.ts, which ignores the EventBridge

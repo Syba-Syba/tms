@@ -8,6 +8,13 @@ import { roomName } from '../domain/inspection';
 
 /** Unconfirmed photo uploads one inspection may have in the last hour. */
 export const MAX_PENDING_INSPECTION_PHOTOS = 20;
+/**
+ * Confirmed photos per finding and per inspection. Without these a party could loop
+ * presign, upload, confirm for as long as the inspection stayed open, 10 MB at a time.
+ * The report embeds three per finding and 60 in all; the rest stay on file.
+ */
+export const MAX_INSPECTION_PHOTOS_PER_FINDING = 6;
+export const MAX_INSPECTION_PHOTOS = 120;
 
 const schema = z.object({
   room: roomName,
@@ -45,6 +52,16 @@ export const handler = route(async (event) => {
   );
   if (pending!.n >= MAX_PENDING_INSPECTION_PHOTOS) {
     throw conflict('Too many photos are waiting to be confirmed on this inspection. Finish those first, or try again in an hour.');
+  }
+  // Confirmed photos stay, so they count too. Confirm checks again under the inspection's lock.
+  const [kept] = await query<{ finding: number; total: number }>(
+    `select count(*) filter (where p.finding_id = $2)::int as finding, count(*)::int as total
+       from inspection_photo p join inspection_finding f on f.id = p.finding_id
+      where f.inspection_id = $1 and p.uploaded`,
+    [inspectionId, finding.id],
+  );
+  if (kept!.finding >= MAX_INSPECTION_PHOTOS_PER_FINDING || kept!.total >= MAX_INSPECTION_PHOTOS) {
+    throw conflict(`An inspection holds up to ${MAX_INSPECTION_PHOTOS_PER_FINDING} photos for each item and ${MAX_INSPECTION_PHOTOS} in all.`);
   }
 
   const key = `inspections/${inspectionId}/${crypto.randomUUID()}.${input.contentType === 'image/png' ? 'png' : 'jpg'}`;

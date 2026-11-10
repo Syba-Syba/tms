@@ -17,13 +17,18 @@ DIR="${BACKUP_DIR:-/backups}"
 
 log() { echo "$(date -u +%FT%TZ) backup: $*"; }
 
+# Every erasure ever made, one line each: epoch|key|person|landlord (lib/privacy.ts,
+# parseErasureList). Ids only, no names. restore.sh replays them, so restoring a dump older than
+# an erasure, even on a new server, does not bring the person back. Same query in restore.sh.
+ERASURES_SQL="select extract(epoch from at)::bigint, coalesce(detail->>'replayOf', id::text || '@' || to_char(at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')), detail->>'personSub', coalesce(detail->>'landlordId', '') from audit_log where action = 'privacy.erased' and detail ? 'personSub' order by at"
+
 # Every step below ends in `|| return 1`: backup is called as `backup || log ...`, and on the
 # left of || POSIX sh ignores set -e inside the function, so a failed step would otherwise carry
 # on and still write last-ok.
 offsite() {
   [ -n "${BACKUP_REMOTE:-}" ] || return 0
   command -v rclone >/dev/null 2>&1 || apk add --no-cache rclone >/dev/null || return 1
-  rclone copy "$DIR" "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --max-age 48h || return 1
+  rclone copy "$DIR" "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --include erasures.txt --max-age 48h || return 1
   # The copies off the server are kept as long as the ones here, and no longer.
   rclone delete "$BACKUP_REMOTE" --include 'db-*.dump' --include 'storage-*.tar.gz' --min-age "${KEEP_DAYS}d" || return 1
   log "copied to $BACKUP_REMOTE, pruned copies there older than $KEEP_DAYS days"
@@ -51,6 +56,10 @@ backup() {
   tar -czf "$files.partial" -C /data --exclude=storage/.restore-prev --exclude=storage/.restore-new \
     --exclude=storage/.restore-state storage || { log "FAILED: tar of /data/storage"; rm -f "$files.partial"; return 1; }
   mv "$files.partial" "$files" || { log "FAILED: mv $files"; return 1; }
+  # Not pruned with the dumps: an erasure must outlive every backup taken before it.
+  psql -At -F '|' -v ON_ERROR_STOP=1 -c "$ERASURES_SQL" > "$DIR/erasures.txt.partial" \
+    || { log "FAILED: listing erasures"; rm -f "$DIR/erasures.txt.partial"; return 1; }
+  mv "$DIR/erasures.txt.partial" "$DIR/erasures.txt" || { log "FAILED: mv erasures.txt"; return 1; }
   find "$DIR" -name 'db-*.dump' -mtime +"$KEEP_DAYS" -delete || return 1
   find "$DIR" -name 'storage-*.tar.gz' -mtime +"$KEEP_DAYS" -delete || return 1
   if ! offsite; then

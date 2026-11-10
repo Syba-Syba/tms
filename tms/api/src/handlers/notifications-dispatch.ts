@@ -47,6 +47,7 @@ interface Pending {
   attempts: number;
   stale: boolean;
   category?: string;
+  kind?: string;
 }
 
 type Sender = (row: Pending) => Promise<void>;
@@ -151,7 +152,7 @@ export const claimBatch = () =>
          limit ${BATCH}
          for update skip locked
       )
-      returning id, channel, recipient_to, subject, body, attempts, category,
+      returning id, channel, recipient_to, subject, body, attempts, category, kind,
                 -- A legal notice (a letter of demand, notice served) is never old news: the
                 -- deadlines in it run from the day it was given, so it is sent however late.
                 category <> 'deadline' and created_at < now() - interval '${STALE_AFTER_HOURS} hours' as stale`,
@@ -178,7 +179,9 @@ export const handler = async () => {
         notificationId: row.id,
         to: maskRecipient(row.recipient_to),
         channel: row.channel,
-        kind: row.subject.slice(0, 40),
+        // The template, not the subject: subjects carry names and amounts ("Naledi Phiri owes
+        // R12 000,00…"), which erasure cannot reach in a log.
+        kind: row.kind,
       });
       await park(row.id, 'NOTIFY_MODE=skip');
       counts.skipped += 1;

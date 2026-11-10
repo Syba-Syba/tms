@@ -27,17 +27,29 @@ export const handler = route(async (event) => {
   );
   const applicantId = applicant?.id ?? null;
   const byApplicant = (sql: string) => (applicantId ? query(sql, [applicantId]) : Promise.resolve([]));
+  // Long lists are cut, and the export says so rather than passing a part off as the whole.
+  const truncated: Record<string, boolean> = {};
+  const capped = async (name: string, limit: number, sql: string, params: unknown[]) => {
+    const rows = await query(`${sql} limit ${limit + 1}`, params);
+    truncated[name] = rows.length > limit;
+    return rows.slice(0, limit);
+  };
+  const theirLeases = 'select id from lease where applicant_id = $1';
+  const ref = `'LSE-' || lpad(l.ref_no::text, 5, '0')`;
 
   const exported = {
     exportedAt: new Date().toISOString(),
     note:
-      'Everything this system holds about you. Your ID number is stored encrypted and is never ' +
-      'decrypted, so only its last four digits appear here. Files are listed by name; open them ' +
-      'from the app.',
+      'What this system holds about you. Your ID number is stored encrypted and is never ' +
+      'decrypted, so only its last four digits appear here. Files are listed by kind and date ' +
+      '(documents, applicationDocuments, maintenancePhotos); open them from the app. Where ' +
+      '"truncated" says a list was cut, ask your landlord or the operator for the rest.',
     account,
     applicant: applicant
       ? { ...applicant, id: undefined, idNumber: applicant.id_number_last4 ? `ending ${String(applicant.id_number_last4)}` : null, id_number_last4: undefined }
       : null,
+    // Names this record has carried (a new surname given with a later application).
+    namesUsed: await byApplicant('select first_name, last_name, first_seen from applicant_name where applicant_id = $1 order by first_seen'),
     applications: await byApplicant(
       `select a.id, p.name || ' ' || u.code as unit, a.status, a.occupants, a.preferred_move_in, a.pets,
               a.notes, a.monthly_income_cents, a.employment_status, a.employer,
@@ -62,6 +74,45 @@ export const handler = route(async (event) => {
     invoices: await byApplicant(
       `select i.period_start, i.due_on, i.total_cents, i.status from invoice i
          join lease l on l.id = i.lease_id where l.applicant_id = $1 order by i.period_start`,
+    ),
+    invoiceLines: await byApplicant(
+      `select i.period_start, il.kind, il.description, il.amount_cents from invoice_line il
+         join invoice i on i.id = il.invoice_id where i.lease_id in (${theirLeases}) order by i.period_start`,
+    ),
+    // Charges added to a lease that wait for the next invoice.
+    pendingCharges: await byApplicant(
+      `select period_start, kind, description, amount_cents, created_at from pending_charge
+        where lease_id in (${theirLeases}) order by period_start`,
+    ),
+    // The landlord's bank statement lines matched to their leases: the description is what their
+    // bank sent ("N PHIRI RENT").
+    bankLines: await byApplicant(
+      `select b.posted_on, b.amount_cents, b.description from bank_line b
+        where b.status = 'matched' and b.lease_id in (${theirLeases}) order by b.posted_on`,
+    ),
+    // Every file kept about them on their leases, by kind and date. "available" is false once a
+    // file has been erased.
+    documents: await byApplicant(
+      `select * from (
+         select 'lease' as document, ${ref} as lease, l.start_date::text as dated, true as available
+           from lease l where l.applicant_id = $1 and l.pdf_s3_key is not null
+         union all
+         select 'invoice', ${ref}, i.period_start::text, true from invoice i join lease l on l.id = i.lease_id
+          where l.applicant_id = $1 and i.pdf_s3_key is not null
+         union all
+         select 'inspection report', ${ref}, coalesce(i.completed_at::date, i.scheduled_for::date)::text, true
+           from inspection i join lease l on l.id = i.lease_id where l.applicant_id = $1 and i.pdf_s3_key is not null
+         union all
+         select 'deposit statement', ${ref}, t.effective_on::text, true from termination t join lease l on l.id = t.lease_id
+          where l.applicant_id = $1 and t.statement_s3_key is not null
+         union all
+         select 'arrears ' || st.step, ${ref}, st.taken_on::text, st.document_s3_key not like 'erased/%'
+           from arrears_step st join arrears_case c on c.id = st.case_id join lease l on l.id = c.lease_id
+          where l.applicant_id = $1 and st.document_s3_key is not null
+         union all
+         select 'proof of payment', ${ref}, pp.submitted_at::date::text, pp.s3_key not like 'erased/%'
+           from payment_proof pp join lease l on l.id = pp.lease_id where l.applicant_id = $1
+       ) d order by dated`,
     ),
     payments: await byApplicant(
       `select pay.amount_cents, pay.method, pay.reference, pay.received_on from payment pay
@@ -122,7 +173,9 @@ export const handler = route(async (event) => {
     invitations: await byApplicant(
       `select email, created_at, expires_at, accepted_at, revoked_at from tenant_invite where applicant_id = $1`,
     ),
-    messagesSentToYou: await query(
+    messagesSentToYou: await capped(
+      'messagesSentToYou',
+      500,
       // A reset or invite link in a message is a live credential: shown here, a stolen session
       // could use it to set a new password. The text stays, the token does not.
       // Messages from before they had an account went to a stand-in address: 'applicant:<id>'
@@ -137,7 +190,7 @@ export const handler = route(async (event) => {
            or n.recipient_sub in (select 'tenant-invite:' || ti.id from tenant_invite ti where ti.accepted_sub = $1)
            or (n.lease_id in (select l.id from lease l join applicant p on p.id = l.applicant_id where p.cognito_sub = $1)
                and (lower(n.recipient_to) = any($3::text[]) or n.recipient_to = $4))
-        order by created_at desc limit 500`,
+        order by created_at desc`,
       [
         person.sub,
         applicantId,
@@ -158,14 +211,17 @@ export const handler = route(async (event) => {
       [person.sub],
     ),
     // What they did, and what others did to their records (a landlord viewing their ID copy).
-    activity: await query(
+    activity: await capped(
+      'activity',
+      2000,
       `select action, entity, at, actor_role from audit_log
         where actor_sub = $1
            or (entity = 'application' and entity_id in (select a.id from application a join applicant p on p.id = a.applicant_id where p.cognito_sub = $1))
            or (entity = 'lease' and entity_id in (select l.id from lease l join applicant p on p.id = l.applicant_id where p.cognito_sub = $1))
-        order by at desc limit 2000`,
+        order by at desc`,
       [person.sub],
     ),
+    truncated,
   };
 
   await audit({

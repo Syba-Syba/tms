@@ -8,6 +8,7 @@ import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { ChargesPanel, type Charge } from '../components/charges-panel';
+import { ConfirmNotice, needsTenantConfirmation } from '../components/confirm-notice';
 import { Money } from '../components/money';
 import { QueryState } from '../components/query-state';
 import { addDays, localToday } from '../lib/dates';
@@ -27,8 +28,8 @@ interface Lease {
   viewer: { isLandlord: boolean; isTenant: boolean };
   inspections: { id: string; kind: string; status: string; scheduledFor: string; findings: number; flagged: number; reportKey: string | null }[];
   termination: {
-    id: string; status: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null;
-    deductions: number; statementKey: string | null;
+    id: string; status: string; reason?: string; effectiveOn: string; noticeGivenOn: string; refundDueBy: string | null;
+    deductions: number; statementKey: string | null; penaltyCents?: number;
     /** Who gave the notice; only they may withdraw it, either party for a mutual one. */
     initiatedBy?: 'tenant' | 'landlord' | 'mutual';
     /** Recorded by the landlord for the tenant and not yet confirmed by them. */
@@ -64,11 +65,15 @@ export function noticeRules(
     notice.initiatedBy === 'landlord' &&
     !monthToMonth &&
     addBusinessDays(givenOn, 40) > lease.endDate;
-  let latestEffectiveOn: string | undefined = lease.endDate;
-  if (reason === 'mutual' || monthToMonth) latestEffectiveOn = undefined;
-  else if (landlordLate) {
-    const afterNotice = addBusinessDays(givenOn, 20);
-    latestEffectiveOn = addDays(afterNotice > lease.endDate ? afterNotice : lease.endDate, 31);
+  // As the server's latestEffectiveDate: a one-sided notice ends by the end date; an agreed one,
+  // one on a run-out lease, or a late landlord's runs to 31 days past the later of the earliest
+  // end date and the lease end.
+  let latestEffectiveOn = lease.endDate;
+  if (reason === 'mutual' || monthToMonth || landlordLate) {
+    let earliest = lease.endDate;
+    if (monthToMonth) earliest = reason === 'mutual' ? givenOn : addBusinessDays(givenOn, 20);
+    else if (landlordLate) earliest = addBusinessDays(givenOn, 20);
+    latestEffectiveOn = addDays(earliest > lease.endDate ? earliest : lease.endDate, 31);
   }
   return {
     canServe: lease.status === 'active' && !renewalAccepted,
@@ -95,6 +100,8 @@ export function canWithdrawNotice(
   // As on the server: a landlord may undo a tenant's notice they recorded until the tenant confirms it.
   const landlordUndoesOwnEntry = party === 'landlord' && awaiting;
   if (termination.initiatedBy !== 'mutual' && termination.initiatedBy !== party && !landlordUndoesOwnEntry) return false;
+  // As on the server: a confirmed mutual notice binds both, so neither undoes it alone.
+  if (termination.initiatedBy === 'mutual' && !awaiting) return false;
   return today < termination.effectiveOn || awaiting;
 }
 
@@ -109,7 +116,9 @@ export function LeaseDetail() {
   const toast = useToast();
   const openDocument = useOpenDocument();
   const queryClient = useQueryClient();
-  const [payment, setPayment] = useState({ amountCents: 0, reference: '', invoiceId: '' });
+  // receivedOn is the day the money arrived, not the day it is typed in: it decides which month
+  // it counts in, whether rent was late, and when deposit interest starts.
+  const [payment, setPayment] = useState({ amountCents: 0, reference: '', invoiceId: '', receivedOn: '', method: 'eft' });
   // One key per attempt at recording a payment: a double tap or a retry after a dropped
   // connection sends the same key, and the server records the money once.
   const [paymentKey, setPaymentKey] = useState(() => randomId());
@@ -165,7 +174,7 @@ export function LeaseDetail() {
     // Rent, not the deposit, is what a quick entry usually is: start on the oldest open invoice.
     // With none open, nothing is chosen and Save waits for one.
     const oldest = [...open].sort((a, b) => a.period.localeCompare(b.period))[0];
-    setPayment({ amountCents: 0, reference: '', invoiceId: oldest?.id ?? '' });
+    setPayment({ amountCents: 0, reference: '', invoiceId: oldest?.id ?? '', receivedOn: today, method: 'eft' });
     setShowPayment(true);
   };
   const noticeReasons = landlord
@@ -407,6 +416,19 @@ export function LeaseDetail() {
           final three days, with both of you there. Skip it and the law treats the place as
           undamaged, so nothing can be deducted.
           {data.termination.refundDueBy ? ` Refund due by ${formatDate(data.termination.refundDueBy)}.` : ''}
+          {landlord && data.termination.awaitingTenant ? (
+            // Settling waits on this, so the landlord should see why.
+            <p className="mt-2">Waiting for {data.tenant} to confirm it in the app. The deposit cannot be settled until then.</p>
+          ) : landlord && data.termination.initiatedBy === 'mutual' ? (
+            <p className="mt-2">{data.tenant} confirmed it.</p>
+          ) : null}
+          {needsTenantConfirmation(data.viewer, data.termination) ? (
+            // Until the tenant confirms, the deposit cannot be settled.
+            <div className="mt-3 space-y-2">
+              <p>Your landlord recorded this notice for you. Confirm it if it is what you agreed to.</p>
+              <ConfirmNotice leaseId={data.id} termination={data.termination} />
+            </div>
+          ) : null}
           {withdrawable ? (
             <div className="mt-3">
               <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmWithdraw(true)}>
@@ -576,6 +598,27 @@ export function LeaseDetail() {
             cents={payment.amountCents}
             onCentsChange={(next) => setPayment({ ...payment, amountCents: next ?? 0 })}
           />
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-ink-muted">Received on</span>
+            <Input
+              type="date"
+              aria-label="Received on"
+              value={payment.receivedOn}
+              // A deposit is often paid before the lease starts, so a little before it is allowed.
+              min={addDays(data.startDate, -60)}
+              max={today}
+              onChange={(e) => setPayment({ ...payment, receivedOn: e.target.value })}
+            />
+          </label>
+          <Select
+            aria-label="How it was paid"
+            value={payment.method}
+            onChange={(e) => setPayment({ ...payment, method: e.target.value })}
+            options={[
+              { value: 'eft', label: 'EFT' },
+              { value: 'cash', label: 'Cash' },
+            ]}
+          />
           <Input
             aria-label="Bank reference"
             placeholder="Bank reference"
@@ -589,7 +632,7 @@ export function LeaseDetail() {
           <Button
             block
             loading={busy}
-            disabled={payment.amountCents <= 0 || payment.invoiceId === ''}
+            disabled={payment.amountCents <= 0 || payment.invoiceId === '' || !payment.receivedOn || payment.receivedOn > today}
             onClick={() =>
               run(async () => {
                 const toDeposit = payment.invoiceId === 'deposit';
@@ -597,13 +640,13 @@ export function LeaseDetail() {
                   target: toDeposit ? 'deposit' : 'invoice',
                   invoiceId: toDeposit ? undefined : payment.invoiceId,
                   amountCents: payment.amountCents,
-                  method: 'eft',
+                  method: payment.method,
                   reference: payment.reference || undefined,
-                  receivedOn: today,
+                  receivedOn: payment.receivedOn,
                   idempotencyKey: paymentKey,
                 });
                 setPaymentKey(randomId());
-                setPayment({ amountCents: 0, reference: '', invoiceId: '' });
+                setPayment({ amountCents: 0, reference: '', invoiceId: '', receivedOn: today, method: 'eft' });
                 setShowPayment(false);
               }, 'Payment recorded')
             }
@@ -703,10 +746,10 @@ export function LeaseDetail() {
               ? 'Cancelling early needs 20 business days’ notice under the Consumer Protection Act. ' +
                 'The landlord may charge a reasonable cancellation penalty, deducted from the deposit at settlement.'
               : notice.reason === 'mutual'
-                ? 'An agreed end date can be any day from today, up to a month after the lease ends.'
-                : `The earliest lawful end date is worked out for you and cannot be brought forward${
-                    rules.latestEffectiveOn ? `, nor set after ${formatDate(rules.latestEffectiveOn)}` : ''
-                  }.`}
+                ? `An agreed end date can be any day from today up to ${formatDate(rules.latestEffectiveOn)}.`
+                : `The earliest lawful end date is worked out for you and cannot be brought forward, nor set after ${formatDate(
+                    rules.latestEffectiveOn,
+                  )}.`}
             {landlord ? ' A tenant’s notice must be in writing; keep the letter or email.' : ''}
           </p>
           <Checkbox

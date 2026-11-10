@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
@@ -13,6 +13,9 @@ export function ResetPassword() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
+  // The link works once. A second Enter before the reply sent it again and showed a false
+  // "not changed"; a ref, unlike state, is already set when the second key arrives.
+  const inFlight = useRef(false);
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -21,6 +24,8 @@ export function ResetPassword() {
   const ready = password.length >= 8 && password === confirm;
 
   const save = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       const result = await api.post<{ token: string | null; user: SessionUser | null }>('/auth/reset/confirm', {
@@ -41,6 +46,7 @@ export function ResetPassword() {
     } catch (error) {
       toast.show({ title: 'Password not changed', description: humanError(error), tone: 'danger' });
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };

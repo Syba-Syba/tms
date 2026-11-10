@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canWithdrawNotice, noticeRules, payableInvoices } from '../lease-detail';
+import { addBusinessDays } from '../../lib/business-days';
+import { addDays } from '../../lib/dates';
 
 const TODAY = '2026-10-27';
 const live = { status: 'active', endDate: '2027-04-30', renewedBy: null };
@@ -38,14 +40,16 @@ describe('noticeRules', () => {
     expect(rules.monthToMonth).toBe(false);
   });
 
-  it('caps a one-sided notice at the lease end, but not an agreed one', () => {
+  it('caps a one-sided notice at the lease end, and an agreed one a month after it (audit 5, item 45)', () => {
     expect(noticeRules(live, 'early_tenant', TODAY)).toMatchObject({ canServe: true, latestEffectiveOn: '2027-04-30' });
-    expect(noticeRules(live, 'mutual', TODAY).latestEffectiveOn).toBeUndefined();
+    expect(noticeRules(live, 'mutual', TODAY).latestEffectiveOn).toBe('2027-05-31');
   });
 
-  it('treats a lease past its end date as month to month', () => {
+  it('treats a lease past its end date as month to month, capped as the server caps it (item 45)', () => {
     const rules = noticeRules({ ...live, endDate: '2026-10-17' }, 'end_of_term', TODAY);
-    expect(rules).toMatchObject({ canServe: true, monthToMonth: true, latestEffectiveOn: undefined });
+    expect(rules).toMatchObject({ canServe: true, monthToMonth: true, latestEffectiveOn: addDays(addBusinessDays(TODAY, 20), 31) });
+    // An agreed end on a run-out lease may be today, so the cap runs from today.
+    expect(noticeRules({ ...live, endDate: '2026-10-17' }, 'mutual', TODAY).latestEffectiveOn).toBe('2026-11-27');
   });
 });
 
@@ -71,13 +75,18 @@ describe('canWithdrawNotice (audit 4, item 43)', () => {
     },
   });
 
-  it('offers it only to the party who gave the notice, and to either for a mutual one', () => {
+  it('offers it only to the party who gave the notice, and to either for an unconfirmed mutual one', () => {
     expect(canWithdrawNotice(lease('landlord', 'landlord'), TODAY)).toBe(true);
     expect(canWithdrawNotice(lease('landlord', 'tenant'), TODAY)).toBe(false);
     expect(canWithdrawNotice(lease('tenant', 'tenant'), TODAY)).toBe(true);
     expect(canWithdrawNotice(lease('tenant', 'landlord'), TODAY)).toBe(false);
-    expect(canWithdrawNotice(lease('mutual', 'tenant'), TODAY)).toBe(true);
-    expect(canWithdrawNotice(lease('mutual', 'landlord'), TODAY)).toBe(true);
+    expect(canWithdrawNotice(lease('mutual', 'tenant', { awaitingTenant: true }), TODAY)).toBe(true);
+    expect(canWithdrawNotice(lease('mutual', 'landlord', { awaitingTenant: true }), TODAY)).toBe(true);
+  });
+
+  it('offers neither party a confirmed mutual notice, which the server refuses (audit 5, e2e)', () => {
+    expect(canWithdrawNotice(lease('mutual', 'tenant'), TODAY)).toBe(false);
+    expect(canWithdrawNotice(lease('mutual', 'landlord'), TODAY)).toBe(false);
   });
 
   it('stops on the end date and once settled, except for a tenant who never confirmed', () => {

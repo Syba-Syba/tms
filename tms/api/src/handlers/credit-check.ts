@@ -6,6 +6,7 @@ import { badRequest, conflict, forbidden, json, parseBody, route } from '../lib/
 import { recordConsent } from '../lib/privacy';
 import { PRIVACY_VERSION } from '../domain/privacy';
 import { sastToday } from '../domain/dates';
+import { keptKeySql } from './documents-presign';
 
 const recordSchema = z.object({
   bureau: z.enum(['transunion', 'experian', 'xds', 'compuscan', 'tpn', 'other']),
@@ -91,7 +92,9 @@ export const handler = route(async (event) => {
   let documentId: string | null = null;
   if (input.reportKey) {
     const [document] = await query<{ id: string }>(
-      `select id from application_document where application_id = $1 and kind = 'credit_report' and s3_key = $2`,
+      // Confirm files the checked copy under a '.kept.' key; the client still has the upload key.
+      `select id from application_document where application_id = $1 and kind = 'credit_report'
+          and s3_key in ($2, ${keptKeySql('$2')})`,
       [applicationId, input.reportKey],
     );
     if (!document) throw badRequest('Upload the report first, then save the result.');

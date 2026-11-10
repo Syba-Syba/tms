@@ -29,6 +29,22 @@ export async function activateScheduledLease(
     await moveOpenInvoices(run, lease.previous_lease_id, lease.id);
     // The deposit ledger follows the tenant, not the lease, so the interest history moves
     // across with them rather than being refunded and recollected.
+    // Interest posted on both leases for the same month (from a top-up recorded on the renewal
+    // before it started) is merged into one row first: the ledger allows one a month.
+    await run(
+      `update deposit_ledger o set amount_cents = o.amount_cents + n.amount_cents
+         from deposit_ledger n
+        where o.lease_id = $2 and n.lease_id = $1 and o.entry_type = 'interest' and n.entry_type = 'interest'
+          and o.period_month = n.period_month`,
+      [lease.id, lease.previous_lease_id],
+    );
+    await run(
+      `delete from deposit_ledger n
+        where n.lease_id = $1 and n.entry_type = 'interest'
+          and exists (select 1 from deposit_ledger o
+                       where o.lease_id = $2 and o.entry_type = 'interest' and o.period_month = n.period_month)`,
+      [lease.id, lease.previous_lease_id],
+    );
     await run(`update deposit_ledger set lease_id = $1 where lease_id = $2`, [lease.id, lease.previous_lease_id]);
     await movePendingCharges(run, lease.previous_lease_id, lease.id);
     // The arrears case tracks the invoices that just moved, so it moves with them. Left behind

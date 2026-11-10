@@ -168,7 +168,8 @@ describe('application documents', () => {
       'select s3_key from application_document where application_id = $1',
       [applicationId],
     );
-    expect(rows.map((row) => row.s3_key)).toEqual([replacement]);
+    // Filed as a checked copy under a '.kept.' key.
+    expect(rows.map((row) => row.s3_key)).toEqual([replacement.replace(/\.pdf$/, '.kept.pdf')]);
   });
 
   it('refuses bytes that are not a document, and a key from another application', async () => {

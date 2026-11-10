@@ -108,7 +108,7 @@ export function InspectionRoom() {
         title={room}
         description={
           locked
-            ? 'Signing has started, so the findings are locked.'
+            ? 'Signing has started, so the findings are locked. To dispute one, reopen the inspection from its overview.'
             : 'Anything below Good needs a photo. It protects both sides.'
         }
       />

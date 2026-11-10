@@ -1,6 +1,8 @@
 import { requireLeaseAccessVia } from '../lib/access';
 import { query } from '../lib/db';
 import { badRequest, json, route } from '../lib/http';
+import { outgoingCountsSql } from '../domain/termination';
+import { sastToday } from '../domain/dates';
 
 /**
  * The walkthrough screens were static mockups because nothing served the live state. This is
@@ -26,16 +28,18 @@ export const handler = route(async (event) => {
     pdf_s3_key: string | null;
     draft_s3_key: string | null;
     draft_sha256: string | null;
+    exit_counts: boolean;
   }>(
     `select i.id, i.kind, i.status, i.scheduled_for, i.lease_id, i.pdf_s3_key,
             i.draft_s3_key, i.draft_sha256,
+            (i.kind = 'outgoing' and ${outgoingCountsSql('i', '$2::date')}) as exit_counts,
             p.name || ' ' || u.code as unit_label
        from inspection i
        join lease l on l.id = i.lease_id
        join unit u on u.id = l.unit_id
        join property p on p.id = u.property_id
       where i.id = $1`,
-    [inspectionId],
+    [inspectionId, sastToday()],
   );
 
   const findings = await query<{
@@ -69,6 +73,14 @@ export const handler = route(async (event) => {
     [inspectionId],
   );
 
+  // The rules inspections-reopen applies, so the screen offers reopening only to who may: either
+  // party until both have signed, except the tenant on an exit report that already counts as
+  // done because they missed the booked date.
+  const reopenable =
+    inspection!.status === 'awaiting_signatures' &&
+    signatures.length < 2 &&
+    !(access.isTenant && !access.isLandlord && inspection!.exit_counts);
+
   return json(200, {
     id: inspection!.id,
     kind: inspection!.kind,
@@ -81,6 +93,7 @@ export const handler = route(async (event) => {
     draftSha256: inspection!.draft_sha256,
     viewer: { isLandlord: access.isLandlord, isTenant: access.isTenant },
     signatures: signatures.map((row) => ({ party: row.party, signedAt: row.signed_at })),
+    reopenable,
     findings: findings.map((row) => ({
       id: row.id,
       room: row.room,

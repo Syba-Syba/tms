@@ -253,7 +253,7 @@ export const TEMPLATES: Record<string, Template> = {
     urgent: true,
     subject: (d) => `Confirm the notice: lease for ${d('unit')} ends ${d('effectiveOn')}`,
     body: (d) =>
-      `Your landlord recorded a notice, dated ${d('noticeGivenOn')}, that ends the lease for ${d('unit')} on ${d('effectiveOn')}.\n\n` +
+      `Your landlord recorded a notice, dated ${d('noticeGivenOn')}, that ends the lease for ${d('unit')} on ${d('effectiveOn')}.${d('penaltyLine')}\n\n` +
       `It needs your confirmation in the app. If you did not agree to it, withdraw it there instead.`,
   },
   notice_confirmed: {

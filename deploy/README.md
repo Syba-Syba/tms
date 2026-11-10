@@ -121,8 +121,38 @@ keeps the current database as `tms_previous`, restores the database in one trans
 the documents in (the current ones are kept in `.restore-prev` inside the storage volume), and
 starts both again. The database steps run as the owner, `tms_app`, in a one-off container of
 the database image. If any step fails it puts the database and documents back as they were,
-starts the app, and says so. Once all is well, drop the old copies (the script prints the
-commands); until `.restore-prev` is removed, nightly backups include it.
+starts the app, and says so.
+
+**Erasures since the dump are done again.** A dump taken before someone was erased still holds
+them, sign-in and documents included. Before the app starts, the script lists every erasure in
+`tms_previous` and in `backups/erasures.txt` and runs each again on the restored data; ones the
+dump already holds are skipped. Each nightly backup rewrites `erasures.txt` (ids only, no names)
+and copies it off the server with the dumps, and it is never pruned. On a new server, copy it
+into `backups/` along with the dump (`rclone copy secure:erasures.txt backups/`). Without it, an
+erasure made after the last backup taken before the disaster is lost with the database; redo it
+from the landlord's privacy requests.
+
+**The app starts held.** The restored data is missing everything since the dump: payments, arrears
+steps, notices. Run at once, the morning's jobs would send a second letter of demand and repeat
+reminders. So the app comes up with its scheduled jobs and outbox off (`restore-hold.yml`); it
+still serves sign-ins and pages. Re-enter payments received since the dump and check the arrears
+steps, notices and terminations made since then (`tms_previous` has them), then:
+
+    ./restore.sh resume
+
+While the app is held, do not run `docker compose up` yourself (the Updating steps below
+included): compose does not know about `restore-hold.yml`, so it recreates the app without the
+hold and the jobs run. Resume first. The hold is added to the compose files the install already
+uses (`COMPOSE_FILE` from the shell or `.env.production`, or `docker-compose.yml` with
+`docker-compose.override.yml` when there is one).
+
+**Restoring onto a new server:** set it up as above and start the stack once
+(`docker compose --env-file .env.production up -d`) so the database exists, then copy the dump,
+the storage archive and `erasures.txt` into `backups/` and run the restore.
+
+Once all is well, drop the old copies (the script prints the commands).
+`.restore-prev` is not in the nightly backups: it is only in the storage volume, so copy it off
+the server before removing it if any document in it may still be needed.
 
 ## Rehearsing a restore
 
@@ -133,7 +163,8 @@ and after changing anything in this folder. It builds the app and starts its own
 database, the app and the backups, under a separate project name in a temporary folder, so a
 real install on the same machine is not touched and no ports are opened. It checks the
 database roles, signs a landlord up, backs up, runs the restore check, damages the data,
-restores, checks the data, documents and app, then runs a restore that fails part-way and
+restores, checks the data, documents and app, that an erasure made after the backup was done
+again and that the app came up held, resumes it, then runs a restore that fails part-way and
 checks everything is put back. It removes everything it made and ends with `DRILL PASSED` or
 `DRILL FAILED`. It takes about five minutes, most of it the build. CI runs it on every change
 to `deploy/`.

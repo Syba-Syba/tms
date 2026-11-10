@@ -18,7 +18,18 @@ export interface StatementLine {
   description: string;
   /** Unique per landlord. A repeated line in an overlapping statement has the same one. */
   fingerprint: string;
+  /**
+   * OFX only: the fingerprint lines had before the account was part of it. A line on file
+   * under it, with the same date and amount, is this line imported earlier.
+   */
+  legacyFingerprint?: string;
 }
+
+/**
+ * Credit lines one statement may hold. A year of a busy rental account is a few hundred; past
+ * this the file is not a bank statement, and the import screen could no longer show it.
+ */
+export const MAX_STATEMENT_LINES = 5_000;
 
 export interface ParsedStatement {
   format: 'csv' | 'ofx';
@@ -94,7 +105,9 @@ export function parseAmount(raw: string): number | null {
   } else {
     text = text.replace(/,/g, '');
   }
-  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  // Twelve digits of rand is ten billion; anything longer overflowed the cents column or lost
+  // precision, and failed the whole import with a 500.
+  if (!/^\d{1,12}(\.\d{1,2})?$/.test(text)) return null;
   const [whole, fraction = ''] = text.split('.');
   return sign * (Number(whole) * 100 + Number(fraction.padEnd(2, '0')));
 }
@@ -109,6 +122,7 @@ const fingerprint = (parts: string[]) =>
  */
 function withFingerprints(
   rows: Array<{ postedOn: string; amountCents: number; description: string; fitId?: string }>,
+  account = '',
 ): StatementLine[] {
   const seen = new Map<string, number>();
   return rows.map((row) => {
@@ -119,7 +133,10 @@ function withFingerprints(
       postedOn: row.postedOn,
       amountCents: row.amountCents,
       description: row.description,
-      fingerprint: row.fitId ? fingerprint(['fitid', row.fitId]) : fingerprint([base, String(occurrence)]),
+      // A FITID is unique only within its account, so the account is part of the fingerprint:
+      // without it a credit on a second account was dropped as already imported.
+      fingerprint: row.fitId ? fingerprint(['fitid', account, row.fitId]) : fingerprint([base, String(occurrence)]),
+      ...(row.fitId ? { legacyFingerprint: fingerprint(['fitid', row.fitId]) } : {}),
     };
   });
 }
@@ -158,7 +175,8 @@ function parseOfx(text: string): ParsedStatement {
     const fitId = ofxField(block, 'FITID') ?? undefined;
     rows.push({ postedOn, amountCents: amount, description: description || 'No description', fitId });
   }
-  return { format: 'ofx', lines: withFingerprints(rows), debitsSkipped };
+  const account = ofxField(text, 'ACCTID') ?? '';
+  return { format: 'ofx', lines: withFingerprints(rows, account), debitsSkipped };
 }
 
 /* ------------------------------------------------------------------ *
@@ -358,6 +376,9 @@ export function parseStatement(fileName: string, text: string): ParsedStatement 
         ? 'That statement has no money coming in, only payments out.'
         : 'No transactions could be read from that file.',
     );
+  }
+  if (parsed.lines.length > MAX_STATEMENT_LINES) {
+    throw new StatementError(`That statement has more than ${MAX_STATEMENT_LINES} payments in. Export a shorter date range.`);
   }
   return parsed;
 }

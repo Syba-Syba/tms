@@ -3,15 +3,38 @@
 # Everything in the live database is replaced. Run from deploy/, on the server:
 #
 #   ./restore.sh backups/db-2026-10-28T0030Z.dump backups/storage-2026-10-28T0030Z.tar.gz
+#   ./restore.sh resume     once payments and notices since the dump are checked (see the end)
 #
+# Erasures made since the dump are done again before the app starts, from the old database and
+# from backups/erasures.txt. The app then starts with its jobs and outbox held, so arrears,
+# reminders and notices do not run again on the restored data before you have looked.
 # A copy kept off the server goes in backups/ first (rclone copy offsite:... backups/).
 # If any step fails after the database is renamed, the database and the documents are put back
 # as they were and the app is started again.
 set -eu
 cd "$(dirname "$0")"
+compose() { docker compose --env-file .env.production "$@"; }
+HOLD=restore-hold.yml
+# The compose files this install uses, so the hold adds to them rather than replacing them:
+# COMPOSE_FILE from the shell or .env.production, else what compose loads by default.
+base_files="${COMPOSE_FILE:-$(sed -n 's/^COMPOSE_FILE=//p' .env.production 2>/dev/null | tail -n 1 | tr -d "\"'")}"
+if [ -z "$base_files" ]; then
+  base_files=docker-compose.yml
+  [ -f docker-compose.override.yml ] && base_files="$base_files:docker-compose.override.yml"
+fi
+
+if [ "${1:-}" = resume ]; then
+  [ -f "$HOLD" ] || { echo "The app is not held: no $HOLD here."; exit 1; }
+  # Recreated without the hold: the jobs and the outbox run again. The hold file goes only once
+  # that worked, so a failed start can be retried.
+  COMPOSE_FILE="$base_files" compose up -d --no-deps app
+  rm -f "$HOLD"
+  echo "Resumed: the scheduled jobs and the outbox run again."
+  exit 0
+fi
+
 DUMP="${1:?which database dump?}"
 FILES="${2:?which storage archive?}"
-compose() { docker compose --env-file .env.production "$@"; }
 # A one-off container of the database image, as the owner (the backup service only reads):
 # psql and pg_restore, the database socket, and backups/ at /backups, read-only.
 pgsh() {
@@ -57,12 +80,18 @@ if [ "$previous" = 1 ]; then
   exit 1
 fi
 
+if [ -f "$HOLD" ]; then
+  echo "An earlier restore is still held ($HOLD). Finish it with ./restore.sh resume first. Nothing was changed."
+  exit 1
+fi
+
 printf 'This replaces everything in the live database with %s. Type RESTORE to go on: ' "$dump"
 read -r answer
 [ "$answer" = "RESTORE" ] || { echo "Stopped."; exit 1; }
 
 db_renamed=0
 storage_done=0
+hold_made=0
 finished=0
 rollback() {
   status=$?
@@ -95,6 +124,11 @@ rollback() {
   else
     echo "  Documents: COULD NOT PUT THEM BACK. Originals are in /data/storage/.restore-prev in the storage volume."
   fi
+  # The data is as it was, so the app runs as it did, not held.
+  if [ "$hold_made" -eq 1 ]; then
+    rm -f "$HOLD"
+    compose up -d --no-deps app >/dev/null 2>&1 || true
+  fi
   compose start app backup && echo "  The app is running again on the data it had before."
   exit "$status"
 }
@@ -124,9 +158,48 @@ appsh "set -e; cd /data/storage
   rm -rf .restore-new .restore-state"
 storage_done=1
 
-compose start app backup
+# People erased after the dump are back in it, sign-in and documents included. Every erasure the
+# old database records, and every one in backups/erasures.txt (written with each backup and
+# copied off the server, for a restore onto a new one), is done again on the restored data. One
+# the dump already holds is skipped (lib/privacy.ts, replayErasures). Migrations first: the dump
+# may be older than the code. Same query as backup.sh.
+echo "Erasing again anyone erased since the dump."
+erasures_sql="select extract(epoch from at)::bigint, coalesce(detail->>'replayOf', id::text || '@' || to_char(at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')), detail->>'personSub', coalesce(detail->>'landlordId', '') from audit_log where action = 'privacy.erased' and detail ? 'personSub'"
+list="$(mktemp)"
+# A database the app never started on (a new server) has no activity log, so nothing to list.
+has_log="$(pgsh "psql -d tms_previous -v ON_ERROR_STOP=1 -At -c \"select to_regclass('public.audit_log') is not null\"")"
+if [ "$has_log" = t ]; then
+  pgsh "psql -d tms_previous -v ON_ERROR_STOP=1 -At -F '|' -c \"$erasures_sql\"" > "$list.new"
+else
+  : > "$list.new"
+fi
+pgsh "test ! -f /backups/erasures.txt || cat /backups/erasures.txt" >> "$list.new"
+sort -u -t '|' -k1,1n -k2,2 "$list.new" > "$list"
+rm -f "$list.new"
+compose run --rm --no-deps -T --entrypoint sh app -c \
+  'node --import tsx scripts/migrate.mjs >/dev/null && node --import tsx src/handlers/privacy-replay.ts' < "$list"
+rm -f "$list"
+
+# Held: no scheduled jobs and no outbox until `./restore.sh resume`. Payments, arrears steps and
+# notices made after the dump are not in it; run now, the morning's jobs would send a second
+# letter of demand and repeat reminders. The app still serves sign-ins and pages.
+cat > "$HOLD" <<'EOF_HOLD'
+services:
+  app:
+    environment:
+      RUN_JOBS: "false"
+EOF_HOLD
+hold_made=1
+COMPOSE_FILE="$base_files:$HOLD" compose up -d --no-deps app
+compose start backup
 finished=1
-echo "Restored. What was there before is kept until you are sure all is well:"
+echo "Restored. The app is up with its scheduled jobs and outbox HELD."
+echo "  1. Re-enter payments received since the dump, and check arrears steps, notices and"
+echo "     terminations made since then (tms_previous has them)."
+echo "  2. Then turn the jobs and outbox back on:  ./restore.sh resume"
+echo "     Until then, do not run a plain 'docker compose up': it starts the app without the hold."
+echo "What was there before is kept until you are sure all is well:"
 echo "  database:  tms_previous     drop it with: docker compose --env-file .env.production exec db sh -c 'PGPASSWORD=\$POSTGRES_PASSWORD dropdb -U \$POSTGRES_USER tms_previous'"
 echo "  documents: .restore-prev    remove it with: docker compose --env-file .env.production run --rm --no-deps --user root --entrypoint rm app -rf /data/storage/.restore-prev"
-echo "Until .restore-prev is removed, nightly backups include it (twice the size)."
+echo ".restore-prev is not in the nightly backups: it is only in the storage volume. Copy it off the"
+echo "server before removing it if any document in it may still be needed."
