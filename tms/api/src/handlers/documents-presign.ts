@@ -91,7 +91,7 @@ export const handler = route(async (event) => {
     applicationId,
     access.person.sub,
   ]);
-  const uploadUrl = await storage().presignPut(key, input.contentType, 300);
+  const uploadUrl = await storage().presignPut(key, input.contentType, 300, input.sizeBytes);
   uploadLinksByAccount.record(access.person.sub);
 
   return json(201, { uploadUrl, key, expiresInSeconds: 300 });

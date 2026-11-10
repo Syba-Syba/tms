@@ -33,7 +33,7 @@ export function AppShell({
           >
             =
           </button>
-          <div className="font-display text-body font-semibold">{brand}</div>
+          <div className="font-display text-body font-bold">{brand}</div>
         </div>
         {headerRight}
       </header>

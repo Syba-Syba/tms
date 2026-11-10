@@ -64,7 +64,11 @@ export const handler = async () => {
       // Dated the first of its month, whatever day it ran, so next month's balance counts it.
       `insert into deposit_ledger (lease_id, entry_type, amount_cents, period_month, note, occurred_on)
        values ($1, 'interest', $2, $3, $4, $3)
-       on conflict (lease_id, period_month) where entry_type = 'interest' do nothing
+       -- A deposit or top-up dated before this month but entered after the run earns for the
+       -- month too: the row is raised to the recomputed amount, never lowered.
+       on conflict (lease_id, period_month) where entry_type = 'interest'
+         do update set amount_cents = excluded.amount_cents, note = excluded.note
+         where deposit_ledger.amount_cents < excluded.amount_cents
        returning id`,
       [row.lease_id, interest, periodMonth, `Interest at ${annualPct}% p.a.`],
     );

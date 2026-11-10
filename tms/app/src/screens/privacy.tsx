@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Card, CardBody } from '@hlonie/toolbox/ui';
 import { formatDate } from '../lib/format';
 import { PRIVACY_VERSION } from '../lib/privacy';
+import { Wordmark } from '../components/wordmark';
 
 /**
  * The privacy notice POPIA section 18 requires before personal information is collected. Public,
@@ -11,12 +12,13 @@ import { PRIVACY_VERSION } from '../lib/privacy';
  */
 export function Privacy() {
   return (
-    <main className="mx-auto max-w-xl px-4 py-8">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Privacy notice</h1>
-      <p className="mb-6 text-meta text-ink-muted">Version of {formatDate(PRIVACY_VERSION)}</p>
+    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+      <Link to="/" className="inline-flex text-ink" aria-label="Threshold, back to the app"><Wordmark /></Link>
+      <h1 className="mt-8 font-display text-display font-bold text-ink">Privacy notice</h1>
+      <p className="mb-6 mt-1 text-body text-ink-muted">Version of {formatDate(PRIVACY_VERSION)}</p>
 
       <Card>
-        <CardBody className="space-y-5 text-body leading-relaxed text-ink">
+        <CardBody className="space-y-8 px-5 py-6 text-lead leading-relaxed text-ink sm:px-8 sm:py-8">
           <Section title="Who is responsible for your information">
             Your landlord is the responsible party under the Protection of Personal Information Act
             (POPIA). They decide what happens to your information. This app is the system they use
@@ -90,7 +92,7 @@ export function Privacy() {
               ]}
             />
             If you are unhappy with the answer, you can complain to the Information Regulator at{' '}
-            <a href="https://inforegulator.org.za" className="font-semibold text-brand-500 underline" target="_blank" rel="noreferrer">
+            <a href="https://inforegulator.org.za" className="font-semibold text-brand-600 underline underline-offset-2" target="_blank" rel="noreferrer">
               inforegulator.org.za
             </a>
             .
@@ -98,8 +100,8 @@ export function Privacy() {
         </CardBody>
       </Card>
 
-      <p className="mt-6 text-center text-meta text-ink-muted">
-        <Link to="/" className="font-bold text-brand-500">Back to the app</Link>
+      <p className="mt-6 text-body">
+        <Link to="/" className="font-semibold text-brand-600 underline underline-offset-2">Back to the app</Link>
       </p>
     </main>
   );
@@ -108,15 +110,15 @@ export function Privacy() {
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-1 text-lead font-bold">{title}</h2>
-      <div className="space-y-2 text-ink-muted">{children}</div>
+      <h2 className="mb-2 text-title font-bold text-ink">{title}</h2>
+      <div className="max-w-prose space-y-3 text-ink [&>ul]:mb-3">{children}</div>
     </section>
   );
 }
 
 export function List({ items }: { items: string[] }) {
   return (
-    <ul className="list-disc space-y-1 pl-5">
+    <ul className="list-disc space-y-2 pl-5 marker:text-brand-500">
       {items.map((item) => (
         <li key={item}>{item}</li>
       ))}

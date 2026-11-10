@@ -62,6 +62,7 @@ import { handler as arrears_letter } from './handlers/arrears-letter';
 import { handler as arrears_pause } from './handlers/arrears-pause';
 import { handler as notifications_preferences } from './handlers/notifications-preferences';
 import { handler as payments_record } from './handlers/payments-record';
+import { handler as payments_reverse } from './handlers/payments-reverse';
 import { handler as payment_proofs_create } from './handlers/payment-proofs-create';
 import { handler as payment_proofs_submit } from './handlers/payment-proofs-submit';
 import { handler as payment_proofs_list } from './handlers/payment-proofs-list';
@@ -90,6 +91,9 @@ import { handler as renewals_decide } from './handlers/renewals-decide';
 import { handler as renewals_offer } from './handlers/renewals-offer';
 import { handler as terminations_comparison } from './handlers/terminations-comparison';
 import { handler as terminations_confirm } from './handlers/terminations-confirm';
+import { handler as terminations_attest } from './handlers/terminations-attest';
+import { handler as terminations_refund_paid } from './handlers/terminations-refund-paid';
+import { handler as notice_evidence_presign } from './handlers/notice-evidence-presign';
 import { handler as terminations_deduction } from './handlers/terminations-deduction';
 import { handler as terminations_serve } from './handlers/terminations-serve';
 import { handler as terminations_settle } from './handlers/terminations-settle';
@@ -147,6 +151,7 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/inspections/{id}/signature', inspections_sign],
   ['POST', '/inspections/{id}/reopen', inspections_reopen],
   ['POST', '/leases/{id}/payments', payments_record],
+  ['POST', '/payments/{id}/reverse', payments_reverse],
   ['GET', '/leases', leases_list],
   ['GET', '/leases/{id}', leases_get],
   ['GET', '/leases/{id}/statement', leases_statement],
@@ -174,6 +179,9 @@ const ROUTES: Array<[string, string, Handler]> = [
   ['POST', '/terminations/{id}/settle', terminations_settle],
   ['POST', '/terminations/{id}/withdraw', terminations_withdraw],
   ['POST', '/terminations/{id}/confirm', terminations_confirm],
+  ['POST', '/leases/{id}/notice-evidence/presign', notice_evidence_presign],
+  ['POST', '/terminations/{id}/attest', terminations_attest],
+  ['POST', '/terminations/{id}/refund-paid', terminations_refund_paid],
   ['GET', '/notifications/preferences', notifications_preferences],
   ['PUT', '/notifications/preferences', notifications_preferences],
   ['POST', '/leases/{id}/renewal', renewals_offer],
@@ -283,7 +291,12 @@ export function match(method: string, path: string) {
     if (!found) continue;
     const params: Record<string, string> = {};
     route.names.forEach((name, index) => {
-      params[name] = decodeURIComponent(found[index + 1]!);
+      // A broken escape (%E0%A4%A) is no record's id. Thrown from here it was a 500 outside route().
+      try {
+        params[name] = decodeURIComponent(found[index + 1]!);
+      } catch {
+        params[name] = '';
+      }
     });
     const template = `${route.method} ${route.path}`;
     // The route exists; the record cannot. Same 404 a handler gives for an unknown id.

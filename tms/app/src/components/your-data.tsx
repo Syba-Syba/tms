@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { Alert, Badge, Button, Card, CardBody, Modal, Textarea, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Modal, Textarea, useToast } from '@hlonie/toolbox/ui';
+import { SettingsCard } from './settings-nav';
 import { api, humanError } from '../api/client';
 import { endSession, isLandlord } from '../lib/session';
 import { formatInstant } from '../lib/format';
@@ -71,48 +72,45 @@ export function YourData() {
   };
 
   return (
-    <section>
-      <h2 className="label mb-2">Your data</h2>
-      <Card>
-        <CardBody className="space-y-4">
+    <>
+      <SettingsCard title="Your data" description="See everything held about you, or ask for it to go.">
           <p className="text-body text-ink-muted">
             {data?.acceptedAt
               ? `You agreed to the privacy notice on ${formatInstant(data.acceptedAt)}. `
               : ''}
-            <Link to="/privacy" className="font-bold text-brand-500">Read the privacy notice</Link>
+            <Link to="/privacy" className="font-semibold text-brand-600 underline underline-offset-2">Read the privacy notice</Link>
           </p>
-          <div>
-            <Button variant="outline" loading={downloading} onClick={download}>Download my data</Button>
-            <p className="mt-1 text-xs text-ink-muted">Everything this app holds about you, in one file.</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line-soft pt-4">
+            <p className="min-w-0 flex-1 basis-48 text-meta text-ink-muted">Everything this app holds about you, in one file.</p>
+            <Button variant="secondary" loading={downloading} onClick={download}>Download my data</Button>
           </div>
           {!landlord ? (
-            <div>
+            <div className="border-t border-line-soft pt-4">
               {pending ? (
                 <Alert tone="info" title="Erasure requested">
                   Sent {formatInstant(pending.createdAt)}. Each landlord you applied to or rented from answers for their own records, and you are emailed either way.
                 </Alert>
               ) : (
-                <>
-                  <Button variant="ghost" onClick={() => setAsking(true)}>Erase my information</Button>
-                  <p className="mt-1 text-xs text-ink-muted">Ask for your personal information to be deleted.</p>
-                </>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <p className="min-w-0 flex-1 basis-48 text-meta text-ink-muted">Ask for your personal information to be deleted.</p>
+                  <Button variant="outline" className="text-danger" onClick={() => setAsking(true)}>Erase my information</Button>
+                </div>
               )}
             </div>
           ) : null}
           {data?.requests.filter((request) => request.status !== 'pending').map((request) => (
-            <div key={request.id} className="space-y-1 border-t border-line-soft pt-3">
-              <p className="flex items-center gap-2 text-meta">
+            <div key={request.id} className="space-y-1 border-t border-line-soft pt-4">
+              <p className="flex flex-wrap items-center gap-2 text-meta text-ink">
                 Erasure request of {formatInstant(request.createdAt)}{request.landlord ? ` to ${request.landlord}` : ''}
                 <Badge tone={REQUEST_LABEL[request.status].tone}>{REQUEST_LABEL[request.status].label}</Badge>
               </p>
-              {request.response ? <p className="text-xs text-ink-muted">{request.response}</p> : null}
+              {request.response ? <p className="text-meta text-ink-muted">{request.response}</p> : null}
             </div>
           ))}
-        </CardBody>
-      </Card>
+      </SettingsCard>
 
       <Modal open={asking} onOpenChange={setAsking} title="Erase my information">
-        <div className="space-y-3">
+        <div className="space-y-4">
           {data?.erasureBlockedBecause ? (
             <Alert tone="warning" title="Some of it has to be kept for now">
               {data.erasureBlockedBecause}
@@ -124,6 +122,7 @@ export function YourData() {
             </p>
           )}
           <Textarea
+            aria-label="Anything your landlord should know (optional)"
             placeholder="Anything your landlord should know (optional)"
             maxLength={1000}
             value={note}
@@ -134,6 +133,6 @@ export function YourData() {
           </Button>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

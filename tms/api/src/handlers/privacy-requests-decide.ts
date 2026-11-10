@@ -25,10 +25,10 @@ export const handler = route(async (event) => {
   const { landlordId } = await requireOwner(person);
   const input = parseBody(event, schema);
 
-  const [request] = await query<{ person_sub: string; status: string; email: string; first_name: string; landlord_id: string | null; created_at: string; landlord_name: string }>(
+  const [request] = await query<{ person_sub: string; status: string; email: string | null; first_name: string | null; landlord_id: string | null; created_at: string; landlord_name: string }>(
     `select r.person_sub, r.status, a.email, a.first_name, r.landlord_id, r.created_at::text,
             (select trading_name from landlord where id = $2) as landlord_name
-       from privacy_request r join applicant a on a.cognito_sub = r.person_sub
+       from privacy_request r left join applicant a on a.cognito_sub = r.person_sub
       where r.id = $1 and (r.landlord_id = $2 or (r.landlord_id is null and exists (
               select 1 from application ap join unit u on u.id = ap.unit_id join property p on p.id = u.property_id
                where ap.applicant_id = a.id and p.landlord_id = $2)))`,
@@ -36,6 +36,20 @@ export const handler = route(async (event) => {
   );
   if (!request) throw notFound('Request');
   if (request.status !== 'pending') throw conflict('That request has already been answered.');
+
+  // The person's record is already gone: an earlier answer erased them and then failed before
+  // it could mark the request. It was a 404 from then on, pending for good. There is nothing
+  // left to erase or to refuse, and no address to write to, so the request is closed as done.
+  if (request.email === null || request.first_name === null) {
+    await query(
+      `update privacy_request set status = 'completed', decided_by = $2, decided_at = now(), note = null,
+              response = 'Your personal information has been erased from our records.' where id = $1`,
+      [requestId, person.sub],
+    );
+    await audit({ actorSub: person.sub, actorRole: 'landlord', action: 'privacy.request_completed', entity: 'privacy_request', entityId: requestId });
+    return json(200, { status: 'completed' });
+  }
+  const { email, first_name: firstName } = request;
 
   if (input.decision === 'erase') {
     // Only this landlord's records, and only their leases count for the retention rule.
@@ -51,14 +65,14 @@ export const handler = route(async (event) => {
     if (erased.identityErased) {
       // Sent to the address captured before erasure; the account it belonged to is gone.
       await tellPerson(
-        null, request.person_sub, request.email, 'Your information has been erased',
-        `Hi ${request.first_name},\n\nAs you asked, your personal information has been erased from the rental system, ` +
+        null, request.person_sub, email, 'Your information has been erased',
+        `Hi ${firstName},\n\nAs you asked, your personal information has been erased from the rental system, ` +
           'and your account and its documents are deleted. This is the last message you will receive from it.',
       );
     } else {
       await tellPerson(
-        null, request.person_sub, request.email, `${request.landlord_name} erased your information`,
-        `Hi ${request.first_name},\n\n${request.landlord_name} has erased your personal information from their records, as you asked. ` +
+        null, request.person_sub, email, `${request.landlord_name} erased your information`,
+        `Hi ${firstName},\n\n${request.landlord_name} has erased your personal information from their records, as you asked. ` +
           'Your account stays open while other landlords still hold records about you. Each answers for their own.',
       );
     }
@@ -69,8 +83,8 @@ export const handler = route(async (event) => {
         [requestId, person.sub, input.response],
       );
       await tellPerson(
-        run, request.person_sub, request.email, 'About your request to erase your information',
-        `Hi ${request.first_name},\n\nYour request to erase your personal information was not carried out.\n\n` +
+        run, request.person_sub, email, 'About your request to erase your information',
+        `Hi ${firstName},\n\nYour request to erase your personal information was not carried out.\n\n` +
           `${input.response}\n\nIf you disagree, you can complain to the Information Regulator at https://inforegulator.org.za.`,
       );
     });

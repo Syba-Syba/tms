@@ -6,13 +6,13 @@ export const Checkbox = forwardRef<
   React.InputHTMLAttributes<HTMLInputElement> & { label?: React.ReactNode }
 >(function Checkbox({ className, label, id, ...props }, ref) {
   return (
-    <label className="inline-flex items-center gap-2 text-body text-ink" htmlFor={id}>
+    <label className="inline-flex items-center gap-2.5 text-body text-ink" htmlFor={id}>
       <input
         ref={ref}
         id={id}
         type="checkbox"
         className={cn(
-          'h-4 w-4 rounded-sm border border-line accent-[var(--tb-brand-500)] focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)]',
+          'h-5 w-5 shrink-0 rounded-[5px] border border-neutral-300 accent-[var(--tb-brand-500)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--tb-surface)]',
           className,
         )}
         {...props}

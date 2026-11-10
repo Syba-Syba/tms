@@ -2,18 +2,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
+  Avatar,
   Badge,
   Button,
   Card,
   CardBody,
   ConfirmDialog,
-  DataTable,
+  CurrencyInput,
   Drawer,
+  EmptyState,
   Input,
   Modal,
   PageHeader,
   Select,
-  SegmentedControl,
   Spinner,
   Textarea,
   useToast,
@@ -25,8 +26,41 @@ import { QueryError } from '../components/query-state';
 import { createAndRender } from '../lib/uploads';
 import { CreditCheckPanel } from '../components/credit-check';
 import { PAGE } from '../lib/layout';
+import { Money } from '../components/money';
+import { ListsLinkButton, ListsTabs, listsButtonClass } from '../components/lists-kit';
 
 const bandTone = { comfortable: 'success', tight: 'warning', over: 'danger' } as const;
+/** What the percentage means, in words, under the pill. */
+const bandHint = {
+  comfortable: 'Comfortable: under a third of income',
+  tight: 'Tight: about a third of income',
+  over: 'High: more than the income carries easily',
+} as const;
+const riskHint = (item: ApplicationSummary) =>
+  item.affordability.ratio === null || !Number.isFinite(item.affordability.ratio)
+    ? 'Ask for payslips before you decide'
+    : bandHint[item.affordability.band];
+
+type QueueStatus = 'submitted' | 'approved' | 'declined';
+const EMPTY: Record<QueueStatus, { title: string; description: string }> = {
+  submitted: {
+    title: 'No applications waiting',
+    description: 'When someone applies for a vacant unit they show here with their income, documents and move-in date. Send a unit\'s apply link from Properties to get the first one.',
+  },
+  approved: {
+    title: 'Nobody approved yet',
+    description: 'Approved applicants show here until their lease is generated and signed.',
+  },
+  declined: {
+    title: 'No declined applications',
+    description: 'Applications you decline are kept here with the reason you gave.',
+  },
+};
+/** Any whole number of months the server takes, with the usual terms said in years. */
+const TERM_OPTIONS = Array.from({ length: 24 }, (_, index) => {
+  const months = index + 1;
+  return { value: String(months), label: months === 12 ? '12 months (1 year)' : months === 24 ? '24 months (2 years)' : `${months} month${months === 1 ? '' : 's'}` };
+});
 
 /** Rent as a share of income. With no income declared there is no share: 0% read as the best. */
 export function incomeShare(ratio: number | null, suffix = ''): string {
@@ -58,7 +92,7 @@ interface PortfolioUnit {
 }
 
 export function LandlordQueue() {
-  const [status, setStatus] = useState<'submitted' | 'approved' | 'declined'>('submitted');
+  const [status, setStatus] = useState<QueueStatus>('submitted');
   const [declining, setDeclining] = useState<ApplicationSummary | null>(null);
   const [declineReason, setDeclineReason] = useState('');
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -66,15 +100,22 @@ export function LandlordQueue() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [generatingFor, setGeneratingFor] = useState<ApplicationSummary | null>(null);
   const [withdrawing, setWithdrawing] = useState<ApplicationSummary | null>(null);
-  const [terms, setTerms] = useState({ startDate: '', months: '12', escalationPct: '8' });
+  const [terms, setTerms] = useState({ startDate: '', months: '12', escalationPct: '8', depositCents: null as number | null });
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['applications', status],
-    queryFn: () => api.get<{ items: ApplicationSummary[] }>('/applications', { query: { status } }),
+  // All three lists load, so each tab can say how many it holds before it is opened.
+  const listOf = (which: QueueStatus) => ({
+    queryKey: ['applications', which],
+    queryFn: () => api.get<{ items: ApplicationSummary[] }>('/applications', { query: { status: which } }),
   });
+  const lists = {
+    submitted: useQuery(listOf('submitted')),
+    approved: useQuery(listOf('approved')),
+    declined: useQuery(listOf('declined')),
+  };
+  const { data, isLoading, isError, error, refetch } = lists[status];
 
   const { data: portfolio } = useQuery({
     queryKey: ['properties'],
@@ -128,8 +169,8 @@ export function LandlordQueue() {
   const actionsFor = (item: ApplicationSummary) => {
     if (status === 'submitted') {
       return (
-        <div className="flex justify-end gap-2">
-          <Button size="sm" variant="ghost" disabled={deciding !== null} onClick={() => setDeclining(item)}>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button size="sm" variant="outline" disabled={deciding !== null} onClick={() => setDeclining(item)}>
             Decline
           </Button>
           <Button size="sm" loading={deciding === item.id} disabled={deciding !== null} onClick={() => decide(item.id, 'approved')}>
@@ -140,16 +181,16 @@ export function LandlordQueue() {
     }
     if (status === 'approved') {
       return (
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {withdrawable(item) ? (
-            <Button size="sm" variant="ghost" disabled={deciding !== null} onClick={() => setWithdrawing(item)}>
+            <Button size="sm" variant="outline" disabled={deciding !== null} onClick={() => setWithdrawing(item)}>
               Withdraw
             </Button>
           ) : null}
           {item.leaseId ? (
             // Only a lease still being signed goes to the signing page; a live or ended one opens its details.
             signing(item) ? (
-              <Button size="sm" variant="outline" onClick={() => navigate(`/lease/${item.leaseId}`)}>
+              <Button size="sm" variant="secondary" onClick={() => navigate(`/lease/${item.leaseId}`)}>
                 Continue signing
               </Button>
             ) : (
@@ -170,16 +211,20 @@ export function LandlordQueue() {
 
   // Always openable: the credit check lives in the same drawer, documents or not.
   const docsFor = (item: ApplicationSummary) => (
-    <button type="button" onClick={() => setViewingDocs(item)}
-      className={`inline-flex min-h-11 items-center text-meta sm:min-h-6 ${
-        item.documentCount > 0 ? 'font-bold text-brand-500' : 'font-medium text-ink-muted underline decoration-dotted underline-offset-2'
-      }`}>
+    <Button size="sm" variant={item.documentCount > 0 ? 'secondary' : 'outline'} onClick={() => setViewingDocs(item)}>
       {item.documentCount > 0 ? `${item.documentCount} on file` : 'No documents yet'}
-    </button>
+    </Button>
+  );
+
+  const riskFor = (item: ApplicationSummary) => (
+    <div>
+      <Badge tone={bandTone[item.affordability.band]}>{incomeShare(item.affordability.ratio, ' of income')}</Badge>
+      <p className="mt-1 text-xs text-ink-muted">{riskHint(item)}</p>
+    </div>
   );
 
   const openGenerate = (item: ApplicationSummary) => {
-    setTerms({ startDate: item.preferredMoveIn, months: '12', escalationPct: '8' });
+    setTerms({ startDate: item.preferredMoveIn, months: '12', escalationPct: '8', depositCents: null });
     setGeneratingFor(item);
   };
 
@@ -193,6 +238,8 @@ export function LandlordQueue() {
             startDate: terms.startDate,
             months: Number(terms.months),
             escalationPct: parsePercent(terms.escalationPct), // '7,5' is 7.5, not NaN
+            // Left empty, the server uses the deposit set on the unit.
+            ...(terms.depositCents !== null ? { depositCents: terms.depositCents } : {}),
           }),
         (leaseId) => api.post(`/leases/${leaseId}/render`, {}),
       );
@@ -220,6 +267,9 @@ export function LandlordQueue() {
   const units = (portfolio?.items ?? []).flatMap((property) => property.units);
   const vacant = units.filter((unit) => unit.status === 'vacant');
 
+  const count = (which: QueueStatus) => lists[which].data?.items.length;
+  const empty = !isLoading && !isError && items.length === 0;
+
   return (
     <main className={PAGE.wide}>
       <PageHeader
@@ -233,14 +283,15 @@ export function LandlordQueue() {
         }
       />
 
-      <SegmentedControl
-        className="mb-4"
+      <ListsTabs
+        className="mb-5"
+        label="Applications by decision"
         value={status}
         onChange={setStatus}
         options={[
-          { label: 'Waiting', value: 'submitted' },
-          { label: 'Approved', value: 'approved' },
-          { label: 'Declined', value: 'declined' },
+          { label: 'Waiting', value: 'submitted', count: count('submitted'), tone: 'info' },
+          { label: 'Approved', value: 'approved', count: count('approved') },
+          { label: 'Declined', value: 'declined', count: count('declined') },
         ]}
       />
 
@@ -253,70 +304,75 @@ export function LandlordQueue() {
         <div className="p-8 text-center"><Spinner /></div>
       ) : null}
 
+      {empty ? (
+        <EmptyState
+          title={EMPTY[status].title}
+          description={EMPTY[status].description}
+          action={status === 'submitted' ? <ListsLinkButton to="/properties" variant="primary" size="md">Go to Properties</ListsLinkButton> : undefined}
+        />
+      ) : null}
 
-      {/* Phone: one card per applicant, every column readable without scrolling sideways. */}
+      {/* Phone: one card per applicant, every fact readable without scrolling sideways. */}
       <div className="space-y-3 md:hidden">
-        {items.length === 0 ? <p className="py-6 text-center text-meta text-ink-muted">No applications here.</p> : null}
         {items.map((item) => (
-          <Card key={item.id}>
-            <CardBody className="space-y-2">
-              <div className="flex items-start justify-between gap-3">
+          <Card key={`${item.id}-${item.leaseId ?? ''}`}>
+            <CardBody className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Avatar name={item.applicant} size="lg" />
                 <div className="min-w-0">
-                  <p className="text-lead font-semibold text-ink">{item.applicant}</p>
-                  <p className="text-xs text-ink-muted">
-                    {item.unit}, moves in {formatDate(item.preferredMoveIn)}
+                  <p className="truncate text-lead font-bold text-ink">{item.applicant}</p>
+                  <p className="text-meta text-ink-muted">
+                    {item.unit} · <Money whole cents={item.monthlyRentCents} className="font-semibold" /> a month
                   </p>
                 </div>
-                <Badge tone={bandTone[item.affordability.band]}>
-                  {incomeShare(item.affordability.ratio, ' of income')}
-                </Badge>
               </div>
-              <div className="flex items-center justify-between gap-3">
+              {riskFor(item)}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-meta text-ink-muted">Moves in {formatDate(item.preferredMoveIn)}</p>
                 {docsFor(item)}
-                {actionsFor(item)}
               </div>
+              {actionsFor(item) ? <div className="border-t border-line-soft pt-3">{actionsFor(item)}</div> : null}
             </CardBody>
           </Card>
         ))}
       </div>
 
-      <div className="hidden md:block">
-      <DataTable
-        data={items}
-        emptyTitle={isError ? 'Could not load applications' : 'No applications here'}
-        columns={[
-          { accessorKey: 'applicant', header: 'Applicant' },
-          { accessorKey: 'unit', header: 'Unit' },
-          {
-            id: 'affordability',
-            header: 'Rent to income',
-            cell: ({ row }) => {
-              const item = row.original as ApplicationSummary;
-              return (
-                <Badge tone={bandTone[item.affordability.band]}>
-                  {incomeShare(item.affordability.ratio)}
-                </Badge>
-              );
-            },
-          },
-          {
-            id: 'documents',
-            header: 'Docs',
-            cell: ({ row }) => docsFor(row.original as ApplicationSummary),
-          },
-          {
-            id: 'moveIn',
-            header: 'Move in',
-            cell: ({ row }) => formatDate((row.original as ApplicationSummary).preferredMoveIn),
-          },
-          {
-            id: 'actions',
-            header: '',
-            cell: ({ row }) => actionsFor(row.original as ApplicationSummary),
-          },
-        ]}
-      />
-      </div>
+      {items.length > 0 ? (
+        <Card className="hidden overflow-hidden md:block">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-line-soft text-meta text-ink-muted">
+                <th scope="col" className="px-5 py-3 font-semibold">Applicant</th>
+                <th scope="col" className="px-3 py-3 font-semibold">Rent to income</th>
+                <th scope="col" className="px-3 py-3 font-semibold">Documents</th>
+                <th scope="col" className="px-3 py-3 font-semibold">Move in</th>
+                <th scope="col" className="px-5 py-3"><span className="sr-only">Decision</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line-soft">
+              {items.map((item) => (
+                <tr key={`${item.id}-${item.leaseId ?? ''}`} className="align-middle">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={item.applicant} />
+                      <div className="min-w-0">
+                        <p className="text-body font-bold text-ink">{item.applicant}</p>
+                        <p className="text-meta text-ink-muted">
+                          {item.unit} · <Money whole cents={item.monthlyRentCents} className="font-semibold" /> a month
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3.5">{riskFor(item)}</td>
+                  <td className="px-3 py-3.5">{docsFor(item)}</td>
+                  <td className="whitespace-nowrap px-3 py-3.5 text-body text-ink">{formatDate(item.preferredMoveIn)}</td>
+                  <td className="px-5 py-3.5">{actionsFor(item)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ) : null}
 
       <Modal
         open={!!declining}
@@ -332,7 +388,7 @@ export function LandlordQueue() {
       >
         <div className="space-y-3">
           <label className="block space-y-1">
-            <span className="text-meta font-medium">Reason</span>
+            <span className="text-meta font-semibold text-ink">Reason</span>
             <Textarea
               rows={3}
               placeholder="e.g. The rent is more than a third of the income shown on the payslips."
@@ -341,7 +397,7 @@ export function LandlordQueue() {
             />
           </label>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setDeclining(null)}>
+            <Button variant="outline" onClick={() => setDeclining(null)}>
               Cancel
             </Button>
             <Button
@@ -371,33 +427,41 @@ export function LandlordQueue() {
         onOpenChange={(next) => !next && setGeneratingFor(null)}
         title={generatingFor ? `Lease for ${generatingFor.applicant}` : 'Lease'}
       >
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {generatingFor ? (
+            <div className="flex items-center gap-3 rounded-md bg-surface-muted px-4 py-3">
+              <Avatar name={generatingFor.applicant} />
+              <p className="min-w-0 text-meta text-ink-muted">
+                <span className="block text-body font-semibold text-ink">{generatingFor.unit}</span>
+                Rent <Money whole cents={generatingFor.monthlyRentCents} className="text-ink" /> a month, from the unit.
+                To change it, edit the unit under Properties first.
+              </p>
+            </div>
+          ) : null}
           <div>
-            <p className="mb-1 text-meta font-medium">Start date</p>
+            <label htmlFor="lease-start" className="mb-1 block text-meta font-semibold text-ink">Start date</label>
             <Input
+              id="lease-start"
               type="date"
               value={terms.startDate}
               onChange={(event) => setTerms({ ...terms, startDate: event.target.value })}
             />
             <p className="mt-1 text-xs text-ink-muted">Prefilled from their preferred move-in.</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <p className="mb-1 text-meta font-medium">Term</p>
+              <label htmlFor="lease-term" className="mb-1 block text-meta font-semibold text-ink">Term</label>
               <Select
+                id="lease-term"
                 value={terms.months}
                 onChange={(event) => setTerms({ ...terms, months: event.target.value })}
-                options={[
-                  { value: '6', label: '6 months' },
-                  { value: '12', label: '12 months' },
-                  { value: '18', label: '18 months' },
-                  { value: '24', label: '24 months' },
-                ]}
+                options={TERM_OPTIONS}
               />
             </div>
             <div>
-              <p className="mb-1 text-meta font-medium">Escalation % a year</p>
+              <label htmlFor="lease-escalation" className="mb-1 block text-meta font-semibold text-ink">Escalation % a year</label>
               <Input
+                id="lease-escalation"
                 type="number"
                 min={0}
                 max={20}
@@ -405,6 +469,15 @@ export function LandlordQueue() {
                 onChange={(event) => setTerms({ ...terms, escalationPct: event.target.value })}
               />
             </div>
+          </div>
+          <div>
+            <label htmlFor="lease-deposit" className="mb-1 block text-meta font-semibold text-ink">Deposit</label>
+            <CurrencyInput
+              id="lease-deposit"
+              cents={terms.depositCents}
+              onCentsChange={(next) => setTerms({ ...terms, depositCents: next })}
+            />
+            <p className="mt-1 text-xs text-ink-muted">Leave empty to use the deposit set on the unit.</p>
           </div>
           <Button
             block
@@ -450,7 +523,7 @@ function DocumentsDrawer({ application, onClose }: {
               href={document.viewUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-between rounded-sm border border-line-soft px-3 py-2.5 hover:border-brand-500"
+              className="flex items-center justify-between gap-3 rounded-md border border-line px-4 py-3 hover:bg-surface-muted"
             >
               <div>
                 <p className="text-body font-semibold">{KIND_LABEL[document.kind] ?? document.kind}</p>
@@ -458,17 +531,17 @@ function DocumentsDrawer({ application, onClose }: {
                   {(document.sizeBytes / 1024).toFixed(0)} KB · {formatInstant(document.uploadedAt)}
                 </p>
               </div>
-              <span className="text-meta font-bold text-brand-500">Open</span>
+              <span className={listsButtonClass('outline', 'sm')}>Open</span>
             </a>
           ))}
           {data && data.items.length === 0 ? (
-            <p className="text-meta text-ink-muted">Nothing uploaded yet.</p>
+            <p className="text-body text-ink-muted">Nothing uploaded yet. The applicant adds an ID copy, payslips and bank statements from their application.</p>
           ) : null}
         </div>
       )}
       {application ? (
         <section aria-label="Credit check" className="mt-6 space-y-2 border-t border-line pt-4">
-          <h3 className="text-body font-semibold">Credit check</h3>
+          <h3 className="text-lead font-bold text-ink">Credit check</h3>
           <CreditCheckPanel applicationId={application.id} />
         </section>
       ) : null}

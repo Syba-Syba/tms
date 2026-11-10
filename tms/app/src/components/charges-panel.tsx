@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, Select, useToast } from '@hlonie/toolbox/ui';
+import { Badge, Button, ConfirmDialog, CurrencyInput, Input, Modal, Select, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { localToday } from '../lib/dates';
 import { formatMonth } from '../lib/format';
 import { Money } from './money';
+import { ROW, ROWS, SectionCard } from './core-kit';
 
 export interface Charge {
   id: string;
@@ -44,6 +45,8 @@ export function ChargesPanel({ leaseId, charges, landlord, onChanged }: {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
+  // Removing a charge changes what the tenant owes, so it asks first.
+  const [removing, setRemoving] = useState<Charge | null>(null);
 
   if (!landlord && charges.length === 0) return null;
 
@@ -63,41 +66,68 @@ export function ChargesPanel({ leaseId, charges, landlord, onChanged }: {
   };
 
   return (
-    <section aria-label="Charges" className="mb-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="label">Charges on top of rent</p>
-        {landlord ? (
-          <button type="button" className="text-meta font-bold text-brand-500" onClick={() => { setForm(blank); setAdding(true); }}>
-            Add a charge
-          </button>
-        ) : null}
-      </div>
-      <Card>
-        <CardBody className="space-y-2">
-          {charges.length === 0 ? (
-            <p className="text-meta text-ink-muted">None. Add water, electricity or levies here and they go on the tenant's invoice.</p>
-          ) : null}
-          {charges.map((charge) => (
-            <div key={charge.id} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
-              <div className="min-w-0">
-                <p className="truncate text-body font-semibold">{charge.description}</p>
-                <p className="text-xs text-ink-muted">{formatMonth(charge.period)}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <Money cents={charge.amountCents} className="text-lead" />
-                <Badge tone={charge.billed ? 'neutral' : 'info'}>{charge.billed ? 'Invoiced' : 'Next invoice'}</Badge>
-                {landlord ? (
-                  <button type="button" className="text-meta font-bold text-danger disabled:opacity-40" disabled={busy}
-                    aria-label={`Remove ${charge.description} for ${formatMonth(charge.period)}`}
-                    onClick={() => act(() => api.delete(`/leases/${leaseId}/charges/${charge.id}`), 'Charge removed')}>
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
+    <>
+      <SectionCard
+        title="Charges on top of rent"
+        label="Charges"
+        action={
+          landlord ? (
+            <Button size="sm" variant="secondary" onClick={() => { setForm(blank); setAdding(true); }}>
+              Add a charge
+            </Button>
+          ) : null
+        }
+      >
+        {charges.length === 0 ? (
+          <p className="px-5 py-4 text-meta text-ink-muted">
+            None yet. Add water, electricity or levies here and they go on the tenant's invoice.
+          </p>
+        ) : (
+          <ul className={ROWS}>
+            {charges.map((charge) => (
+              <li key={charge.id} className={ROW}>
+                <div className="min-w-0">
+                  <p className="truncate text-body font-bold text-ink">{charge.description}</p>
+                  <p className="text-meta text-ink-muted">{formatMonth(charge.period)}</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                  <Money cents={charge.amountCents} className="text-body" />
+                  <Badge tone={charge.billed ? 'neutral' : 'info'}>{charge.billed ? 'Invoiced' : 'Next invoice'}</Badge>
+                  {landlord ? (
+                    <Button size="sm" variant="outline" disabled={busy}
+                      aria-label={`Remove ${charge.description} for ${formatMonth(charge.period)}`}
+                      onClick={() => setRemoving(charge)}>
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(next) => { if (!next && !busy) setRemoving(null); }}
+        title="Remove this charge?"
+        description={
+          removing
+            ? `${removing.description} for ${formatMonth(removing.period)} comes off ${
+                removing.billed ? 'the invoice it is on, and the tenant owes that much less' : 'the next invoice'
+              }.`
+            : ''
+        }
+        confirmLabel="Remove the charge"
+        loading={busy}
+        onConfirm={async () => {
+          if (!removing || busy) return;
+          await act(() => api.delete(`/leases/${leaseId}/charges/${removing.id}`), 'Charge removed');
+          setRemoving(null);
+        }}
+      >
+        {removing ? <Money cents={removing.amountCents} className="text-title text-ink" /> : null}
+      </ConfirmDialog>
 
       <Modal open={adding} onOpenChange={setAdding} title="Add a charge"
         description="It goes on that month's invoice if it is not due yet, or else on the next one, so it is never overdue the day it is added.">
@@ -134,6 +164,6 @@ export function ChargesPanel({ leaseId, charges, landlord, onChanged }: {
           </Button>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

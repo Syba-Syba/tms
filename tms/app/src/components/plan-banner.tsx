@@ -19,9 +19,9 @@ export function PlanBanner() {
   if (!show) return null;
   const urgent = data.standing === 'lapsed' || data.standing === 'past_due';
   return (
-    <div role="status" className={`border-b px-4 py-2 text-center text-meta ${urgent ? 'border-line bg-[color-mix(in_srgb,var(--tb-danger)_9%,var(--tb-surface))] text-ink' : 'border-line bg-surface-muted text-ink'}`}>
-      {standingText(data)}{' '}
-      <Link to="/settings/billing" className="font-bold text-brand-500 underline">
+    <div role="status" className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b px-4 py-2.5 text-center text-meta font-medium text-ink ${urgent ? 'border-[color-mix(in_srgb,var(--tb-danger)_30%,transparent)] bg-tint-danger' : 'border-[color-mix(in_srgb,var(--tb-warning)_30%,transparent)] bg-tint-warning'}`}>
+      <span>{standingText(data)}</span>
+      <Link to="/settings/billing" className="font-bold underline underline-offset-2 hover:no-underline">
         {data.isOwner ? 'Choose a plan' : 'See the plan'}
       </Link>
     </div>

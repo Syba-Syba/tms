@@ -1,9 +1,6 @@
 /* Fonts ship with the app: the self-hosted server's CSP allows nothing from another origin,
    and the Android build must work offline. Latin only, which covers English and Afrikaans;
    the other subsets would be cached by the offline app for nothing. */
-@import '@fontsource/ibm-plex-sans/latin-400.css';
-@import '@fontsource/ibm-plex-sans/latin-500.css';
-@import '@fontsource/ibm-plex-sans/latin-600.css';
 @import '@fontsource/ibm-plex-mono/latin-400.css';
 @import '@fontsource/ibm-plex-mono/latin-500.css';
 
@@ -11,13 +8,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* The serif's package has no Latin-only stylesheet, so its Latin face is declared here. */
+/* One variable sans for everything. Its package has no Latin-only stylesheet, so the Latin
+   face is declared here. */
 @font-face {
-  font-family: 'Source Serif 4 Variable';
+  font-family: 'Schibsted Grotesk Variable';
   font-style: normal;
   font-display: swap;
-  font-weight: 200 900;
-  src: url('@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 400 900;
+  src: url('@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2') format('woff2-variations');
 }
 
 /* WCAG 2.4.11: a focused control scrolled into view never lands under the sticky top bar or,
@@ -35,16 +33,9 @@ body {
   font-feature-settings: 'kern';
 }
 
-/* Figures line up in columns everywhere, the way a statement prints them. */
-td,
-.font-mono,
-.font-display {
-  font-variant-numeric: tabular-nums;
-}
-
 @layer components {
   /* A section or field label: small, sentence case, muted. Replaces spaced-out capitals. */
   .label {
-    @apply text-xs font-medium tracking-normal text-ink-muted;
+    @apply text-meta font-semibold tracking-normal text-ink-muted;
   }
 }

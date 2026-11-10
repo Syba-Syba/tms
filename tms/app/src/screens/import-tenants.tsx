@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, Checkbox, CurrencyInput, Input, PageHeader, SegmentedControl, Select, useToast,
+  Alert, Avatar, Badge, Button, Card, CardBody, Checkbox, CurrencyInput, Input, PageHeader, Select, useToast,
 } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { localToday } from '../lib/dates';
 import { PAGE } from '../lib/layout';
 import { cleanPercentInput, parsePercent } from '../lib/percent';
+import { ListsLinkButton, ListsSteps, ListsTabs, ListsUploadArea } from '../components/lists-kit';
 
 interface Unit { id: string; code: string; status: 'vacant' | 'held' | 'occupied' }
 interface Property { id: string; name: string; units: Unit[] }
@@ -148,6 +149,13 @@ export function ImportTenants() {
     />
   );
 
+  const heading = (title: string, hint?: string) => (
+    <div className="border-b border-line-soft pb-2">
+      <h2 className="text-lead font-bold text-ink">{title}</h2>
+      {hint ? <p className="text-meta text-ink-muted">{hint}</p> : null}
+    </div>
+  );
+
   if (done !== null) {
     return (
       <main className={PAGE.narrow}>
@@ -157,34 +165,38 @@ export function ImportTenants() {
           {invite ? 'Each tenant has an email to start using the app. ' : ''}
           Anything overdue follows the arrears steps from tomorrow morning.
         </Alert>
-        <div className="mt-4 flex gap-3">
-          <Link to="/" className="font-bold text-brand-500">Back to the overview</Link>
-          <button type="button" className="font-bold text-brand-500" onClick={() => { setDone(null); setSheet(null); setPreview(null); }}>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <ListsLinkButton to="/" variant="primary" size="md">Back to the overview</ListsLinkButton>
+          <Button variant="outline" onClick={() => { setDone(null); setSheet(null); setPreview(null); }}>
             Add more
-          </button>
+          </Button>
         </div>
       </main>
     );
   }
 
   return (
-    <main className={PAGE.narrow}>
+    <main className={PAGE.wide}>
       <PageHeader title="Add current tenants" description="Tenancies that started before you used Threshold. No application or signing needed." />
-      <SegmentedControl
+      <ListsTabs
         className="mb-5"
+        label="How to add them"
         options={[{ value: 'one', label: 'One tenant' }, { value: 'sheet', label: 'From a spreadsheet' }]}
         value={mode}
         onChange={setMode}
       />
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0">
       {mode === 'one' ? (
         <Card>
-          <CardBody className="space-y-4">
+          <CardBody className="space-y-5">
             {freeUnits.length === 0 ? (
               <Alert tone="info" title="No empty units">
-                Add the unit under <Link to="/properties" className="font-bold text-brand-500">Properties</Link> first.
+                Add the unit under <Link to="/properties" className="font-bold text-brand-500 underline underline-offset-2">Properties</Link> first.
               </Alert>
             ) : null}
+            {heading('1. The unit and the tenant')}
             <Field label="Unit" htmlFor="imp-unit">
               <Select id="imp-unit" value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })}
                 options={[{ value: '', label: 'Choose the unit' }, ...freeUnits]} />
@@ -206,6 +218,7 @@ export function ImportTenants() {
             <Field label="ID number" htmlFor="imp-id" hint="Optional. Only the last four digits are ever shown.">
               <Input id="imp-id" inputMode="numeric" value={form.idNumber} onChange={(event) => setForm({ ...form, idNumber: event.target.value })} />
             </Field>
+            {heading('2. The lease as it stands')}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Lease started" htmlFor="imp-start">
                 <Input id="imp-start" type="date" max={today} value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
@@ -220,6 +233,9 @@ export function ImportTenants() {
                 <Input id="imp-esc" inputMode="decimal" value={form.escalationPct} placeholder="0"
                   onChange={(event) => setForm({ ...form, escalationPct: cleanPercentInput(event.target.value) })} />
               </Field>
+            </div>
+            {heading('3. Money so far')}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Deposit you hold" htmlFor="imp-dep">
                 <CurrencyInput id="imp-dep" cents={form.depositHeldCents} onCentsChange={(next) => setForm({ ...form, depositHeldCents: next })} />
               </Field>
@@ -232,7 +248,7 @@ export function ImportTenants() {
             <Checkbox id="imp-owes" checked={form.owes} onChange={(event) => setForm({ ...form, owes: event.target.checked })}
               label="They owe rent from before this month" />
             {form.owes ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 rounded-md bg-tint-warning p-4 sm:grid-cols-2">
                 <Field label="Amount owed" htmlFor="imp-arrears">
                   <CurrencyInput id="imp-arrears" cents={form.arrearsCents} onCentsChange={(next) => setForm({ ...form, arrearsCents: next })} />
                 </Field>
@@ -242,7 +258,7 @@ export function ImportTenants() {
                 </Field>
               </div>
             ) : null}
-            {inviteBox}
+            <div className="border-t border-line-soft pt-4">{inviteBox}</div>
             {problems.length > 0 ? (
               <Alert tone="warning" title="Fix these first">
                 <ul className="list-disc pl-4">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
@@ -252,50 +268,61 @@ export function ImportTenants() {
           </CardBody>
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <Card>
-            <CardBody className="space-y-3">
-              <p className="text-meta text-ink">
-                One row per tenancy. Properties must exist already; a unit that does not is added if you give its bedrooms and bathrooms.
-                Dates as 2025-03-01 or 01/03/2025, amounts in rand.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
+            <CardBody className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 basis-64">
+                  <h2 className="text-lead font-bold text-ink">1. Fill in the template</h2>
+                  <p className="mt-1 text-body text-ink-muted">
+                    One row per tenancy. Properties must exist already; a unit that does not is added if you give its bedrooms and bathrooms.
+                    Dates as 2025-03-01 or 01/03/2025, amounts in rand.
+                  </p>
+                </div>
                 <Button variant="outline" onClick={downloadTemplate}>Download the template</Button>
-                <label className="cursor-pointer rounded-sm bg-action px-4 py-2 text-body font-medium text-ink-inverse">
-                  Choose the spreadsheet
-                  <input type="file" accept=".csv,text/csv" className="sr-only" aria-label="Spreadsheet"
-                    onChange={(event) => { const file = event.target.files?.[0]; if (file) void check(file); event.target.value = ''; }} />
-                </label>
-                {sheet ? <span className="text-meta text-ink-muted">{sheet.name}</span> : null}
               </div>
-              <p className="text-xs text-ink-muted">Save it from Excel or Google Sheets as CSV.</p>
+              <div>
+                <h2 className="mb-2 text-lead font-bold text-ink">2. Upload it to check</h2>
+                <ListsUploadArea
+                  label="Spreadsheet"
+                  title={sheet ? `Chosen: ${sheet.name}` : 'Choose the spreadsheet'}
+                  hint="Save it from Excel or Google Sheets as CSV. Every row is checked first; nothing is added yet."
+                  accept=".csv,text/csv"
+                  busy={busy && !preview}
+                  onFile={(file) => void check(file)}
+                />
+              </div>
             </CardBody>
           </Card>
 
           {preview ? (
             <section aria-label="Check">
-              <h2 className="label mb-2">
-                {preview.failed > 0
-                  ? `${preview.failed} of ${preview.results.length} rows need fixing. Nothing is added until they all pass.`
-                  : `${preview.results.length} ${preview.results.length === 1 ? 'tenancy' : 'tenancies'} ready`}
-              </h2>
               <Card>
-                <CardBody className="space-y-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft px-5 py-4">
+                  <h2 className="text-lead font-bold text-ink">
+                    {preview.failed > 0
+                      ? `${preview.failed} of ${preview.results.length} rows need fixing. Nothing is added until they all pass.`
+                      : `${preview.results.length} ${preview.results.length === 1 ? 'tenancy' : 'tenancies'} ready`}
+                  </h2>
+                  <Badge tone={preview.failed > 0 ? 'danger' : 'success'}>{preview.failed > 0 ? `${preview.failed} to fix` : 'All rows pass'}</Badge>
+                </div>
+                <ul className="divide-y divide-line-soft">
                   {preview.results.map((row) => (
-                    <div key={row.line} className="flex items-start justify-between gap-3 border-b border-line-soft py-2 last:border-0">
-                      <div className="min-w-0">
-                        <p className="text-body font-semibold">
-                          <span className="font-mono text-xs text-ink-muted">Row {row.line}</span> {row.tenant || 'No name'}
-                        </p>
-                        <p className="text-xs text-ink-muted">{row.unit}</p>
-                        {row.problems.map((problem) => <p key={problem} className="text-xs text-danger">{problem}</p>)}
+                    <li key={row.line} className="flex items-start justify-between gap-3 px-5 py-3.5">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Avatar name={row.tenant || 'No name'} tone={row.problems.length ? 'danger' : undefined} />
+                        <div className="min-w-0">
+                          <p className="text-body font-semibold text-ink">{row.tenant || 'No name'}</p>
+                          <p className="text-meta text-ink-muted">Row {row.line} · {row.unit}</p>
+                          {row.problems.map((problem) => <p key={problem} className="mt-0.5 text-meta text-danger">{problem}</p>)}
+                        </div>
                       </div>
                       <Badge tone={row.problems.length ? 'danger' : row.newUnit ? 'info' : 'success'}>
                         {row.problems.length ? 'Fix' : row.newUnit ? 'Adds unit' : 'Ready'}
                       </Badge>
-                    </div>
+                    </li>
                   ))}
-                </CardBody>
+                </ul>
               </Card>
               {preview.failed === 0 ? (
                 <div className="mt-4 space-y-3">
@@ -305,12 +332,38 @@ export function ImportTenants() {
                   </Button>
                 </div>
               ) : (
-                <p className="mt-3 text-meta text-ink-muted">Fix the rows in your spreadsheet and choose it again.</p>
+                <p className="mt-3 text-body text-ink-muted">Fix the rows in your spreadsheet and choose it again.</p>
               )}
             </section>
           ) : null}
         </div>
       )}
+        </div>
+
+        <aside className="space-y-5">
+          <Card>
+            <CardBody className="space-y-4">
+              <h2 className="text-lead font-bold text-ink">What happens next</h2>
+              <ListsSteps
+                steps={[
+                  { title: 'The lease starts running', detail: 'No application and no signing. It shows on your overview straight away.' },
+                  { title: "This month's rent goes on the lease", detail: 'Marked paid or unpaid as you say. Next month is billed by the monthly run as usual.' },
+                  { title: 'Anything owed is carried over', detail: 'Arrears follow the reminder steps from tomorrow morning.' },
+                  { title: 'The tenant gets an email', detail: 'Only if you leave the box ticked. They set a password and see their rent and lease.' },
+                ]}
+              />
+            </CardBody>
+          </Card>
+          <Card>
+            <CardBody className="space-y-2">
+              <h2 className="text-lead font-bold text-ink">Good to know</h2>
+              <p className="text-body text-ink-muted">
+                The unit must be vacant. A tenant added this way has no move-in inspection on file, so there is no record of the unit's condition at the start to compare against when they leave.
+              </p>
+            </CardBody>
+          </Card>
+        </aside>
+      </div>
     </main>
   );
 }

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Card, CardBody } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 
 export interface MonthTotal {
@@ -56,11 +55,11 @@ export function CollectionsChart({ months }: { months: MonthTotal[] }) {
   const shown = active === null ? null : months[active]!;
 
   return (
-    <Card>
-      <CardBody className="space-y-3">
+    <section aria-label="Rent collected" className="rounded-md border border-line bg-surface shadow-sm">
+      <div className="space-y-4 px-5 py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <div>
-            <h2 className="text-lead font-semibold text-ink">Rent collected</h2>
+            <h2 className="text-lead font-bold text-ink">Rent collected</h2>
             <p className="text-meta text-ink-muted">
               {share === null
                 ? 'Nothing invoiced this month yet.'
@@ -117,9 +116,9 @@ export function CollectionsChart({ months }: { months: MonthTotal[] }) {
             <div aria-hidden
               className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm border border-line bg-surface px-2.5 py-1.5 text-xs shadow-sm"
               style={{ left: `${((PAD.left + slot * active + slot / 2) / W) * 100}%` }}>
-              <p className="font-semibold text-ink">{monthName(shown.month)}</p>
-              <p className="text-ink-muted">Collected <span className="tabular-nums text-ink">{rands(shown.collectedCents)}</span></p>
-              <p className="text-ink-muted">Invoiced <span className="tabular-nums text-ink">{rands(shown.invoicedCents)}</span></p>
+              <p className="font-bold text-ink">{monthName(shown.month)}</p>
+              <p className="text-ink-muted">Collected <span className="text-ink">{rands(shown.collectedCents)}</span></p>
+              <p className="text-ink-muted">Invoiced <span className="text-ink">{rands(shown.invoicedCents)}</span></p>
             </div>
           ) : null}
         </div>
@@ -133,7 +132,7 @@ export function CollectionsChart({ months }: { months: MonthTotal[] }) {
             ))}
           </tbody>
         </table>
-      </CardBody>
-    </Card>
+      </div>
+    </section>
   );
 }

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Button, Card, CardBody, ConfirmDialog, Input, Modal, PageHeader, useToast } from '@hlonie/toolbox/ui';
+import { Avatar, Badge, Button, Card, ConfirmDialog, Input, Modal, useToast } from '@hlonie/toolbox/ui';
+import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
-import { SettingsNav } from '../components/settings-nav';
+import { SettingsLayout } from '../components/settings-nav';
 import { useLandlord } from '../lib/landlord';
 import { formatInstant } from '../lib/format';
-import { PAGE } from '../lib/layout';
 
 interface Team {
   members: { sub: string; role: 'owner' | 'agent'; name: string; email: string; since: string; isYou: boolean }[];
@@ -53,94 +53,114 @@ export function SettingsTeam() {
   };
 
   return (
-    <main className={PAGE.narrow}>
-      <PageHeader title="Settings" description="The people who work on your rentals." />
-      <SettingsNav />
-
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="label">Team</h2>
-        {owner ? (
-          <Button size="sm" onClick={() => { setInvite({ name: '', email: '' }); setInviting(true); }}>
-            Add someone
-          </Button>
-        ) : null}
-      </div>
-
-      <Card className="mb-6">
-        <CardBody className="space-y-1">
-          {data.members.map((member) => (
-            <div key={member.sub} className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
-              <div className="min-w-0">
-                <p className="truncate text-body font-semibold">
-                  {member.name}{member.isYou ? <span className="font-normal text-ink-muted"> (you)</span> : null}
-                </p>
-                <p className="truncate text-xs text-ink-muted">{member.email}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <Badge tone={member.role === 'owner' ? 'success' : 'neutral'}>
-                  {member.role === 'owner' ? 'Owner' : 'Agent'}
-                </Badge>
-                {owner && member.role === 'agent' ? (
-                  <button type="button" className="text-meta font-bold text-danger disabled:opacity-40"
-                    disabled={busy} onClick={() => setRemoving(member)}>
-                    Remove
-                  </button>
+    <SettingsLayout description="The people who work on your rentals.">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-5">
+          <section aria-label="Team">
+            <Card>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <h2 className="text-lead font-bold text-ink">Team</h2>
+                  <p className="text-meta text-ink-muted">
+                    {data.members.length === 1 ? 'Just you so far.' : `${data.members.length} people can sign in.`}
+                  </p>
+                </div>
+                {owner ? (
+                  <Button onClick={() => { setInvite({ name: '', email: '' }); setInviting(true); }}>
+                    Add someone
+                  </Button>
                 ) : null}
               </div>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
+              <ul className="divide-y divide-line-soft border-t border-line-soft">
+                {data.members.map((member) => (
+                  <li key={member.sub} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5">
+                    <Avatar name={member.name} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-body font-semibold text-ink">
+                        {member.name}{member.isYou ? <span className="font-normal text-ink-muted"> (you)</span> : null}
+                      </p>
+                      <p className="truncate text-meta text-ink-muted">{member.email}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <Badge tone={member.role === 'owner' ? 'brand' : 'neutral'}>
+                        {member.role === 'owner' ? 'Owner' : 'Agent'}
+                      </Badge>
+                      {owner && member.role === 'agent' ? (
+                        <Button size="sm" variant="outline" className="text-danger" disabled={busy} onClick={() => setRemoving(member)}>
+                          Remove
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </section>
 
-      {data.invites.length > 0 ? (
-        <section className="mb-6" aria-label="Waiting to join">
-          <h2 className="label mb-2">Waiting to join</h2>
-          <Card>
-            <CardBody className="space-y-1">
-              {data.invites.map((pending) => (
-                <div key={pending.id} className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-body font-semibold">{pending.name}</p>
-                    <p className="truncate text-xs text-ink-muted">
-                      {pending.email}, link works until {formatInstant(pending.expiresAt)}
-                    </p>
-                  </div>
-                  {owner ? (
-                    <span className="flex shrink-0 gap-3">
-                      <button type="button" className="text-meta font-bold text-brand-500 disabled:opacity-40" disabled={busy}
-                        onClick={() => act(() => api.post('/landlord/invites', { name: pending.name, email: pending.email }), 'Sent again')}>
-                        Resend
-                      </button>
-                      <button type="button" className="text-meta font-bold text-danger disabled:opacity-40" disabled={busy}
-                        onClick={() => act(() => api.post(`/landlord/invites/${pending.id}/revoke`, {}), 'Invitation cancelled')}>
-                        Cancel
-                      </button>
-                    </span>
-                  ) : null}
+          {data.invites.length > 0 ? (
+            <section aria-label="Waiting to join">
+              <Card>
+                <div className="px-5 py-4">
+                  <h2 className="text-lead font-bold text-ink">Waiting to join</h2>
+                  <p className="text-meta text-ink-muted">Invited, but they have not chosen a password yet.</p>
                 </div>
-              ))}
-            </CardBody>
-          </Card>
-        </section>
-      ) : null}
+                <ul className="divide-y divide-line-soft border-t border-line-soft">
+                  {data.invites.map((pending) => (
+                    <li key={pending.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5">
+                      <Avatar name={pending.name} tone="info" />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-center gap-2 text-body font-semibold text-ink">
+                          <span className="truncate">{pending.name}</span>
+                          <Badge tone="info">Invited</Badge>
+                        </p>
+                        <p className="text-meta text-ink-muted">
+                          {pending.email}, link works until {formatInstant(pending.expiresAt)}
+                        </p>
+                      </div>
+                      {owner ? (
+                        <span className="flex shrink-0 gap-2">
+                          <Button size="sm" variant="secondary" disabled={busy}
+                            onClick={() => act(() => api.post('/landlord/invites', { name: pending.name, email: pending.email }), 'Sent again')}>
+                            Resend
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={busy}
+                            onClick={() => act(() => api.post(`/landlord/invites/${pending.id}/revoke`, {}), 'Invitation cancelled')}>
+                            Cancel
+                          </Button>
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </section>
+          ) : null}
+        </div>
 
-      <div className="rounded-md border border-line p-4 text-meta text-ink-muted">
-        <p className="mb-1 font-semibold text-ink">What an agent can do</p>
-        <p>
-          Everything on the leases, rent, maintenance, inspections and applications. Their actions show under their own
-          name in Activity. They cannot change the business details, the bank account or the team, delete a property, or
-          answer a privacy request.
-        </p>
+        <aside className="space-y-5">
+          <div className="rounded-md border border-[color-mix(in_srgb,var(--tb-info)_25%,transparent)] bg-tint-info px-5 py-4">
+            <h2 className="text-lead font-bold text-ink">What an agent can do</h2>
+            <p className="mt-1.5 text-meta text-ink">
+              Everything on the leases, rent, maintenance, inspections and applications. Their actions show under their own
+              name in Activity. They cannot change the business details, the bank account or the team, delete a property, or
+              answer a privacy request.
+            </p>
+          </div>
+          {!owner ? <p className="text-meta text-ink-muted">Only the account owner adds or removes people.</p> : null}
+        </aside>
       </div>
 
       <Modal open={inviting} onOpenChange={setInviting} title="Add someone to your team"
         description="They get an email with a link to choose a password. It works for 7 days.">
-        <div className="space-y-3">
-          <Input aria-label="Their name" placeholder="Their name" value={invite.name}
-            onChange={(event) => setInvite({ ...invite, name: event.target.value })} />
-          <Input aria-label="Their email" type="email" placeholder="Their email" value={invite.email}
-            onChange={(event) => setInvite({ ...invite, email: event.target.value })} />
-          <p className="text-xs text-ink-muted">Use an address they do not already sign in with here.</p>
+        <div className="space-y-4">
+          <Field label="Their name" htmlFor="invite-name">
+            <Input id="invite-name" placeholder="Name and surname" value={invite.name}
+              onChange={(event) => setInvite({ ...invite, name: event.target.value })} />
+          </Field>
+          <Field label="Their email" htmlFor="invite-email" hint="Use an address they do not already sign in with here.">
+            <Input id="invite-email" type="email" placeholder="name@example.co.za" value={invite.email}
+              onChange={(event) => setInvite({ ...invite, email: event.target.value })} />
+          </Field>
           <Button block loading={busy} disabled={invite.name.trim().length < 2 || !invite.email.includes('@')}
             onClick={async () => {
               if (await act(() => api.post('/landlord/invites', invite), `Invitation sent to ${invite.email}`)) setInviting(false);
@@ -163,6 +183,6 @@ export function SettingsTeam() {
           }
         }}
       />
-    </main>
+    </SettingsLayout>
   );
 }

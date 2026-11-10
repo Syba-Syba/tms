@@ -24,14 +24,14 @@ export function QueryState({
 }) {
   if (isLoading) {
     return (
-      <main className="p-16 text-center">
+      <main className="flex min-h-[40vh] items-center justify-center p-16" aria-busy="true">
         <Spinner />
       </main>
     );
   }
   if (isError) {
     return (
-      <main className="mx-auto max-w-sm px-4 py-16 text-center">
+      <main className="mx-auto w-full max-w-md px-4 py-16">
         <QueryError error={error} onRetry={onRetry} what={what} />
       </main>
     );
@@ -63,11 +63,11 @@ export function QueryError({
         ? 'Your sign-in is not a party to this record.'
         : humanError(error);
   return (
-    <div className="space-y-3">
-      <p className="text-lead font-semibold">{title}</p>
-      <p className="text-meta text-ink-muted">{detail}</p>
+    <div className="space-y-2 rounded-md border border-line bg-surface px-5 py-5 shadow-sm">
+      <p className="text-lead font-bold text-ink">{title}</p>
+      <p className="text-body text-ink-muted">{detail}</p>
       {onRetry && status !== 404 && status !== 403 ? (
-        <Button size="sm" variant="outline" onClick={onRetry}>
+        <Button size="sm" variant="secondary" className="!mt-3" onClick={onRetry}>
           Try again
         </Button>
       ) : null}

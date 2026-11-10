@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, CardBody, Checkbox, Input, Modal, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Checkbox, Input, Modal, useToast } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { addDays, localToday } from '../lib/dates';
@@ -8,6 +8,7 @@ import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
 import { invalidateMoneyCaches } from '../lib/money-caches';
 import { Money } from './money';
+import { SectionCard } from './core-kit';
 
 type Step = 'reminder_1' | 'reminder_3' | 'reminder_7' | 'letter_of_demand';
 
@@ -43,7 +44,7 @@ const MAX_PAUSE_DAYS = 60;
  * decisions, sending the letter of demand and pausing the reminders. A tenant sees the same
  * record, so both sides argue from one history.
  */
-export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord: boolean }) {
+export function ArrearsPanel({ leaseId, landlord, className = 'mb-4' }: { leaseId: string; landlord: boolean; className?: string }) {
   const toast = useToast();
   const openDocument = useOpenDocument();
   const queryClient = useQueryClient();
@@ -81,14 +82,13 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
   };
 
   return (
-    <section className="mb-4" aria-label="Arrears">
-      <p className="label mb-2">{landlord ? 'Arrears' : 'Overdue rent'}</p>
-      <Card>
-        <CardBody className="space-y-4">
+    <>
+      <SectionCard title={landlord ? 'Arrears' : 'Overdue rent'} label="Arrears" className={`${className} ${data.owing ? 'border-danger/30' : ''}`}>
+        <div className="space-y-4 px-5 py-4">
           {data.owing ? (
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>
-                <Money cents={data.owing.outstandingCents} className="text-figure text-ink" />
+                <Money cents={data.owing.outstandingCents} className="text-figure text-danger" />
                 <p className="text-meta text-ink-muted">
                   Overdue since {formatDate(data.owing.oldestDueOn)}, {data.owing.daysLate}{' '}
                   {data.owing.daysLate === 1 ? 'day' : 'days'} late.
@@ -118,38 +118,40 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
             </Alert>
           ) : null}
 
-          <ol className="space-y-2" aria-label="Steps taken">
+          <ol className="divide-y divide-line-soft" aria-label="Steps taken">
             {steps.map((step) => (
-              <li key={step.step} className="flex items-center justify-between gap-3 border-b border-line-soft pb-2 last:border-0">
+              <li key={step.step} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="text-body font-semibold">{STEP_LABEL[step.step]}</p>
-                  <p className="text-xs text-ink-muted">
+                  <p className="text-body font-bold text-ink">{STEP_LABEL[step.step]}</p>
+                  <p className="text-meta text-ink-muted">
                     {formatDate(step.takenOn)}, day {step.daysLate}, {formatZar(step.outstandingCents / 100)} owing
                   </p>
                 </div>
                 {step.documentKey ? (
-                  <button
-                    type="button"
-                    className="shrink-0 text-meta font-bold text-brand-500"
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    aria-label={`Open the ${STEP_LABEL[step.step].toLowerCase()} PDF`}
                     onClick={() => openDocument(step.documentKey!)}
                   >
                     PDF
-                  </button>
+                  </Button>
                 ) : (
-                  <span className="shrink-0 text-xs text-ink-muted">Sent</span>
+                  <Badge tone="neutral">Sent</Badge>
                 )}
               </li>
             ))}
             {data.next ? (
-              <li className="flex items-center justify-between gap-3 text-ink-muted">
+              <li className="flex items-center justify-between gap-3 py-2.5 text-ink-muted">
                 <p className="text-body">{STEP_LABEL[data.next.step]}</p>
-                <p className="text-xs">{data.next.on <= today ? 'Goes out this morning' : `Due ${formatDate(data.next.on)}`}</p>
+                <p className="text-meta">{data.next.on <= today ? 'Goes out this morning' : `Due ${formatDate(data.next.on)}`}</p>
               </li>
             ) : null}
           </ol>
 
           {landlord && data.owing && !letter ? (
-            <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+            <div className="flex flex-wrap gap-2 border-t border-line-soft pt-4">
               {data.letter ? (
                 <Button
                   size="sm"
@@ -202,8 +204,8 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
               </ul>
             </details>
           ) : null}
-        </CardBody>
-      </Card>
+        </div>
+      </SectionCard>
 
       <Modal
         open={showLetter}
@@ -278,6 +280,6 @@ export function ArrearsPanel({ leaseId, landlord }: { leaseId: string; landlord:
           </Button>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

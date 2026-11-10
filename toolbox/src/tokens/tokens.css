@@ -1,79 +1,87 @@
-/* Threshold, "ledger" edition.
-   References: Mercury's calm (paper-white pages, black primary actions, room to breathe),
-   Stripe's data handling (hairline rules, aligned figures, colour only for state), and
-   Monzo's warmth on the tenant side. What it avoids on purpose: soft drop shadows, big pill
-   radii, gradients, purple, and beige-on-beige, which is what generated interfaces default to.
-
-   One accent, bottle green, for links, focus and the active tab. Money and page titles are set
-   in a serif, like a bank statement; everything else in IBM Plex. Panels are flat white with a
-   1px rule; depth comes from the rule, never a shadow. */
+/* Threshold, "estate" edition.
+   A working tool for landlords: a deep green sidebar, a cool grey canvas, white panels and one
+   green for every primary action. One sans typeface throughout, set large enough to read on a
+   phone in daylight. Colour carries meaning: green is done or safe, amber is coming up, red is
+   owed or late, blue is waiting on a decision. People get initials in a tinted circle so a list
+   of tenants reads as people, not rows. */
 :root {
-  /* Accent: bottle green. 500 is the working shade; 50 and 100 tint selected and hovered rows. */
-  --tb-brand-50: #eef4f1;
-  --tb-brand-100: #d9e7e0;
-  --tb-brand-200: #b3cfc1;
-  --tb-brand-300: #7fae98;
-  --tb-brand-400: #3f826a;
-  --tb-brand-500: #1d5e4a;
-  --tb-brand-600: #174d3d;
-  --tb-brand-700: #133f32;
-  --tb-brand-800: #0f3127;
-  --tb-brand-900: #0a221b;
+  /* Brand: forest green. 500 is the action colour; 50 and 100 tint selected rows and tiles. */
+  --tb-brand-50: #e9f5f0;
+  --tb-brand-100: #d3ebe1;
+  --tb-brand-200: #a8d7c4;
+  --tb-brand-300: #7fd4b0;
+  --tb-brand-400: #2f8f70;
+  --tb-brand-500: #17694f;
+  --tb-brand-600: #125640;
+  --tb-brand-700: #10463a;
+  --tb-brand-800: #10332a;
+  --tb-brand-900: #0b241d;
 
-  /* Neutrals: a cool paper grey with the faintest warmth, so white panels read as paper. */
+  /* Neutrals lean slightly green so they sit with the sidebar. */
   --tb-neutral-0: #ffffff;
-  --tb-neutral-50: #f7f7f5;
-  --tb-neutral-100: #efefec;
-  --tb-neutral-200: #e3e3df;
-  --tb-neutral-300: #cdcdc7;
-  --tb-neutral-400: #a3a39c;
-  --tb-neutral-500: #6b6b65;
-  --tb-neutral-600: #4f4f4a;
-  --tb-neutral-700: #383834;
-  --tb-neutral-800: #24241f;
-  --tb-neutral-900: #151513;
+  --tb-neutral-50: #f3f5f4;
+  --tb-neutral-100: #eaeeec;
+  --tb-neutral-200: #e1e6e4;
+  --tb-neutral-300: #cbd3cf;
+  --tb-neutral-400: #9aa7a1;
+  --tb-neutral-500: #5b6b65;
+  --tb-neutral-600: #46544f;
+  --tb-neutral-700: #33403b;
+  --tb-neutral-800: #222d29;
+  --tb-neutral-900: #16211d;
 
-  /* State only. Never decoration. */
-  --tb-success: #1f7a4d;
-  --tb-warning: #a35b06;
-  --tb-danger: #b42318;
-  --tb-info: #2f5d8a;
-  /* The same states, dark enough to read as small text on their own tinted badge (WCAG 4.5:1). */
-  --tb-success-ink: #1a6841;
-  --tb-warning-ink: #8b4d05;
-  --tb-danger-ink: #991e14;
-  --tb-info-ink: #284f75;
+  /* State. */
+  --tb-success: #17694f;
+  --tb-warning: #b7791f;
+  --tb-danger: #c4322b;
+  --tb-info: #2452a8;
+  /* The same states, dark enough to read as small text on their own tint (WCAG 4.5:1). */
+  --tb-success-ink: #125640;
+  --tb-warning-ink: #85540a;
+  --tb-danger-ink: #a3261f;
+  --tb-info-ink: #1e4590;
+  /* Solid tints behind state: pills, initials, tiles. */
+  --tb-success-tint: #e0f2ea;
+  --tb-warning-tint: #fdf0d5;
+  --tb-danger-tint: #fde8e6;
+  --tb-info-tint: #e3ecfb;
   /* Charts: the grey a highlighted series sits in (invoiced behind collected). */
-  --tb-chart-context: #dcdcd7;
+  --tb-chart-context: #d9e0dd;
   --tb-marker: #f2d675;
 
   --tb-bg: var(--tb-neutral-50);
   --tb-surface: var(--tb-neutral-0);
   --tb-surface-muted: var(--tb-neutral-100);
-  --tb-border: #dcdcd7;
-  --tb-border-soft: #e9e9e5;
+  --tb-border: var(--tb-neutral-200);
+  --tb-border-soft: #edf0ef;
   --tb-text: var(--tb-neutral-900);
   --tb-text-muted: var(--tb-neutral-500);
   --tb-text-inverse: #ffffff;
   --tb-ring: var(--tb-brand-500);
-  /* Primary buttons are ink, not accent: the accent stays rare enough to mean something. */
-  --tb-action: var(--tb-neutral-900);
-  --tb-action-hover: #000000;
+  /* Primary buttons are the brand green: one obvious next step per screen. */
+  --tb-action: var(--tb-brand-500);
+  --tb-action-hover: var(--tb-brand-600);
 
-  --tb-font-display: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
-  --tb-font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  /* The sidebar keeps its own colours in both themes. */
+  --tb-nav: #10332a;
+  --tb-nav-active: #1d4a3d;
+  --tb-nav-text: #cfe0d9;
+  --tb-nav-muted: #8fb3a6;
+  --tb-nav-accent: #7fd4b0;
+
+  --tb-font-display: 'Schibsted Grotesk Variable', 'Segoe UI', system-ui, sans-serif;
+  --tb-font-body: 'Schibsted Grotesk Variable', 'Segoe UI', system-ui, sans-serif;
   --tb-font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
 
-  --tb-radius-sm: 6px;
-  --tb-radius-md: 8px;
-  --tb-radius-lg: 10px;
+  --tb-radius-sm: 8px;
+  --tb-radius-md: 12px;
+  --tb-radius-lg: 16px;
   --tb-radius-arch: 999px 999px 10px 10px;
   --tb-radius-full: 999px;
 
-  /* Kept as tokens for overlays only; panels on the page carry none. */
-  --tb-shadow-sm: 0 0 0 0 transparent;
-  --tb-shadow-md: 0 1px 2px rgba(21, 21, 19, 0.06), 0 8px 24px rgba(21, 21, 19, 0.08);
-  --tb-shadow-lg: 0 2px 4px rgba(21, 21, 19, 0.06), 0 20px 48px rgba(21, 21, 19, 0.14);
+  --tb-shadow-sm: 0 1px 2px rgba(16, 51, 42, 0.05);
+  --tb-shadow-md: 0 1px 2px rgba(16, 51, 42, 0.06), 0 8px 24px rgba(16, 51, 42, 0.1);
+  --tb-shadow-lg: 0 2px 4px rgba(16, 51, 42, 0.06), 0 20px 48px rgba(16, 51, 42, 0.16);
   --tb-edge: 0 0 0 0 transparent;
 
   --tb-duration-fast: 120ms;
@@ -81,32 +89,40 @@
   --tb-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* Night: near-black ink with lifted panels. The green lightens so links and focus still read. */
+/* Night: deep green-black with lifted panels. The green lightens so links and focus still read. */
 [data-theme='dark'] {
-  --tb-bg: #121211;
-  --tb-surface: #1b1b19;
-  --tb-surface-muted: #242421;
-  --tb-border: #34342f;
-  --tb-border-soft: #2a2a26;
-  --tb-text: #f1f1ee;
-  --tb-text-muted: #a3a39c;
-  --tb-text-inverse: #121211;
-  --tb-brand-500: #6fc2a1;
-  --tb-brand-600: #8fd2b7;
-  --tb-brand-50: #18261f;
-  --tb-brand-100: #1f3329;
-  --tb-success: #5fbf8b;
-  --tb-warning: #e0a050;
-  --tb-danger: #f07a6e;
-  --tb-info: #7fa9d6;
-  --tb-success-ink: #5fbf8b;
-  --tb-warning-ink: #e0a050;
-  --tb-danger-ink: #f07a6e;
-  --tb-info-ink: #7fa9d6;
-  --tb-chart-context: #3d3d38;
-  --tb-ring: #6fc2a1;
-  --tb-action: #f1f1ee;
-  --tb-action-hover: #ffffff;
+  --tb-bg: #0c1512;
+  --tb-surface: #131e1a;
+  --tb-surface-muted: #1a2823;
+  --tb-border: #263630;
+  --tb-border-soft: #1e2c27;
+  --tb-text: #eef3f1;
+  --tb-text-muted: #9db0a8;
+  --tb-text-inverse: #0c1512;
+  --tb-brand-500: #6fd0a8;
+  --tb-brand-600: #8fdcbb;
+  --tb-brand-700: #b5e8d2;
+  --tb-brand-50: #14261f;
+  --tb-brand-100: #1a3329;
+  --tb-success: #6fd0a8;
+  --tb-warning: #e6b05a;
+  --tb-danger: #f2837a;
+  --tb-info: #8db1ee;
+  --tb-success-ink: #8fdcbb;
+  --tb-warning-ink: #f0c47c;
+  --tb-danger-ink: #f6a19a;
+  --tb-info-ink: #a9c5f3;
+  --tb-success-tint: #16302a;
+  --tb-warning-tint: #33290f;
+  --tb-danger-tint: #3a1a18;
+  --tb-info-tint: #17264a;
+  --tb-chart-context: #2c3d37;
+  --tb-ring: #6fd0a8;
+  --tb-action: #6fd0a8;
+  --tb-action-hover: #8fdcbb;
+  --tb-nav: #0a1f19;
+  --tb-nav-active: #173d32;
+  --tb-shadow-sm: 0 0 0 0 transparent;
   --tb-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
   --tb-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.65);
 }

@@ -17,10 +17,10 @@ interface ToastApi {
 const ToastContext = createContext<ToastApi | null>(null);
 
 const toneStyles: Record<Tone, string> = {
-  info: 'border-l-info',
-  success: 'border-l-success',
-  warning: 'border-l-warning',
-  danger: 'border-l-danger',
+  info: 'bg-info',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
 };
 
 let sequence = 0;
@@ -77,25 +77,24 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={cn(
-              'pointer-events-auto rounded-md border border-line bg-surface p-3 shadow-md',
-              toneStyles[toast.tone],
-            )}
+            className="pointer-events-auto rounded-md border border-line bg-surface px-4 py-3 shadow-md"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-body font-semibold text-ink">{toast.title}</p>
+            <div className="flex items-start gap-3">
+              {/* The dot carries the tone; the title carries the meaning in words. */}
+              <span aria-hidden className={cn('mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full', toneStyles[toast.tone])} />
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-bold text-ink">{toast.title}</p>
                 {toast.description ? (
-                  <p className="mt-0.5 text-body text-ink-muted">{toast.description}</p>
+                  <p className="mt-0.5 text-meta text-ink-muted">{toast.description}</p>
                 ) : null}
               </div>
               <button
                 type="button"
                 onClick={() => dismiss(toast.id)}
                 aria-label="Dismiss notification"
-                className="text-ink-muted hover:text-ink"
+                className="-mr-1.5 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lead text-ink-muted hover:bg-surface-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)]"
               >
-                x
+                <span aria-hidden>×</span>
               </button>
             </div>
           </div>

@@ -18,14 +18,20 @@ export interface Storage {
   get(key: string): Promise<Uint8Array>;
   /** Returns the object size, or null when the key does not exist. */
   sizeOf(key: string): Promise<number | null>;
-  presignPut(key: string, contentType: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * An upload link. With `sizeBytes`, the link only accepts a body of exactly that many bytes,
+   * the size the client declared and the handler already capped.
+   */
+  presignPut(key: string, contentType: string, expiresInSeconds: number, sizeBytes?: number): Promise<string>;
   presignGet(key: string, expiresInSeconds: number): Promise<string>;
   /** Deletes the object. A key that is already gone is not an error: erasure must be repeatable. */
   remove(key: string): Promise<void>;
 }
 
 const s3Driver = (): Storage => {
-  const s3 = new S3Client({ region: env.AWS_REGION });
+  // WHEN_REQUIRED: by default the SDK signs the checksum of an empty body into an upload link,
+  // which is not the checksum of what the browser then sends.
+  const s3 = new S3Client({ region: env.AWS_REGION, requestChecksumCalculation: 'WHEN_REQUIRED' });
   const Bucket = env.DOCS_BUCKET;
   return {
     async put(key, body, contentType) {
@@ -51,13 +57,17 @@ const s3Driver = (): Storage => {
         return null;
       }
     },
-    presignPut(key, contentType, expiresIn) {
+    presignPut(key, contentType, expiresIn, sizeBytes) {
       return getSignedUrl(
         s3,
         new PutObjectCommand({
           Bucket,
           Key: key,
           ContentType: contentType,
+          // Signed into the link as Content-Length, so S3 refuses any other size. Without it
+          // a link took up to 5 GB, checked only at confirm. The browser sends this header
+          // itself, with the size of the file it was given.
+          ...(sizeBytes ? { ContentLength: sizeBytes } : {}),
           // No ServerSideEncryption here: it would be a signed header the browser never sends,
           // and S3 refuses the upload with 403. Uploads take the bucket's default encryption,
           // which must be set to SSE-KMS (see README, AWS deployment).

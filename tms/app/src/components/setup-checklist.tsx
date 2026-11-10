@@ -30,30 +30,42 @@ export function SetupChecklist() {
   const left = steps.filter((step) => !step.done).length;
 
   return (
-    <section aria-label="Set up your account" className="mb-6 rounded-md border border-line bg-surface p-4 sm:p-5">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="font-display text-title font-medium">Set up {data.account.tradingName}</h2>
+    <section aria-label="Set up your account" className="mb-6 rounded-md border border-line bg-surface shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line-soft px-5 py-4">
+        <h2 className="text-lead font-bold text-ink">Set up {data.account.tradingName}</h2>
         <p className="text-meta text-ink-muted">{left} of {steps.length} to go</p>
       </div>
       <ol className="divide-y divide-line-soft">
         {steps.map((step, index) => (
           <li key={step.title}>
-            <Link to={step.to} className="flex items-center gap-3 py-2.5">
+            <Link
+              to={step.to}
+              className="flex items-center gap-3.5 px-5 py-3.5 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--tb-ring)]"
+            >
               <span
                 aria-hidden
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs ${
-                  step.done ? 'border-brand-500 bg-brand-500 text-white' : 'border-line text-ink-muted'
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-meta font-bold ${
+                  step.done ? 'bg-tint-success text-[var(--tb-success-ink)]' : 'bg-surface-muted text-ink-muted'
                 }`}
               >
-                {step.done ? <CheckIcon className="h-3.5 w-3.5" /> : index + 1}
+                {step.done ? <CheckIcon className="h-4 w-4" /> : index + 1}
               </span>
-              <span className="min-w-0">
-                <span className={`block text-body font-semibold ${step.done ? 'text-ink-muted line-through' : 'text-ink'}`}>
+              <span className="min-w-0 flex-1">
+                <span className={`block text-body font-bold ${step.done ? 'text-ink-muted' : 'text-ink'}`}>
                   {step.title}
                 </span>
-                {!step.done ? <span className="block text-xs text-ink-muted">{step.detail}</span> : null}
+                {!step.done ? <span className="block text-meta text-ink-muted">{step.detail}</span> : null}
               </span>
-              <span className="sr-only">{step.done ? 'Done' : 'To do'}</span>
+              {step.done ? (
+                <span className="shrink-0 rounded-full bg-tint-success px-2.5 py-0.5 text-xs font-semibold text-[var(--tb-success-ink)]">Done</span>
+              ) : (
+                <>
+                  <span className="sr-only">To do</span>
+                  <span aria-hidden className="inline-flex h-9 shrink-0 items-center rounded-sm bg-brand-50 px-3.5 text-meta font-semibold text-brand-600">
+                    Start
+                  </span>
+                </>
+              )}
             </Link>
           </li>
         ))}

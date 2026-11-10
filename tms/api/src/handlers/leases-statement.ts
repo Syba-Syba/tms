@@ -15,10 +15,12 @@ export const handler = route(async (event) => {
 
   // The reference a tenant puts on their EFT. The rent screen used to show a fixed one.
   const [lease] = await query<{
-    ref: string; landlord: string; landlord_phone: string; bank_changed_on: string | null; bank_name: string | null; bank_account_holder: string | null;
+    ref: string; deposit_cents: string; status: string; previous_lease_id: string | null;
+    landlord: string; landlord_phone: string; bank_changed_on: string | null; bank_name: string | null; bank_account_holder: string | null;
     bank_account_number: string | null; bank_branch_code: string | null;
   }>(
-    `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, ll.trading_name as landlord, ll.phone as landlord_phone,
+    `select 'LSE-' || lpad(l.ref_no::text, 5, '0') as ref, l.deposit_cents::text, l.status, l.previous_lease_id,
+            ll.trading_name as landlord, ll.phone as landlord_phone,
             (select max(a.at)::date::text from audit_log a
               where a.entity = 'landlord' and a.entity_id = ll.id and a.action = 'landlord.bank_changed'
                 and a.at > now() - interval '30 days') as bank_changed_on,
@@ -47,9 +49,14 @@ export const handler = route(async (event) => {
     method: string;
     reference: string | null;
     received_on: string;
+    reverses_payment_id: string | null;
+    reversal_reason: string | null;
+    reversed_by: string | null;
   }>(
-    `select id, invoice_id, amount_cents, method, reference, received_on::text
-       from payment where lease_id = $1 order by received_on`,
+    `select p.id, p.invoice_id, p.amount_cents, p.method, p.reference, p.received_on::text,
+            p.reverses_payment_id, p.reversal_reason,
+            (select r.id from payment r where r.reverses_payment_id = p.id) as reversed_by
+       from payment p where p.lease_id = $1 order by p.received_on, p.created_at`,
     [leaseId],
   );
   const deposit = await query<{ entry_type: string; amount_cents: string; occurred_on: string; note: string | null }>(
@@ -102,6 +109,12 @@ export const handler = route(async (event) => {
     balanceCents: invoiced - received,
     ageing,
     depositBalanceCents: depositBalance,
+    // The deposit asked for less what is held, by the rule the lease list uses. The rent screen
+    // said "fully paid up" while the home screen said the deposit was owed.
+    depositOwingCents:
+      lease && (lease.status === 'active' || (lease.status === 'scheduled' && !lease.previous_lease_id))
+        ? Math.max(0, Number(lease.deposit_cents) - depositBalance)
+        : 0,
     invoices: invoices.map((invoice) => ({
       id: invoice.id,
       period: invoice.period_start.slice(0, 7),
@@ -116,6 +129,10 @@ export const handler = route(async (event) => {
       method: payment.method,
       reference: payment.reference,
       receivedOn: payment.received_on,
+      // A corrected payment stays on the record with the entry that undid it.
+      reversedBy: payment.reversed_by,
+      reversesPaymentId: payment.reverses_payment_id,
+      reason: payment.reversal_reason,
     })),
     deposit,
     proofs: proofs.map((proof) => ({

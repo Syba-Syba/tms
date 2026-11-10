@@ -3,23 +3,30 @@ import { cn } from '../lib/cn';
 
 const sizes = { sm: 'h-7 w-7 text-2xs', md: 'h-9 w-9 text-xs', lg: 'h-12 w-12 text-body' };
 
-/** Colour is derived from the name, so the same person always gets the same tint. */
+/** A soft tint with dark initials, derived from the name so a person keeps their colour. */
 const tintFor = (name: string) => {
-  const hues = [160, 200, 30, 260, 340, 100];
+  const hues = [160, 205, 35, 265, 340, 95];
   let hash = 0;
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 997;
-  return `hsl(${hues[hash % hues.length]} 35% 42%)`;
+  const hue = hues[hash % hues.length];
+  return { background: `hsl(${hue} 55% 90%)`, color: `hsl(${hue} 60% 24%)` };
 };
+
+export type AvatarTone = 'success' | 'warning' | 'danger' | 'info';
+const toneStyle = (tone: AvatarTone) => ({ background: `var(--tb-${tone}-tint)`, color: `var(--tb-${tone}-ink)` });
 
 export function Avatar({
   name,
   src,
   size = 'md',
+  tone,
   className,
 }: {
   name: string;
   src?: string;
   size?: keyof typeof sizes;
+  /** Colours the circle by state (paid up, owing) instead of by name. */
+  tone?: AvatarTone;
   className?: string;
 }) {
   return src ? (
@@ -32,9 +39,9 @@ export function Avatar({
     <span
       role="img"
       aria-label={name}
-      style={{ background: tintFor(name) }}
+      style={tone ? toneStyle(tone) : tintFor(name)}
       className={cn(
-        'inline-flex items-center justify-center rounded-full font-medium text-white',
+        'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
         sizes[size],
         className,
       )}

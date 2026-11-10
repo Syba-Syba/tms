@@ -183,11 +183,14 @@ rm -f "$list"
 # Held: no scheduled jobs and no outbox until `./restore.sh resume`. Payments, arrears steps and
 # notices made after the dump are not in it; run now, the morning's jobs would send a second
 # letter of demand and repeat reminders. The app still serves sign-ins and pages.
-cat > "$HOLD" <<'EOF_HOLD'
+# JOBS_HELD_SINCE tells /health this is a hold, not jobs driven from cron: it says so, and turns
+# red after six hours, so a forgotten resume shows on the monitor instead of nowhere.
+cat > "$HOLD" <<EOF_HOLD
 services:
   app:
     environment:
       RUN_JOBS: "false"
+      JOBS_HELD_SINCE: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EOF_HOLD
 hold_made=1
 COMPOSE_FILE="$base_files:$HOLD" compose up -d --no-deps app
@@ -198,6 +201,7 @@ echo "  1. Re-enter payments received since the dump, and check arrears steps, n
 echo "     terminations made since then (tms_previous has them)."
 echo "  2. Then turn the jobs and outbox back on:  ./restore.sh resume"
 echo "     Until then, do not run a plain 'docker compose up': it starts the app without the hold."
+echo "     /health reports the hold, and turns red if it is still on after six hours."
 echo "What was there before is kept until you are sure all is well:"
 echo "  database:  tms_previous     drop it with: docker compose --env-file .env.production exec db sh -c 'PGPASSWORD=\$POSTGRES_PASSWORD dropdb -U \$POSTGRES_USER tms_previous'"
 echo "  documents: .restore-prev    remove it with: docker compose --env-file .env.production run --rm --no-deps --user root --entrypoint rm app -rf /data/storage/.restore-prev"

@@ -187,6 +187,11 @@ export async function erasePerson(
       await collect('select pdf_s3_key as key from inspection where lease_id = any($1)', ls);
       await collect('select draft_s3_key as key from inspection where lease_id = any($1)', ls);
       await collect('select statement_s3_key as key from termination where lease_id = any($1)', ls);
+      // The tenant's own written notice. A photo used as evidence is collected with the photos.
+      await collect(
+        `select evidence_s3_key as key from termination where lease_id = any($1) and evidence_s3_key like 'notice-evidence/%'`,
+        ls,
+      );
       await collect(
         `select st.document_s3_key as key from arrears_step st join arrears_case c on c.id = st.case_id
           where c.lease_id = any($1)`,
@@ -269,7 +274,7 @@ export async function erasePerson(
         ls,
       );
       await run('update inspection set pdf_s3_key = null, draft_s3_key = null where lease_id = any($1)', ls);
-      await run('update termination set statement_s3_key = null where lease_id = any($1)', ls);
+      await run('update termination set statement_s3_key = null, evidence_s3_key = null where lease_id = any($1)', ls);
       await run(
         `update arrears_step set document_s3_key = 'erased/' || id
           where document_s3_key is not null and case_id in (select id from arrears_case where lease_id = any($1))`,
@@ -329,6 +334,43 @@ export async function erasePerson(
         ls,
       );
       await run('delete from tenant_invite where lease_id = any($1)', ls);
+
+      // What the landlord typed about them. Reasons have no accounting value ("Naledi Phiri
+      // has a judgment, call 082…"), so they are blanked; the column must stay filled where a
+      // paused case or a rejected slip requires one.
+      await run(`update application set decline_reason = '[erased]' where decline_reason is not null and id = any($1)`, apps);
+      await run(`update arrears_case set pause_reason = '[erased]' where pause_reason is not null and lease_id = any($1)`, ls);
+      await run(`update payment_proof set reject_reason = '[erased]' where reject_reason is not null and lease_id = any($1)`, ls);
+      // Descriptions and notes that the statements and the repair history still need keep
+      // their meaning and lose the name, email and phone.
+      const about = [leases, namePattern, applicant.email, phone, localPhone];
+      await run(`update pending_charge set description = ${scrub('description')} where lease_id = any($1)`, about);
+      await run(
+        `update invoice_line set description = ${scrub('description')}
+          where invoice_id in (select id from invoice where lease_id = any($1))`,
+        about,
+      );
+      await run(
+        `update deposit_deduction set description = ${scrub('description')}
+          where termination_id in (select id from termination where lease_id = any($1))`,
+        about,
+      );
+      await run(
+        `update inspection_finding set note = ${scrub('note')}
+          where note is not null and inspection_id in (select id from inspection where lease_id = any($1))`,
+        about,
+      );
+      await run(
+        `update ticket_event set note = ${scrub('note')}
+          where actor_role <> 'tenant' and note is not null and ticket_id in (select id from ticket where lease_id = any($1))`,
+        about,
+      );
+      // Deposits received were cleared above; deductions, refunds and interest carry notes too.
+      await run(
+        `update deposit_ledger set note = ${scrub('note')}
+          where lease_id = any($1) and entry_type <> 'received' and note is not null`,
+        about,
+      );
 
       // The landlord's own messages about this person ("Proof of payment from Naledi Phiri,
       // call 082…") keep their purpose but lose the details.

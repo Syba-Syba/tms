@@ -47,7 +47,7 @@ export const handler = route(async (event) => {
   }
 
   const key = `tickets/${ticketId}/${input.phase}-${crypto.randomUUID()}.${input.contentType === 'image/png' ? 'png' : 'jpg'}`;
-  const uploadUrl = await storage().presignPut(key, input.contentType, 300);
+  const uploadUrl = await storage().presignPut(key, input.contentType, 300, input.sizeBytes);
   const [photo] = await query<{ id: string }>(
     `insert into ticket_photo (ticket_id, phase, s3_key, content_type, size_bytes)
      values ($1, $2, $3, $4, $5) returning id`,

@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Button, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
+import { AuthHeading, AuthLayout } from '../components/auth-layout';
+import { TEXT_LINK } from '../components/link-button';
 import { startSession, type SessionUser } from '../lib/session';
 
 /** Opened from the emailed link. A successful reset signs the person in and ends every other session. */
@@ -53,23 +55,21 @@ export function ResetPassword() {
 
   if (!token) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
+      <AuthLayout>
         <Alert tone="danger" title="This link is incomplete">
           Open the link from the email again, or{' '}
-          <Link to="/forgot-password" className="font-bold">ask for a new one</Link>.
+          <Link to="/forgot-password" className={TEXT_LINK}>ask for a new one</Link>.
         </Alert>
-      </main>
+      </AuthLayout>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Choose a new password</h1>
-      <p className="mb-5 text-body text-ink-muted">
+    <AuthLayout>
+      <AuthHeading title="Choose a new password">
         This signs you out on every other device.
-      </p>
-      <Card>
-        <CardBody className="space-y-3">
+      </AuthHeading>
+      <div className="space-y-4">
           <Field label="New password" htmlFor="reset-password" hint="At least 8 characters.">
           <Input
             id="reset-password"
@@ -91,15 +91,14 @@ export function ResetPassword() {
             onKeyDown={(event) => event.key === 'Enter' && ready && save()}
           />
           </Field>
-          {mismatch ? <p className="text-xs text-danger">The two passwords differ.</p> : null}
-          <Button block loading={busy} disabled={!ready} onClick={save}>
+          {mismatch ? <p className="text-meta font-semibold text-danger">The two passwords differ.</p> : null}
+          <Button block size="lg" loading={busy} disabled={!ready} onClick={save}>
             Save and sign in
           </Button>
           <p className="text-center text-meta text-ink-muted">
-            Link expired? <Link to="/forgot-password" className="font-bold text-brand-500">Ask for a new one</Link>
+            Link expired? <Link to="/forgot-password" className={TEXT_LINK}>Ask for a new one</Link>
           </p>
-        </CardBody>
-      </Card>
-    </main>
+      </div>
+    </AuthLayout>
   );
 }

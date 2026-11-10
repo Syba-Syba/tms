@@ -170,7 +170,13 @@ export async function applyPaymentNotice(notice: PaymentNotice): Promise<{ appli
         [landlordId],
       );
     } else {
-      await run(`update subscription set status = 'cancelled', updated_at = now() where landlord_id = $1`, [landlordId]);
+      // Cancelling the card during the trial, before anything was paid, does not end the trial:
+      // 'cancelled' with no paid period reads as lapsed and locked the account at once.
+      await run(
+        `update subscription set status = 'cancelled', updated_at = now()
+          where landlord_id = $1 and not (status = 'trialing' and current_period_end is null)`,
+        [landlordId],
+      );
     }
     return { applied: true, refused, keptPriceCents: refused ? applyPlan!.priceCents : null };
   });

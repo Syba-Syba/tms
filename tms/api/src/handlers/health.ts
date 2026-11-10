@@ -4,6 +4,8 @@ import { query } from '../lib/db';
 import { JOBS } from '../lib/scheduler';
 
 const BACKUP_STALE_HOURS = 36;
+/** Long enough to check a restore by hand; past it the resume has been forgotten. */
+const JOBS_HOLD_HOURS = 6;
 
 const reply = (status: number, body: unknown): APIGatewayProxyResultV2 => ({
   statusCode: status,
@@ -14,7 +16,9 @@ const reply = (status: number, body: unknown): APIGatewayProxyResultV2 => ({
 /**
  * For an uptime monitor and the container's health check: 200 when the database answers, every
  * daily job has finished in the last two days and (hosted) the last backup is under 36 hours
- * old; 503 otherwise, saying which.
+ * old; 503 otherwise, saying which. Also 503 once a restore has held the jobs and the outbox
+ * (restore.sh sets JOBS_HELD_SINCE) for more than six hours: nothing is "behind" while they are
+ * off, so a forgotten `./restore.sh resume` stopped invoices and every email with health green.
  * No sign-in, and nothing in it about any landlord or tenant.
  */
 /**
@@ -50,6 +54,12 @@ export const handler = async (): Promise<APIGatewayProxyResultV2> => {
       backupStale = true;
     }
   }
-  const ok = behind.length === 0 && !backupStale;
-  return reply(ok ? 200 : 503, { ok, version, database: 'ok', jobsBehind: behind, lastRun, backup, backupStale });
+  const jobsHeldSince = process.env.JOBS_HELD_SINCE || null;
+  // A date that cannot be read counts as too long ago: the hold is real either way.
+  const heldFor = jobsHeldSince ? Date.now() - Date.parse(jobsHeldSince) : 0;
+  const jobsHeldTooLong = jobsHeldSince !== null && !(heldFor <= JOBS_HOLD_HOURS * 3_600_000);
+  const ok = behind.length === 0 && !backupStale && !jobsHeldTooLong;
+  return reply(ok ? 200 : 503, {
+    ok, version, database: 'ok', jobsBehind: behind, lastRun, backup, backupStale, jobsHeldSince, jobsHeldTooLong,
+  });
 };

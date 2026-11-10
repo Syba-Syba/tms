@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Badge, Button, Card, CardBody, Checkbox, ConfirmDialog, CurrencyInput, Drawer, EmptyState, Input, PageHeader, Textarea, useToast,
+  Avatar, Badge, Button, Card, Checkbox, ConfirmDialog, CurrencyInput, Drawer, EmptyState, Input, PageHeader, Textarea, useToast,
 } from '@hlonie/toolbox/ui';
 import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { SelectField, TextField } from '@hlonie/toolbox/forms';
@@ -15,6 +14,7 @@ import { Money } from '../components/money';
 import { formatDate, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { PAGE } from '../lib/layout';
+import { ListsLinkButton, ListsTile, ListsTiles, listsButtonClass } from '../components/lists-kit';
 
 interface Unit {
   id: string;
@@ -73,6 +73,7 @@ const PROVINCES = [
 
 export function Properties() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [addingProperty, setAddingProperty] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [addingUnitTo, setAddingUnitTo] = useState<Property | null>(null);
@@ -136,6 +137,19 @@ export function Properties() {
       return next;
     });
 
+  const vacantUnits = totals.filter((unit) => unit.status === 'vacant');
+  const heldUnits = totals.filter((unit) => unit.status === 'held');
+  const waiting = totals.reduce((sum, unit) => sum + unit.openApplications, 0);
+  // Asking rent of the let units: a signed lease keeps its own figure, shown on the lease.
+  const rentRollCents = occupied.reduce((sum, unit) => sum + unit.monthlyRentCents, 0);
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  const propertyCount = items.length === 1 ? '1 property' : `${items.length} properties`;
+  // A save here also moves the setup checklist (first property, first unit) on the overview.
+  const saved = () => {
+    void refetch();
+    void queryClient.invalidateQueries({ queryKey: ['landlord'] });
+  };
+
   return (
     <main className={PAGE.wide}>
       <PageHeader
@@ -143,20 +157,42 @@ export function Properties() {
         description={
           totals.length === 0
             ? 'Add your first property to start letting.'
-            : `${totals.length} unit${totals.length === 1 ? '' : 's'} · ${occupied.length} occupied`
+            : `${propertyCount}, ${plural(totals.length, 'unit')}`
         }
         actions={
           <div className="flex flex-wrap gap-2">
             {slug ? (
-              <a href={listingsUrl(slug)} target="_blank" rel="noreferrer"
-                className="inline-flex h-8 items-center rounded-sm border border-line px-3 text-meta font-semibold text-ink hover:bg-surface-muted">
+              <a href={listingsUrl(slug)} target="_blank" rel="noreferrer" className={listsButtonClass('outline', 'md')}>
                 Listings page
               </a>
             ) : null}
-            <Button size="sm" onClick={() => setAddingProperty(true)}>Add a property</Button>
+            <Button onClick={() => setAddingProperty(true)}>Add a property</Button>
           </div>
         }
       />
+
+      {totals.length > 0 ? (
+        <ListsTiles>
+          <ListsTile label="Units" value={totals.length} note={`in ${propertyCount}`} />
+          <ListsTile
+            label="Occupied"
+            value={`${occupied.length} of ${totals.length}`}
+            note={heldUnits.length > 0 ? `${heldUnits.length} more held for an approved applicant` : 'with a signed lease'}
+          />
+          <ListsTile
+            label="Vacant"
+            value={vacantUnits.length}
+            note={
+              vacantUnits.length === 0
+                ? 'Nothing standing empty'
+                : waiting > 0
+                  ? `${plural(waiting, 'application')} waiting`
+                  : 'No applications yet'
+            }
+          />
+          <ListsTile label="Monthly rent roll" value={<Money whole cents={rentRollCents} />} note={`from ${plural(occupied.length, 'let unit')}`} />
+        </ListsTiles>
+      ) : null}
 
       {items.length > 3 ? (
         <Input
@@ -170,119 +206,131 @@ export function Properties() {
 
       {items.length === 0 ? (
         <EmptyState
-          title="Nothing here yet"
-          description="A property holds its units; applications and leases hang off those."
+          title="No properties yet"
+          description="A property is a building or a house. Its units show here with who rents them, the rent and what is vacant."
+          action={<Button onClick={() => setAddingProperty(true)}>Add your first property</Button>}
         />
       ) : shown.length === 0 ? (
-        <p className="text-meta text-ink-muted">Nothing matches "{search}".</p>
+        <p className="text-body text-ink-muted">Nothing matches "{search}".</p>
       ) : null}
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {shown.map((property) => {
           const vacant = property.units.filter((unit) => unit.status === 'vacant').length;
           const open = isOpen(property.id);
           return (
-            <Card key={property.id}>
-              <CardBody className="space-y-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    aria-expanded={open}
-                    onClick={() => toggle(property.id)}
-                  >
-                    <p className="flex items-center gap-2 text-lead font-semibold">
-                      <ChevronRightIcon className={`shrink-0 text-ink-muted transition-transform ${open ? 'rotate-90' : ''}`} />
-                      {property.name}
-                    </p>
-                    <p className="pl-6 text-xs text-ink-muted">
-                      {property.address}
-                      <span className="block">
-                        {property.units.length} unit{property.units.length === 1 ? '' : 's'}
-                        {vacant > 0 ? `, ${vacant} vacant` : property.units.length > 0 ? ', fully let' : ''}
-                      </span>
-                    </p>
-                  </button>
-                  <div className="flex shrink-0 items-center gap-2 pl-6 sm:pl-0">
-                    <Button size="sm" variant="outline" onClick={() => setAddingUnitTo(property)}>
-                      Add a unit
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingProperty(property)}>
-                      Edit property
-                    </Button>
-                  </div>
+            <Card key={property.id} className="overflow-hidden">
+              <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)]"
+                  aria-expanded={open}
+                  onClick={() => toggle(property.id)}
+                >
+                  <span className="flex items-center gap-2 text-title font-bold text-ink">
+                    <ChevronRightIcon className={`shrink-0 text-ink-muted transition-transform ${open ? 'rotate-90' : ''}`} />
+                    {property.name}
+                  </span>
+                  <span className="mt-0.5 block pl-6 text-meta text-ink-muted">{property.address}</span>
+                  <span className="mt-2 flex flex-wrap gap-1.5 pl-6">
+                    <Badge tone="neutral">{plural(property.units.length, 'unit')}</Badge>
+                    {vacant > 0 ? (
+                      <Badge tone="warning">{vacant} vacant</Badge>
+                    ) : property.units.length > 0 ? (
+                      <Badge tone="success">Fully let</Badge>
+                    ) : null}
+                  </span>
+                </button>
+                <div className="flex shrink-0 items-center gap-2 pl-6 sm:pl-0">
+                  <Button size="sm" variant="secondary" onClick={() => setAddingUnitTo(property)}>
+                    Add a unit
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditingProperty(property)}>
+                    Edit property
+                  </Button>
                 </div>
+              </div>
 
-                {open && property.units.length === 0 ? (
-                  <p className="text-meta text-ink-muted">No units yet.</p>
-                ) : null}
+              {open && property.units.length === 0 ? (
+                <p className="border-t border-line-soft px-5 py-4 text-body text-ink-muted">
+                  No units yet. Add one to set its rent and take applications.
+                </p>
+              ) : null}
 
-                {open ? (
-                  <div className="space-y-2">
-                    {property.units.map((unit) => {
-                      const shownStatus = status(unit.status);
-                      return (
-                        <div
-                          key={unit.id}
-                          className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2 last:border-0 last:pb-0"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-body font-semibold">
-                              {unit.code}
-                              <span className="ml-2 text-xs font-normal text-ink-muted">
-                                {unit.bedrooms} bed · {unit.bathrooms} bath
-                                {unit.status === 'vacant'
-                                  ? unit.listing.listed
-                                    ? ` · ${unit.listing.photos.length} photo${unit.listing.photos.length === 1 ? '' : 's'}`
-                                    : ' · hidden from listings'
-                                  : ''}
-                              </span>
-                            </p>
-                            <p className="text-xs text-ink-muted">
-                              {unit.status === 'occupied' && unit.tenant
-                                ? `${unit.tenant}${unit.leaseEnd ? ` · until ${formatDate(unit.leaseEnd)}` : ''}`
-                                : unit.openApplications > 0
-                                  ? `${unit.openApplications} application${unit.openApplications > 1 ? 's' : ''} waiting`
-                                  : 'No applications yet'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 sm:gap-3">
-                            <Money cents={unit.monthlyRentCents} className="text-lead" />
-                            <Badge tone={shownStatus.tone}>{shownStatus.label}</Badge>
-                            {unit.status === 'occupied' && unit.leaseId ? (
-                              <Link
-                                to={`/leases/${unit.leaseId}`}
-                                aria-label={`Lease for ${unit.code}`}
-                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 "
-                              >
-                                Lease
-                              </Link>
-                            ) : (
-                              <button
-                                type="button"
-                                aria-label={`Copy the application link for ${unit.code}`}
-                                className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-bold text-brand-500 disabled:opacity-40"
-                                disabled={!slug}
-                                onClick={() => copyApplicationLink(unit)}
-                              >
-                                Copy apply link
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              aria-label={`Edit ${unit.code}`}
-                              className="inline-flex min-h-11 items-center px-1 sm:min-h-6 text-meta font-semibold text-ink-muted hover:text-ink "
-                              onClick={() => setEditingUnit(unit)}
-                            >
-                              Edit
-                            </button>
-                          </div>
+              {open && property.units.length > 0 ? (
+                <div className="divide-y divide-line-soft border-t border-line-soft">
+                  {property.units.map((unit) => {
+                    const shownStatus = status(unit.status);
+                    return (
+                      <div key={unit.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-3.5">
+                        <div className="w-24 shrink-0">
+                          <p className="break-words text-title font-bold text-ink">{unit.code}</p>
+                          <p className="text-meta text-ink-muted">{unit.bedrooms} bed · {unit.bathrooms} bath</p>
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </CardBody>
+
+                        {unit.status === 'occupied' && unit.tenant ? (
+                          <div className="flex min-w-0 flex-1 basis-44 items-center gap-3">
+                            <Avatar name={unit.tenant} />
+                            <div className="min-w-0">
+                              <p className="truncate text-body font-semibold text-ink">{unit.tenant}</p>
+                              {unit.leaseEnd ? <p className="text-meta text-ink-muted">Lease until {formatDate(unit.leaseEnd)}</p> : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="min-w-0 flex-1 basis-44">
+                            <p className="text-body font-semibold text-ink">
+                              {unit.status === 'held' ? 'Held for an approved applicant' : 'Vacant'}
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-meta text-ink-muted">
+                              {unit.openApplications > 0
+                                ? `${plural(unit.openApplications, 'application')} waiting`
+                                : unit.status === 'held' ? 'The lease is being signed' : 'No applications yet'}
+                              {unit.status === 'vacant' ? (
+                                unit.listing.listed
+                                  ? <Badge tone="neutral">{unit.listing.photos.length === 0 ? 'No photos yet' : plural(unit.listing.photos.length, 'photo')}</Badge>
+                                  : <Badge tone="neutral">Hidden from listings</Badge>
+                              ) : null}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-3 lg:w-52 lg:justify-end">
+                          <Money whole cents={unit.monthlyRentCents} className="text-lead text-ink" />
+                          <Badge tone={shownStatus.tone}>{shownStatus.label}</Badge>
+                        </div>
+
+                        <div className="flex w-full flex-wrap gap-2 lg:w-72 lg:justify-end">
+                          {unit.status === 'occupied' && unit.leaseId ? (
+                            <ListsLinkButton to={`/leases/${unit.leaseId}`} aria-label={`Lease for ${unit.code}`}>
+                              Open lease
+                            </ListsLinkButton>
+                          ) : null}
+                          {unit.status !== 'occupied' && unit.openApplications > 0 ? (
+                            <ListsLinkButton to="/applications" variant="secondary" aria-label={`Review applications for ${unit.code}`}>
+                              Review
+                            </ListsLinkButton>
+                          ) : null}
+                          {/* Only a vacant unit takes applications; a held one has its applicant. */}
+                          {unit.status === 'vacant' ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              aria-label={`Copy the application link for ${unit.code}`}
+                              disabled={!slug}
+                              onClick={() => copyApplicationLink(unit)}
+                            >
+                              Copy apply link
+                            </Button>
+                          ) : null}
+                          <Button size="sm" variant="outline" aria-label={`Edit ${unit.code}`} onClick={() => setEditingUnit(unit)}>
+                            Edit
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </Card>
           );
         })}
@@ -292,25 +340,25 @@ export function Properties() {
         open={addingProperty}
         property={null}
         onClose={() => setAddingProperty(false)}
-        onSaved={() => { setAddingProperty(false); refetch(); }}
+        onSaved={() => { setAddingProperty(false); saved(); }}
       />
       <PropertyDrawer
         open={Boolean(editingProperty)}
         property={editingProperty}
         onClose={() => setEditingProperty(null)}
-        onSaved={() => { setEditingProperty(null); refetch(); }}
+        onSaved={() => { setEditingProperty(null); saved(); }}
       />
       <UnitDrawer
         property={addingUnitTo}
         unit={null}
         onClose={() => setAddingUnitTo(null)}
-        onSaved={() => { setAddingUnitTo(null); refetch(); }}
+        onSaved={() => { setAddingUnitTo(null); saved(); }}
       />
       <UnitDrawer
         property={null}
         unit={editingUnit}
         onClose={() => setEditingUnit(null)}
-        onSaved={() => { setEditingUnit(null); refetch(); }}
+        onSaved={() => { setEditingUnit(null); saved(); }}
         onPhotosChanged={() => refetch()}
       />
     </main>
@@ -326,6 +374,7 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
 }) {
   const toast = useToast();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
   // Removing stock is the owner's call; an agent's attempt would be refused anyway.
   const isOwner = useLandlord().data?.me.role === 'owner';
   const { control, handleSubmit, reset, formState } = useForm<PropertyForm>({
@@ -347,6 +396,9 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
   });
 
   const remove = async () => {
+    // One removal at a time: a second tap used to send a second DELETE and a false "Not removed".
+    if (removing) return;
+    setRemoving(true);
     try {
       await api.delete(`/properties/${property!.id}`);
       toast.show({ title: 'Property removed', tone: 'info' });
@@ -355,6 +407,7 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
       // The server refuses while units exist; the message says exactly that.
       toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
     } finally {
+      setRemoving(false);
       setConfirmingRemove(false);
     }
   };
@@ -390,7 +443,7 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
         </div>
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
         {property && isOwner ? (
-          <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
+          <Button block variant="outline" onClick={() => setConfirmingRemove(true)}>
             Remove this property
           </Button>
         ) : null}
@@ -401,6 +454,7 @@ function PropertyDrawer({ open, property, onClose, onSaved }: {
         title={property ? `Remove ${property.name}` : 'Remove'}
         description="A property only goes once it has no units. Nothing with lease history can be removed."
         confirmLabel="Remove"
+        loading={removing}
         onConfirm={remove}
       />
     </Drawer>
@@ -417,10 +471,13 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
 }) {
   const toast = useToast();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const isOwner = useLandlord().data?.me.role === 'owner';
   const open = Boolean(property || unit);
 
   const remove = async () => {
+    if (removing) return;
+    setRemoving(true);
     try {
       await api.delete(`/units/${unit!.id}`);
       toast.show({ title: 'Unit removed', tone: 'info' });
@@ -429,6 +486,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
       // Lease history or applications on file: the server explains which.
       toast.show({ title: 'Not removed', description: humanError(error), tone: 'danger' });
     } finally {
+      setRemoving(false);
       setConfirmingRemove(false);
     }
   };
@@ -556,11 +614,11 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
           <TextField control={control} name="bathrooms" label="Bathrooms" inputMode="numeric" required />
         </div>
         <div>
-          <p className="mb-1 text-meta font-medium" aria-hidden>Monthly rent</p>
+          <p className="mb-1 text-meta font-semibold text-ink" aria-hidden>Monthly rent</p>
           <CurrencyInput aria-label="Monthly rent" cents={rentCents} onCentsChange={(next) => setRentCents(next ?? 0)} />
         </div>
         <div>
-          <p className="mb-1 text-meta font-medium" aria-hidden>Deposit</p>
+          <p className="mb-1 text-meta font-semibold text-ink" aria-hidden>Deposit</p>
           <CurrencyInput aria-label="Deposit" cents={depositCents} onCentsChange={(next) => setDepositCents(next ?? 0)} />
           <p className="mt-1 text-xs text-ink-muted">
             Usually one month. It sits in a ledger and earns the tenant interest.
@@ -574,11 +632,11 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
         {unit ? (
           <section aria-label="Listing" className="space-y-3 border-t border-line pt-4">
             <div>
-              <p className="text-body font-semibold">Listing</p>
+              <p className="text-lead font-bold text-ink">Listing</p>
               <p className="text-xs text-ink-muted">What applicants see on your listings page while the unit is vacant.</p>
             </div>
             <div>
-              <p className="mb-1 text-meta font-medium">Photos</p>
+              <p className="mb-1 text-meta font-semibold">Photos</p>
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((photo) => (
                   <div key={photo.id} className="relative aspect-[4/3] overflow-hidden rounded-sm border border-line bg-surface-muted">
@@ -592,7 +650,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
                 ))}
                 {photos.length < MAX_PHOTOS ? (
                   <button type="button" disabled={photoBusy !== null} onClick={addPhoto}
-                    className="flex aspect-[4/3] items-center justify-center rounded-sm border border-dashed border-line text-meta font-semibold text-brand-500">
+                    className="flex aspect-[4/3] items-center justify-center rounded-sm border-2 border-dashed border-brand-200 bg-brand-50 text-meta font-semibold text-brand-600 hover:border-brand-500">
                     {photoBusy === 'adding' ? 'Uploading…' : 'Add a photo'}
                   </button>
                 ) : null}
@@ -600,19 +658,19 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
               <p className="mt-1 text-xs text-ink-muted">Up to {MAX_PHOTOS}. The first one leads the listing.</p>
             </div>
             <div>
-              <label htmlFor="unit-description" className="mb-1 block text-meta font-medium">Description</label>
+              <label htmlFor="unit-description" className="mb-1 block text-meta font-semibold">Description</label>
               <Textarea id="unit-description" rows={4} maxLength={2000} value={listing.description}
                 placeholder="Light, quiet, close to the Gautrain. Prepaid electricity, water included."
                 onChange={(event) => setListing({ ...listing, description: event.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="unit-available" className="mb-1 block text-meta font-medium">Available from</label>
+                <label htmlFor="unit-available" className="mb-1 block text-meta font-semibold">Available from</label>
                 <Input id="unit-available" type="date" value={listing.availableFrom}
                   onChange={(event) => setListing({ ...listing, availableFrom: event.target.value })} />
               </div>
               <div>
-                <label htmlFor="unit-parking" className="mb-1 block text-meta font-medium">Parking bays</label>
+                <label htmlFor="unit-parking" className="mb-1 block text-meta font-semibold">Parking bays</label>
                 <Input id="unit-parking" inputMode="numeric" value={listing.parkingBays}
                   onChange={(event) => setListing({ ...listing, parkingBays: event.target.value.replace(/\D/g, '').slice(0, 2) })} />
               </div>
@@ -629,7 +687,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
         ) : null}
         <Button block loading={formState.isSubmitting} onClick={submit}>Save</Button>
         {unit && isOwner ? (
-          <Button block variant="ghost" onClick={() => setConfirmingRemove(true)}>
+          <Button block variant="outline" onClick={() => setConfirmingRemove(true)}>
             Remove this unit
           </Button>
         ) : null}
@@ -640,6 +698,7 @@ function UnitDrawer({ property, unit, onClose, onSaved, onPhotosChanged }: {
         title={unit ? `Remove ${unit.code}` : 'Remove'}
         description="Only a unit with no lease history and no applications can be removed. Anything with a paper trail stays."
         confirmLabel="Remove"
+        loading={removing}
         onConfirm={remove}
       />
     </Drawer>

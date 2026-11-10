@@ -131,7 +131,7 @@ describe('withdrawing a notice (item 43)', () => {
     on('GET /properties', { items: [] });
     on('POST /applications/a2/withdraw', { id: 'a2', status: 'withdrawn' });
     mount('/applications', <Route path="/applications" element={<LandlordQueue />} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Approved/ }));
     fireEvent.click((await screen.findAllByRole('button', { name: 'Withdraw' }))[0]!);
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Withdraw the application' }));
     await waitFor(() => expect(callsTo('POST /applications/a2/withdraw')).toHaveLength(1));
@@ -256,7 +256,7 @@ describe('the landlord’s dashboard (items 47, 52, 53, 60)', () => {
     quiet();
     on('GET /leases', { items: [row({ outstandingCents: 780000, overdueCents: 0 })] });
     mount('/', <Route path="/" element={<Home />} />);
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: /^Good (morning|afternoon|evening)/ });
     expect(screen.queryByText(/behind on rent/)).toBeNull();
     expect(screen.queryByText(/Thandi owes/)).toBeNull();
     expect(screen.getAllByText(/not yet due/).length).toBeGreaterThan(0);
@@ -289,7 +289,7 @@ describe('the landlord’s dashboard (items 47, 52, 53, 60)', () => {
       ],
     });
     mount('/', <Route path="/" element={<Home />} />);
-    expect(await screen.findByText('1 lease running.')).toBeTruthy();
+    expect(await screen.findByText(/· 1 lease running$/)).toBeTruthy();
     expect(screen.queryByText(/Offer a renewal, or plan the exit/)).toBeNull();
   });
 
@@ -556,6 +556,9 @@ describe('a charge changed on the lease page (item 58)', () => {
       </QueryClientProvider>,
     );
     fireEvent.click(await screen.findByRole('button', { name: /^Remove Water/ }));
+    // Removing changes what the tenant owes, so it asks first.
+    expect(callsTo('DELETE /leases/l1/charges/c1')).toHaveLength(0);
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove the charge' }));
     await screen.findByText('Charge removed');
     await waitFor(() => {
       expect(client.getQueryState(['leases'])?.isInvalidated).toBe(true);

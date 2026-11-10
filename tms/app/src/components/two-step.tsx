@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { encode } from 'uqr';
-import { Alert, Badge, Button, Card, CardBody, Input, Modal, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Input, Modal, useToast } from '@hlonie/toolbox/ui';
+import { SettingsCard } from './settings-nav';
 import { api, humanError } from '../api/client';
 
 interface Status { enabled: boolean; recoveryCodesLeft: number }
@@ -10,7 +11,7 @@ interface Status { enabled: boolean; recoveryCodesLeft: number }
 function QrCode({ value }: { value: string }) {
   const { data, size } = useMemo(() => encode(value, { border: 2 }), [value]);
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48 rounded-sm bg-white" role="img" aria-label="QR code to scan">
+    <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48 rounded-sm border border-line bg-white" role="img" aria-label="QR code to scan">
       {data.flatMap((row, y) =>
         row.map((dark, x) => (dark ? <rect key={`${x}-${y}`} x={x} y={y} width={1.02} height={1.02} fill="#111" /> : null)),
       )}
@@ -89,31 +90,28 @@ export function TwoStep() {
   };
 
   return (
-    <section aria-label="Two-step sign-in">
-      <h2 className="label mb-2">Two-step sign-in</h2>
-      <Card>
-        <CardBody className="space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-meta text-ink">
-              After your password, a six-digit code from an app on your phone: Google Authenticator, Microsoft
-              Authenticator or similar. Someone who learns your password still cannot sign in.
-            </p>
-            <Badge tone={data.enabled ? 'success' : 'neutral'}>{data.enabled ? 'On' : 'Off'}</Badge>
-          </div>
+    <>
+      <SettingsCard
+        title="Two-step sign-in"
+        action={<Badge tone={data.enabled ? 'success' : 'neutral'}>{data.enabled ? 'On' : 'Off'}</Badge>}
+      >
+          <p className="text-body text-ink-muted">
+            After your password, a six-digit code from an app on your phone: Google Authenticator, Microsoft
+            Authenticator or similar. Someone who learns your password still cannot sign in.
+          </p>
           {data.enabled ? (
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-xs text-ink-muted">{data.recoveryCodesLeft} recovery codes left.</p>
               <Button size="sm" variant="outline" onClick={() => { setDisabling(true); setCode(''); }}>Turn off</Button>
+              <p className="text-meta text-ink-muted">{data.recoveryCodesLeft} recovery codes left.</p>
             </div>
           ) : (
-            <Button size="sm" loading={busy} onClick={() => { setPassword(''); setConfirming(true); }}>Turn on</Button>
+            <Button variant="secondary" loading={busy} onClick={() => { setPassword(''); setConfirming(true); }}>Turn on</Button>
           )}
-        </CardBody>
-      </Card>
+      </SettingsCard>
 
       <Modal open={confirming} onOpenChange={(open) => { if (!open) { setConfirming(false); setPassword(''); } }} title="Turn on two-step sign-in"
         description="First, your password. It keeps anyone using an unlocked device from turning this on for you.">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <Input type="password" aria-label="Your password" placeholder="Your password" autoComplete="current-password"
             value={password} onChange={(event) => setPassword(event.target.value)} />
           <Button block loading={busy} disabled={!password} onClick={start}>Continue</Button>
@@ -123,9 +121,9 @@ export function TwoStep() {
       <Modal open={setup !== null} onOpenChange={(open) => { if (!open) { setSetup(null); setPassword(''); } }} title="Turn on two-step sign-in"
         description="Scan this with your authenticator app, then type the code it shows.">
         {setup ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex justify-center"><QrCode value={setup.otpauthUrl} /></div>
-            <p className="text-center text-xs text-ink-muted">
+            <p className="text-center text-meta text-ink-muted">
               Cannot scan? Enter this key in the app instead:
               <span className="mt-1 block break-all font-mono text-meta text-ink">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</span>
             </p>
@@ -139,14 +137,14 @@ export function TwoStep() {
       <Modal open={recovery !== null} onOpenChange={(open) => { if (!open) setRecovery(null); }} title="Keep these recovery codes"
         description="If you lose your phone, each one signs you in once. They are shown only now.">
         {recovery ? (
-          <div className="space-y-3">
-            <ol className="grid grid-cols-2 gap-2 rounded-sm border border-line bg-surface-muted p-3 font-mono text-body">
+          <div className="space-y-4">
+            <ol className="grid grid-cols-2 gap-2 rounded-sm border border-line bg-surface-muted p-4 font-mono text-body text-ink">
               {recovery.map((item) => <li key={item}>{item}</li>)}
             </ol>
             <Alert tone="warning" title="Store them away from your phone">
               In a password manager, or printed and filed with your property papers.
             </Alert>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" onClick={saveCodes}>Download</Button>
               <Button onClick={() => setRecovery(null)}>I have saved them</Button>
             </div>
@@ -156,7 +154,7 @@ export function TwoStep() {
 
       <Modal open={disabling} onOpenChange={setDisabling} title="Turn off two-step sign-in"
         description="Your password alone will sign you in again. Owners cannot change the bank account while it is off.">
-        <div className="space-y-3">
+        <div className="space-y-4">
           <Input type="password" aria-label="Your password" placeholder="Your password" autoComplete="current-password"
             value={password} onChange={(event) => setPassword(event.target.value)} />
           <Input aria-label="Code from the app" inputMode="numeric" autoComplete="one-time-code" placeholder="Code from the app"
@@ -164,6 +162,6 @@ export function TwoStep() {
           <Button block variant="danger" loading={busy} disabled={!password || code.trim().length < 6} onClick={disable}>Turn off</Button>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

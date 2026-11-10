@@ -123,7 +123,27 @@ export const serveNoticeSchema = z.object({
   // Only supplied when the parties agree a later date than the minimum.
   effectiveOn: z.coerce.date().optional(),
   penaltyCents: z.number().int().min(0).optional(),
+  // The tenant's written notice and the landlord's statement that it is genuine. Given with a
+  // tenant's or mutual notice the landlord records, the notice stands without the tenant
+  // confirming it in the app. Both or neither.
+  evidenceKey: z.string().min(1).max(400).optional(),
+  statement: z.string().trim().min(10).max(1000).optional(),
 });
+
+export const attestNoticeSchema = z.object({
+  evidenceKey: z.string().min(1).max(400),
+  statement: z.string().trim().min(10).max(1000),
+});
+
+export const refundPaidSchema = z.object({
+  paidOn: z.iso.date(),
+  reference: z.string().trim().min(1).max(60),
+});
+
+/** True for a notice that binds: every notice except one the landlord recorded for the tenant
+    that the tenant has not confirmed (and the landlord has not attested). `t` is the alias. */
+export const noticeInForceSql = (t: string) =>
+  `not (${t}.needs_tenant_confirmation and ${t}.tenant_confirmed_at is null)`;
 
 /** CPA s14(2)(d): a fixed term that runs past its end date carries on month to month, and
     either party ends it on 20 business days' notice. */
@@ -161,7 +181,9 @@ export function maxCancellationPenaltyCents(monthlyRentCents: number, effectiveO
 
 export type Initiator = 'tenant' | 'landlord' | 'mutual';
 
-const runOut = (noticeGivenOn: Date, leaseEnd: Date) => leaseEnd <= noticeGivenOn;
+// Strictly after: on its last day a fixed term has not run out, and notice given that day
+// still ends it on the end date.
+const runOut = (noticeGivenOn: Date, leaseEnd: Date) => leaseEnd < noticeGivenOn;
 
 /** A landlord's end-of-term notice served too close to the end date. The lease then continues
     month to month, so it ends on 20 business days' notice, not on the end date: before this a

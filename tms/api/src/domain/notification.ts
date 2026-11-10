@@ -54,6 +54,15 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `We received ${d('amount')} on ${d('receivedOn')}. ${d('balanceLine')}\n\n${d('unit')}`,
   },
+  // The tenant was told the money arrived, so they hear when that entry is taken back.
+  payment_reversed: {
+    category: 'money',
+    urgent: false,
+    subject: (d) => `Payment of ${d('amount')} reversed`,
+    body: (d) =>
+      `Your landlord reversed the payment of ${d('amount')} recorded for ${d('receivedOn')}. Reason given: ${d('reason')}\n\n` +
+      `It no longer counts towards your rent. If you did make this payment, send your landlord the proof.\n\n${d('unit')}`,
+  },
   rent_overdue: {
     category: 'money',
     urgent: false,
@@ -256,6 +265,34 @@ export const TEMPLATES: Record<string, Template> = {
       `Your landlord recorded a notice, dated ${d('noticeGivenOn')}, that ends the lease for ${d('unit')} on ${d('effectiveOn')}.${d('penaltyLine')}\n\n` +
       `It needs your confirmation in the app. If you did not agree to it, withdraw it there instead.`,
   },
+  // Sent from the sweep while a recorded notice waits: it does nothing until the tenant answers.
+  notice_confirm_reminder: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `Still waiting for you: the notice ending the lease for ${d('unit')} on ${d('effectiveOn')}`,
+    body: (d) =>
+      `Your landlord recorded a notice that ends the lease for ${d('unit')} on ${d('effectiveOn')}, and it still needs your answer.\n\n` +
+      `Until you confirm it in the app the lease carries on and rent is billed as usual. If you did not agree to it, withdraw it there instead.`,
+  },
+  notice_awaiting_tenant: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `The tenant has not confirmed the notice for ${d('unit')}`,
+    body: (d) =>
+      `You recorded a notice ending the lease for ${d('unit')} on ${d('effectiveOn')} on ${d('recordedOn')}, and the tenant has not confirmed it.\n\n` +
+      `${d('stateLine')}\n\n${d('nextLine')}`,
+  },
+  // The landlord vouched for the tenant's written notice; the tenant must be able to object.
+  notice_attested: {
+    category: 'deadline',
+    urgent: true,
+    subject: (d) => `Notice recorded: the lease for ${d('unit')} ends ${d('effectiveOn')}`,
+    body: (d) =>
+      `Your landlord recorded your written notice ending the lease for ${d('unit')} on ${d('effectiveOn')}, attached a copy of it, ` +
+      `and stated that it is genuine. It stands without you confirming it.${d('penaltyLine')}\n\n` +
+      `You can open the attached notice on the lease in the app. If you did not give this notice, withdraw it there before ${d('effectiveOn')}, ` +
+      `or tell your landlord in writing. A dispute that is not resolved goes to the Rental Housing Tribunal.`,
+  },
   notice_confirmed: {
     category: 'deadline',
     urgent: false,
@@ -281,6 +318,14 @@ export const TEMPLATES: Record<string, Template> = {
     body: (d) =>
       `The ${d('withdrawnBy')} withdrew the notice that would have ended the lease for ${d('unit')} on ${d('effectiveOn')}.\n\n` +
       `The lease carries on as before, and rent is billed as usual. Any exit inspection booked for that date is cancelled.`,
+  },
+  refund_paid: {
+    category: 'deadline',
+    urgent: false,
+    subject: (d) => `Deposit refund of ${d('amount')} paid`,
+    body: (d) =>
+      `Your landlord recorded that the ${d('amount')} refund for ${d('unit')} was paid on ${d('paidOn')}, reference ${d('reference')}.\n\n` +
+      `If it has not reached your account in a few days, ask your landlord for the proof of payment.`,
   },
   refund_due_soon: {
     category: 'deadline',

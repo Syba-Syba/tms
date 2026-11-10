@@ -146,7 +146,7 @@ describe('withdrawing an application', () => {
 
     const done = await withdraw(id, applicant);
     expect(done.status).toBe(200);
-    expect(done.body).toEqual({ id, status: 'withdrawn' });
+    expect(done.body).toEqual({ id, status: 'withdrawn', depositToRefundCents: 0 });
     expect(await unitStatus(unit)).toBe('vacant');
     const [row] = await db.query<{ decided_at: string | null }>('select decided_at from application where id = $1', [id]);
     expect(row!.decided_at).toBeTruthy();

@@ -36,7 +36,8 @@ export const handler = route(async (event) => {
   const method = event.requestContext.http.method;
   if (method === 'GET') return json(200, { enabled: credential.enabled, recoveryCodesLeft: Number(credential.codes_left) });
 
-  const action = (JSON.parse(event.body ?? '{}') as { action?: string }).action;
+  // parseBody, so a body that is not JSON, or not an object, is a 400 like any other.
+  const { action } = parseBody(event, z.object({ action: z.string().optional() }));
   // Wrong passwords are counted, and answered with a 403 so the app shows the error instead of
   // treating it as an expired session.
   const confirmPassword = (given: string) => {

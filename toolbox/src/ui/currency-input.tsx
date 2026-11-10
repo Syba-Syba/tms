@@ -103,7 +103,7 @@ export const CurrencyInput = forwardRef<
           onCentsChange(parsed);
         }}
         aria-invalid={invalid || undefined}
-        className="w-full bg-transparent px-3 text-right text-body tabular-nums text-ink outline-none"
+        className="w-full bg-transparent px-3 text-right text-body text-ink outline-none"
         placeholder="0.00"
         {...props}
       />

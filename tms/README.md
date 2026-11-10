@@ -279,10 +279,14 @@ Apple developer fee, and the service worker gives them offline reads.
 | POST | /inspections/{id}/reopen | both | back to in progress to fix a disputed finding; withdraws any signature, refused once both have signed |
 | GET | /terminations/{id}/settlement | landlord | preview of the settlement: deposit held, each claim, and the exact refund or amount owed, with the refund due date |
 | POST | /terminations/{id}/withdraw | both | the party who gave the notice (either, for a mutual one) withdraws it before its end date and before settlement; a tenant may also withdraw a notice the landlord recorded for them and they never confirmed. Restores the invoices it trimmed and any renewal it lapsed that still stands, cancels the booked exit inspection, tells the other party |
-| POST | /terminations/{id}/confirm | tenant | confirm a mutual notice, or a backdated tenant notice, that the landlord recorded; until then the deposit cannot be settled |
+| POST | /terminations/{id}/confirm | tenant | confirm a tenant's or mutual notice that the landlord recorded. Until then it is not in force: rent is billed, renewals stand and the deposit cannot be settled; confirming trims the invoices and lapses renewals. Refused once the end date has passed |
+| POST | /leases/{id}/notice-evidence/presign | landlord | upload link for the tenant's written notice (JPEG, PNG or PDF), to attach when recording or attesting to a notice |
+| POST | /terminations/{id}/attest | landlord | owner or agent attaches the tenant's written notice and a statement, which puts an unconfirmed notice in force without the tenant; audited, and the tenant is told and may withdraw it before the end date |
+| POST | /terminations/{id}/refund-paid | landlord | record the date and reference of the refund actually paid on a settled deposit; shown on the lease, stops the refund reminders |
+| POST | /payments/{id}/reverse | landlord | undo a payment recorded by mistake, with a reason: a negative reversal entry re-opens the invoice; refused once the deposit is settled, and the same payment is reversed once |
 | POST | /files/view | varies | swap any stored key for a short-lived signed URL, authorised per family |
 
-One hundred and twelve routes in all; the table lists the shape of each family rather than every verb.
+One hundred and sixteen routes in all; the table lists the shape of each family rather than every verb.
 
 ## Rules encoded in the schema, not the UI
 

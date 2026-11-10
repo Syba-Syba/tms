@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router';
-import { Button, Card, CardBody, Checkbox, Input, SegmentedControl, useToast } from '@hlonie/toolbox/ui';
+import { Button, Checkbox, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { TERMS_VERSION } from '../lib/terms';
+import { AuthHeading, AuthLayout } from '../components/auth-layout';
+import { TEXT_LINK } from '../components/link-button';
 
 type Kind = 'tenant' | 'landlord';
 
@@ -63,23 +65,34 @@ export function Register() {
   const ready = missing.length === 0;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Create an account</h1>
-      <p className="mb-5 text-body text-ink-muted">
+    <AuthLayout>
+      <AuthHeading title="Create an account">
         {kind === 'landlord'
           ? 'Leases, rent, deposits and repairs for your rentals, kept the way the law asks.'
           : 'One account carries your application through to the lease, the deposit and beyond.'}
-      </p>
-      <Card>
-        <CardBody className="space-y-3">
-          <SegmentedControl
-            options={[
-              { value: 'tenant', label: 'I am renting' },
-              { value: 'landlord', label: 'I let property' },
-            ]}
-            value={kind}
-            onChange={setKind}
-          />
+      </AuthHeading>
+      <div className="space-y-4">
+          {/* Two big choices rather than a small toggle: which one you are decides the whole form. */}
+          <div role="tablist" aria-label="Who the account is for" className="grid grid-cols-2 gap-2">
+            {([
+              { value: 'tenant', label: 'I am renting', hint: 'Apply, sign and pay' },
+              { value: 'landlord', label: 'I let property', hint: 'Run your rentals' },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={kind === option.value}
+                onClick={() => setKind(option.value)}
+                className={`rounded-md border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)] focus-visible:ring-offset-2 ${
+                  kind === option.value ? 'border-brand-500 bg-brand-50' : 'border-line bg-surface hover:bg-surface-muted'
+                }`}
+              >
+                <span className="block text-body font-bold text-ink">{option.label}</span>
+                <span className="block text-meta text-ink-muted">{option.hint}</span>
+              </button>
+            ))}
+          </div>
           {kind === 'landlord' ? (
             <>
               <Field label="Business name" htmlFor="reg-business" hint="Or your own name, if you have no company.">
@@ -140,31 +153,30 @@ export function Register() {
               kind === 'landlord' ? (
                 <span>
                   I have read the{' '}
-                  <Link to="/terms" target="_blank" className="font-bold text-brand-500">terms of service</Link> and{' '}
-                  <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                  <Link to="/terms" target="_blank" className={TEXT_LINK}>terms of service</Link> and{' '}
+                  <Link to="/privacy" target="_blank" className={TEXT_LINK}>privacy notice</Link>{' '}
                   and agree to them
                 </span>
               ) : (
                 <span>
                   I have read the{' '}
-                  <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                  <Link to="/privacy" target="_blank" className={TEXT_LINK}>privacy notice</Link>{' '}
                   and agree to it
                 </span>
               )
             }
           />
-          <Button block loading={busy} disabled={!ready} onClick={create}>
+          <Button block size="lg" loading={busy} disabled={!ready} onClick={create}>
             Create the account
           </Button>
           {!ready ? (
-            <p className="text-center text-xs text-ink-muted">Still needed: {missing.join(', ')}.</p>
+            <p className="text-center text-meta text-ink-muted">Still needed: {missing.join(', ')}.</p>
           ) : null}
           <p className="text-center text-meta text-ink-muted">
             Already have one?{' '}
-            <Link to="/login" className="font-bold text-brand-500">Sign in</Link>
+            <Link to="/login" className={TEXT_LINK}>Sign in</Link>
           </p>
-        </CardBody>
-      </Card>
-    </main>
+      </div>
+    </AuthLayout>
   );
 }

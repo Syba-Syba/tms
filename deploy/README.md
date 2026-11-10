@@ -52,7 +52,8 @@ database is unreadable without it.
   says `FAILED: OFFSITE COPY` and `/health` turns red after 36 hours. See it with
   `docker compose logs backup`.
 - **Health**: `https://<domain>/health` answers 200 when the database is up, every daily job ran
-  in the last two days, and the last backup is under 36 hours old; otherwise 503 and why. Point
+  in the last two days, and the last backup is under 36 hours old; otherwise 503 and why. It
+  also turns red when a restore has held the jobs for over six hours (`./restore.sh resume`). Point
   an uptime monitor at it (UptimeRobot and Better Stack are free at this size) with alerts to
   your phone.
 - **Alerts**: unhandled errors and failed jobs are emailed to `ALERT_EMAIL`, at most once an

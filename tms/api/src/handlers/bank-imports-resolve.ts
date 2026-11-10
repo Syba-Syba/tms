@@ -85,7 +85,10 @@ export const handler = route(async (event) => {
         // Link the line to that payment instead.
         const [recorded] = await run<{ id: string }>(
           `select pp.id from payment_proof pp
-            where pp.lease_id = $1 and pp.status = 'accepted' and pp.target = 'invoice' and pp.amount_cents = $2
+            where pp.lease_id = $1 and pp.status = 'accepted' and pp.target = 'invoice'
+              -- What was recorded for the slip, not what the slip said: the landlord may have
+              -- accepted it for the amount that actually arrived, and this line is that amount.
+              and (select sum(p.amount_cents) from payment p where p.proof_id = pp.id) = $2::bigint
               -- A transfer is posted on or after the day the slip says it was paid (a day's grace).
               and pp.paid_on between $3::date - 14 and $3::date + 1
               and exists (select 1 from payment p where p.proof_id = pp.id)

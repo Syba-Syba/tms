@@ -4,7 +4,7 @@ import { requireLandlord } from '../lib/auth';
 import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
-import { hasSafeDimensions, sniffImageType } from '../lib/images';
+import { UPLOAD_LIMITS, hasSafeDimensions, imageDimensions, sniffImageType } from '../lib/images';
 import { removeDraft, withdrawDraft } from './inspections-render';
 import { isEmbeddableImage } from '../lib/pdf';
 import { MAX_TICKET_PHOTOS } from './tickets-photo-presign';
@@ -65,7 +65,7 @@ export const handler = route(async (event) => {
   const type = sniffImageType(bytes);
   if (!type) throw badRequest('That upload is not a JPEG or PNG photo.');
   // Read from the header before anything decodes it: a 35 KB PNG can name 36 megapixels.
-  if (!hasSafeDimensions(bytes)) throw badRequest('That photo is too large. Take it again at a normal size.');
+  if (imageDimensions(bytes) && !hasSafeDimensions(bytes, UPLOAD_LIMITS)) throw badRequest('That photo is too large. Take it again at a normal size.');
   // The header alone passed a truncated file, which then failed every render of the report.
   if (!(await isEmbeddableImage(bytes, type))) {
     throw badRequest('That photo could not be read. It may be damaged; take it again and retry.');
@@ -82,29 +82,32 @@ export const handler = route(async (event) => {
     // The presign cap counts only photos already confirmed, so links issued together could
     // pass it. Counted again here, under the ticket's lock, so the cap holds.
     const full = await withTransaction(async (run) => {
-      const [ticket] = await run<{ id: string; phase: string }>(
-        `select t.id, p.phase from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1 for update of t`,
+      const [ticket] = await run<{ id: string; phase: string; uploaded: boolean }>(
+        `select t.id, p.phase, p.uploaded from ticket_photo p join ticket t on t.id = p.ticket_id where p.id = $1 for update of t`,
         [input.photoId],
       );
       if (!ticket) throw notFound('Photo');
+      // A second tap confirmed it while this call read the bytes. Counting it against the cap
+      // here deleted the photo the first call had just answered "confirmed" for.
+      if (ticket.uploaded) return 'already' as const;
       const [kept] = await run<{ n: number }>(
         `select count(*)::int as n from ticket_photo where ticket_id = $1 and phase = $2 and uploaded`,
         [ticket.id, ticket.phase],
       );
       if (kept!.n >= MAX_TICKET_PHOTOS) {
         await run('delete from ticket_photo where id = $1', [input.photoId]);
-        return true;
+        return 'full' as const;
       }
       await run(
         `update ticket_photo set uploaded = true, s3_key = $4, content_type = $2, size_bytes = $3 where id = $1`,
         [input.photoId, contentType, size, keptKey],
       );
-      return false;
+      return 'kept' as const;
     }).catch(async (error) => {
       await storage().remove(keptKey).catch(() => undefined);
       throw error;
     });
-    if (full) {
+    if (full === 'full') {
       await storage().remove(keptKey).catch(() => undefined);
       await removeUpload(photo.s3_key, keptKey);
       throw conflict(`A ticket holds up to ${MAX_TICKET_PHOTOS} photos for each stage.`);
@@ -128,8 +131,8 @@ export const handler = route(async (event) => {
   let refused: string | null = null;
   let dropped = false;
   const draft = await withTransaction(async (run) => {
-    const [inspection] = await run<{ id: string; status: string; finding_id: string }>(
-      `select i.id, i.status, f.id as finding_id from inspection i
+    const [inspection] = await run<{ id: string; status: string; finding_id: string; uploaded: boolean }>(
+      `select i.id, i.status, f.id as finding_id, p.uploaded from inspection i
          join inspection_finding f on f.inspection_id = i.id
          join inspection_photo p on p.finding_id = f.id
         where p.id = $1
@@ -137,6 +140,9 @@ export const handler = route(async (event) => {
       [input.photoId],
     );
     if (!inspection) throw notFound('Photo');
+    // Confirmed by a second tap while this call read the bytes: it stands, and is not counted
+    // against the cap a second time (which deleted it).
+    if (inspection.uploaded) return null;
     if (inspection.status !== 'in_progress') {
       refused = 'This inspection is closed to changes.';
       return null;

@@ -65,7 +65,7 @@ export const handler = route(async (event) => {
   }
 
   const key = `inspections/${inspectionId}/${crypto.randomUUID()}.${input.contentType === 'image/png' ? 'png' : 'jpg'}`;
-  const uploadUrl = await storage().presignPut(key, input.contentType, 300);
+  const uploadUrl = await storage().presignPut(key, input.contentType, 300, input.sizeBytes);
 
   // uploaded stays false until the client confirms. A row whose object never arrived must
   // not break the sealing step later.

@@ -5,6 +5,7 @@ import { zar } from '../domain/money';
 import { billingWindow, describeWindow, rentForWindow } from '../domain/renewal';
 import { dateFromIso, nextMonthStart, sastDayOfMonth, sastMonthStart, sastToday } from '../domain/dates';
 import { notify } from '../lib/notify';
+import { noticeInForceSql } from '../domain/termination';
 import { jobLogger } from '../lib/logger';
 
 const log = jobLogger('invoices-run');
@@ -30,15 +31,19 @@ export function periodsDue(now: Date = new Date()): string[] {
  * ended before it was activated (starts 28 October, signed 2 November) never had those days
  * billed. Each such month is billed like any other; the run's own checks (the lease's billable
  * window, notice, a renewal's previous lease) still decide whether there is anything to bill.
- * An imported lease is billed in Threshold only from the month it was brought in.
+ * An imported lease is billed in Threshold only from the month it was brought in; from then on
+ * a month it missed (a notice that stood for a while and was withdrawn) is caught up like any other.
  */
 export async function missedPeriods(current: string): Promise<string[]> {
   const rows = await query<{ period: string }>(
     `select distinct m::date::text as period
        from lease l
-       cross join lateral generate_series(date_trunc('month', l.start_date::timestamp),
-                                          $1::timestamp - interval '1 month', interval '1 month') m
-      where l.status = 'active' and l.source <> 'import'
+       cross join lateral generate_series(
+         date_trunc('month', case when l.source = 'import'
+           then greatest(l.start_date::timestamp, (coalesce(l.activated_at, now()) at time zone 'Africa/Johannesburg'))
+           else l.start_date::timestamp end),
+         $1::timestamp - interval '1 month', interval '1 month') m
+      where l.status = 'active'
         and not exists (select 1 from invoice i where i.lease_id = l.id and i.period_start = m::date)
       order by 1`,
     [current],
@@ -98,7 +103,9 @@ export const handler = async (input?: { periods?: string[]; now?: Date }) => {
          join unit u on u.id = l.unit_id
          join property p on p.id = u.property_id
          join applicant a on a.id = l.applicant_id
-         left join termination t on t.lease_id = l.id and t.status <> 'withdrawn'
+         -- A notice the tenant has not confirmed does not stop the rent: it is the landlord's
+         -- entry only, and a tenant who never answered left the lease unbilled for good.
+         left join termination t on t.lease_id = l.id and t.status <> 'withdrawn' and ${noticeInForceSql('t')}
         where (l.status = 'active' or (l.status = 'scheduled' and ${FULLY_SIGNED_SQL('l')}))
           and not exists (select 1 from invoice pi
                            where pi.lease_id = l.previous_lease_id and pi.period_start = $1::date

@@ -1,9 +1,9 @@
-/** A doorway, drawn once, and the name set in the statement serif. */
-export function Wordmark({ small = false }: { small?: boolean }) {
+/** A doorway, drawn once, beside the name. `onDark` is for the green sidebar. */
+export function Wordmark({ small = false, onDark = false }: { small?: boolean; onDark?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <span className={`${small ? 'h-[13px] w-[10px] border-[1.25px]' : 'h-[18px] w-[14px] border-[1.5px]'} rounded-t-full border-b-0 border-ink`} aria-hidden />
-      <b className={`font-display font-semibold tracking-[-0.01em] text-ink ${small ? 'text-meta' : 'text-title'}`}>Threshold</b>
+      <span className={`${small ? 'h-[13px] w-[10px] border-2' : 'h-[20px] w-[16px] border-[2.5px]'} rounded-t-full border-b-0 ${onDark ? 'border-nav-accent' : 'border-brand-500'}`} aria-hidden />
+      <b className={`font-display font-extrabold tracking-[-0.02em] ${onDark ? 'text-white' : 'text-ink'} ${small ? 'text-meta' : 'text-title'}`}>Threshold</b>
     </span>
   );
 }
@@ -18,7 +18,7 @@ export function DoorwayMonogram({ name }: { name: string }) {
     .join('');
   return (
     <span aria-hidden
-      className="flex h-16 w-14 shrink-0 items-end justify-center rounded-t-full border-[1.5px] border-b-0 border-ink bg-surface pb-2 font-display text-title font-semibold text-ink">
+      className="flex h-16 w-14 shrink-0 items-end justify-center rounded-t-full border-[2.5px] border-b-0 border-brand-500 bg-surface pb-2 font-display text-title font-bold text-ink">
       {initials || 'T'}
     </span>
   );

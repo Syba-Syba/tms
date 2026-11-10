@@ -27,6 +27,8 @@ const leaseIdFor = async (key: string): Promise<string | null> => {
     ],
     ['select t.lease_id from ticket_photo p join ticket t on t.id = p.ticket_id where p.s3_key = $1', 'tickets/'],
     ['select lease_id from termination where statement_s3_key = $1', 'terminations/'],
+    // The tenant's written notice a landlord attested to. Both parties may open it.
+    ['select lease_id from termination where evidence_s3_key = $1', 'notice-evidence/'],
     ['select lease_id from payment_proof where s3_key = $1', 'payment-proofs/'],
     [
       'select c.lease_id from arrears_step s join arrears_case c on c.id = s.case_id where s.document_s3_key = $1',

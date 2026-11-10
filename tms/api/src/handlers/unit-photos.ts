@@ -61,7 +61,7 @@ export const handler = route(async (event) => {
   if (Number(count!.n) >= MAX_UNIT_PHOTOS) throw conflict(`A listing holds up to ${MAX_UNIT_PHOTOS} photos. Remove one first.`);
 
   const key = `units/${unitId}/${crypto.randomUUID()}.${input.contentType === 'image/png' ? 'png' : 'jpg'}`;
-  const uploadUrl = await storage().presignPut(key, input.contentType, 300);
+  const uploadUrl = await storage().presignPut(key, input.contentType, 300, input.sizeBytes);
   const [photo] = await query<{ id: string }>(
     `insert into unit_photo (unit_id, s3_key, content_type, size_bytes, position)
      values ($1, $2, $3, $4, (select coalesce(max(position), -1) + 1 from unit_photo where unit_id = $1))

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, Link } from 'react-router';
-import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Button, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, baseUrl, errorCode, humanError } from '../api/client';
 import { safeReturnPath } from '../lib/safe-path';
 import { startSession, type SessionUser } from '../lib/session';
-import { Wordmark } from '../components/wordmark';
+import { AuthHeading, AuthLayout } from '../components/auth-layout';
+import { LinkButton, TEXT_LINK } from '../components/link-button';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -15,6 +16,8 @@ export function Login() {
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [apiDown, setApiDown] = useState(false);
+  // Said under the fields, so the button never has to look switched off while it works.
+  const [problem, setProblem] = useState<string | null>(null);
 
   // A wrong VITE_API_URL or a dead server should be named on screen, not guessed at.
   // '/health' is public on every deployment ('/' 404s behind API Gateway). Any HTTP answer,
@@ -49,6 +52,15 @@ export function Login() {
   const inFlight = useRef(false);
   const signIn = async () => {
     if (inFlight.current) return;
+    if (!email || !password) {
+      setProblem('Enter your email and your password.');
+      return;
+    }
+    if (code !== null && code.trim().length < 6) {
+      setProblem('Enter the 6 digits from your authenticator app, or a recovery code.');
+      return;
+    }
+    setProblem(null);
     inFlight.current = true;
     setBusy(true);
     try {
@@ -88,14 +100,10 @@ export function Login() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <span className="mb-8" aria-hidden>
-        <Wordmark />
-      </span>
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Sign in</h1>
-      <p className="mb-5 text-body text-ink-muted">
-        Pay rent, report repairs and sign your lease.
-      </p>
+    <AuthLayout>
+      <AuthHeading title="Sign in">
+        For landlords and tenants: rent, repairs and the lease in one place.
+      </AuthHeading>
       {apiDown ? (
         import.meta.env.DEV ? (
           <Alert tone="danger" title="The API is not answering" className="mb-4">
@@ -108,9 +116,16 @@ export function Login() {
           </Alert>
         )
       ) : null}
-      <Card>
-        <CardBody className="space-y-3">
-          <Field label="Email" htmlFor="login-email">
+      {/* A form, so Enter signs in and a password manager's filled-in values are submitted. */}
+      <form
+        className="space-y-4"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void signIn();
+        }}
+      >
+        <Field label="Email" htmlFor="login-email">
           <Input
             id="login-email"
             type="email"
@@ -119,8 +134,8 @@ export function Login() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
-          </Field>
-          <Field label="Password" htmlFor="login-password">
+        </Field>
+        <Field label="Password" htmlFor="login-password">
           <Input
             id="login-password"
             type="password"
@@ -128,47 +143,62 @@ export function Login() {
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && email && password && signIn()}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              // Handled here rather than by the form's own submit, so a held key is one sign-in.
+              event.preventDefault();
+              void signIn();
+            }}
           />
-          </Field>
-          {code !== null ? (
-            <div className="space-y-1.5">
-              <label htmlFor="login-code" className="block text-body font-medium text-ink">Code from your authenticator app</label>
-              <Input
-                id="login-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-                placeholder="123 456"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                onKeyDown={(event) => event.key === 'Enter' && code.trim().length >= 6 && signIn()}
-              />
-              <p className="text-xs text-ink-muted">Lost your phone? Type one of your recovery codes instead.</p>
-            </div>
-          ) : null}
-          <Button block loading={busy} disabled={!email || !password || (code !== null && code.trim().length < 6)} onClick={signIn}>
-            {code !== null ? 'Continue' : 'Sign in'}
-          </Button>
-          <p className="text-center text-meta">
-            <Link to="/forgot-password" className="inline-flex min-h-6 items-center font-bold text-brand-500">Forgot your password?</Link>
-          </p>
-          <p className="text-center text-meta text-ink-muted">
-            Applying for a place?{' '}
-            <Link to={registerLink} className="inline-flex min-h-6 items-center font-bold text-brand-500">Create an account</Link>
-          </p>
-          <p className="text-center text-xs">
-            <Link to="/privacy" className="inline-flex min-h-6 items-center text-ink-muted underline">Privacy notice</Link>
-            {' · '}
-            <Link to="/terms" className="inline-flex min-h-6 items-center text-ink-muted underline">Terms of service</Link>
-          </p>
-        </CardBody>
-      </Card>
+        </Field>
+        {code !== null ? (
+          <div className="space-y-1.5">
+            <label htmlFor="login-code" className="block text-body font-medium text-ink">Code from your authenticator app</label>
+            <Input
+              id="login-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="123 456"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                void signIn();
+              }}
+            />
+            <p className="text-xs text-ink-muted">Lost your phone? Type one of your recovery codes instead.</p>
+          </div>
+        ) : null}
+        {problem ? <p role="alert" className="text-meta font-semibold text-danger">{problem}</p> : null}
+        <Button block size="lg" type="submit" loading={busy}>
+          {code !== null ? 'Continue' : 'Sign in'}
+        </Button>
+        <p className="text-center text-meta">
+          <Link to="/forgot-password" className={`inline-flex min-h-6 items-center ${TEXT_LINK}`}>Forgot your password?</Link>
+        </p>
+      </form>
+
+      <section className="mt-8 border-t border-line pt-6" aria-labelledby="login-new">
+        <h2 id="login-new" className="text-lead font-bold text-ink">New to Threshold?</h2>
+        <p className="mb-3 mt-1 text-meta text-ink-muted">Create an account. It takes a minute.</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <LinkButton to={registerLink}>I am applying for a place</LinkButton>
+          <LinkButton to="/register?as=landlord">I am a landlord</LinkButton>
+        </div>
+      </section>
+
+      <p className="mt-6 text-center text-xs">
+        <Link to="/privacy" className="inline-flex min-h-6 items-center text-ink-muted underline">Privacy notice</Link>
+        {' · '}
+        <Link to="/terms" className="inline-flex min-h-6 items-center text-ink-muted underline">Terms of service</Link>
+      </p>
       {import.meta.env.DEV ? (
         <Alert tone="info" title="Development sign-ins" className="mt-4">
           landlord@example.co.za, kgee@example.co.za, naledi@example.co.za, lerato@example.co.za or sipho@example.co.za. Password: dev
         </Alert>
       ) : null}
-    </main>
+    </AuthLayout>
   );
 }

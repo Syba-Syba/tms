@@ -1,4 +1,5 @@
 import { requireLeaseAccess } from '../lib/access';
+import { noticeInForceSql } from '../domain/termination';
 import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, parseBody, route } from '../lib/http';
@@ -76,7 +77,9 @@ export const handler = route(async (event) => {
   const result = await withTransaction(async (run) => {
     const [lease] = await run<{ status: string; start_date: string; end_date: string; effective_on: string | null; renewal_starts_on: string | null }>(
       `select l.status, l.start_date::text, l.end_date::text,
-              (select t.effective_on::text from termination t where t.lease_id = l.id and t.status <> 'withdrawn' limit 1) as effective_on,
+              -- Only a notice in force ends the billing; one awaiting the tenant does not.
+              (select t.effective_on::text from termination t
+                where t.lease_id = l.id and t.status <> 'withdrawn' and ${noticeInForceSql('t')} limit 1) as effective_on,
               ${RENEWAL_STARTS_SQL('l')} as renewal_starts_on
          from lease l where l.id = $1 for update`,
       [leaseId],

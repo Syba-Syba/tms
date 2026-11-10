@@ -43,16 +43,16 @@ export function DataTable<T>({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="overflow-x-auto rounded-md border border-line bg-surface">
+      <div className="overflow-x-auto rounded-md border border-line bg-surface shadow-sm">
         <table className="w-full text-body">
-          <thead className="border-b border-line text-left">
+          <thead className="border-b border-line bg-surface-muted text-left">
             {table.getHeaderGroups().map((group) => (
               <tr key={group.id}>
                 {group.headers.map((header) => (
                   <th
                     key={header.id}
                     onClick={header.column.getToggleSortingHandler()}
-                    className="cursor-pointer px-4 py-2.5 text-xs font-medium text-ink-muted"
+                    className="cursor-pointer whitespace-nowrap px-5 py-3 text-meta font-semibold text-ink-muted"
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
                     {{ asc: ' up', desc: ' down' }[header.column.getIsSorted() as string] ?? ''}
@@ -65,7 +65,7 @@ export function DataTable<T>({
             {table.getRowModel().rows.map((row) => (
               <tr key={row.id} className="border-t border-line-soft hover:bg-surface-muted">
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 tabular-nums text-ink">
+                  <td key={cell.id} className="px-5 py-3.5 text-ink">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

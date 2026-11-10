@@ -18,7 +18,11 @@ const ID = '[^/]+';
  * unpaid plan into a missed refund or an ignored erasure request.
  */
 const DUTIES: Array<[string, RegExp]> = [
-  ['POST', new RegExp(`^/terminations/${ID}/(settle|deductions|withdraw|confirm)$`)],
+  // Attesting to a notice is what lets its deposit be settled; the refund paid is its record.
+  ['POST', new RegExp(`^/terminations/${ID}/(settle|deductions|withdraw|confirm|attest|refund-paid)$`)],
+  ['POST', new RegExp(`^/leases/${ID}/notice-evidence/presign$`)],
+  // Correcting money recorded is part of recording it.
+  ['POST', new RegExp(`^/payments/${ID}/reverse$`)],
   ['DELETE', new RegExp(`^/terminations/${ID}/deductions/${ID}$`)],
   ['POST', new RegExp(`^/privacy-requests/${ID}/decision$`)],
   ['POST', new RegExp(`^/payment-proofs/${ID}/decision$`)],

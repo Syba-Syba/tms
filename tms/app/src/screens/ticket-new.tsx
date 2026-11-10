@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
-import { Button, Card, CardBody, PageHeader, SegmentedControl, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
+import { Button, Card, CardBody, PageHeader, UploadTile, useToast, type UploadState } from '@hlonie/toolbox/ui';
 import { TextAreaField, TextField } from '@hlonie/toolbox/forms';
 import { useForm } from 'react-hook-form';
 import { api, humanError } from '../api/client';
 import { pickPhoto, putFile, type PickedPhoto } from '../lib/photos';
 import { uploadPending } from '../lib/uploads';
+import { ChoiceGroup } from '../components/choice-group';
+import { isLandlord } from '../lib/session';
+import { PAGE } from '../lib/layout';
 
 const CATEGORIES = [
   { value: 'plumbing', label: 'Plumbing' },
@@ -19,13 +22,14 @@ const CATEGORIES = [
 ] as const;
 
 const SLA_COPY = {
-  emergency: 'Unsafe or unlivable. We respond within 24 hours.',
-  urgent: 'Broken but livable. We respond within 3 days.',
-  routine: 'Wear and tear. We respond within 7 days.',
+  emergency: 'Unsafe or unlivable. To be seen to within 24 hours.',
+  urgent: 'Broken but livable. To be seen to within 3 days.',
+  routine: 'Wear and tear. To be seen to within 7 days.',
 } as const;
 
 export function TicketNew() {
   const { leaseId } = useParams();
+  const landlord = isLandlord();
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -96,61 +100,80 @@ export function TicketNew() {
   });
 
   return (
-    <main className="mx-auto max-w-lg px-4 py-6">
+    <main className={PAGE.wide}>
       <PageHeader title="Report a problem" description="Photos and a clear description get it fixed faster." />
-      <Card>
-        <CardBody className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((item) => (
-              <Button
-                key={item.value}
-                size="sm"
-                variant={category === item.value ? 'secondary' : 'outline'}
-                aria-pressed={category === item.value}
-                onClick={() => setCategory(item.value)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-          <div>
-            <SegmentedControl
-              value={severity}
-              onChange={setSeverity}
-              options={[
-                { label: 'Emergency', value: 'emergency' },
-                { label: 'Urgent', value: 'urgent' },
-                { label: 'Routine', value: 'routine' },
-              ]}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card>
+          <CardBody className="space-y-5">
+            <div>
+              <p className="mb-2 text-body font-semibold text-ink">What kind of problem is it?</p>
+              <ChoiceGroup label="Category" options={[...CATEGORIES]} value={category} onChange={setCategory} />
+            </div>
+            <div>
+              <p className="mb-2 text-body font-semibold text-ink">How serious is it?</p>
+              <ChoiceGroup
+                label="How serious"
+                layout="cards"
+                value={severity}
+                onChange={setSeverity}
+                options={[
+                  { label: 'Emergency', value: 'emergency', hint: 'Unsafe or unlivable', tone: 'danger' },
+                  { label: 'Urgent', value: 'urgent', hint: 'Broken but livable', tone: 'warning' },
+                  { label: 'Routine', value: 'routine', hint: 'Wear and tear' },
+                ]}
+              />
+              <p className="mt-2 text-meta text-ink-muted" aria-live="polite">{SLA_COPY[severity]}</p>
+            </div>
+            <TextField control={control} name="title" label="What is it" required rules={{ required: 'A short title is needed.' }} />
+            <TextAreaField
+              control={control}
+              name="description"
+              label="Details"
+              hint="Where it is, when it started, anything a contractor should know."
+              required
             />
-            <p className="mt-2 text-xs text-ink-muted">{SLA_COPY[severity]}</p>
-          </div>
-          <TextField control={control} name="title" label="What is it" required rules={{ required: 'A short title is needed.' }} />
-          <TextAreaField
-            control={control}
-            name="description"
-            label="Details"
-            hint="Where it is, when it started, anything a contractor should know."
-            required
-          />
-          <div className="flex gap-2">
-            {photos.map((entry, index) => (
-              <UploadTile key={index} className="w-16" src={entry.photo.dataUrl} state={entry.state} />
-            ))}
-            <Button variant="outline" size="sm" onClick={capture}>
-              Add photo
+            <div>
+              <p className="mb-2 text-body font-semibold text-ink">Photos</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {photos.map((entry, index) => (
+                  <UploadTile key={index} className="w-20" src={entry.photo.dataUrl} state={entry.state} label={`Photo ${index + 1} of the problem`} />
+                ))}
+                <Button variant="outline" size="sm" onClick={capture}>
+                  Add photo
+                </Button>
+              </div>
+            </div>
+            <Button block size="lg" loading={formState.isSubmitting} onClick={submit}>
+              {ticketId ? 'Retry photos' : 'Send report'}
             </Button>
+            {ticketId ? (
+              <Button block variant="outline" disabled={formState.isSubmitting} onClick={() => navigate(-1)}>
+                Finish without them
+              </Button>
+            ) : null}
+          </CardBody>
+        </Card>
+
+        <aside className="space-y-4">
+          <div className="rounded-md bg-brand-50 px-5 py-5">
+            <h2 className="text-lead font-bold text-ink">What happens next</h2>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-body text-ink">
+              <li>{landlord ? 'The repair is logged against the unit and the tenant can follow it.' : 'Your landlord is told straight away.'}</li>
+              <li>A contractor is assigned, and you see who and when.</li>
+              <li>When the work is done, the tenant rates it and that closes it.</li>
+            </ol>
           </div>
-          <Button block loading={formState.isSubmitting} onClick={submit}>
-            {ticketId ? 'Retry photos' : 'Send report'}
-          </Button>
-          {ticketId ? (
-            <Button block variant="outline" disabled={formState.isSubmitting} onClick={() => navigate(-1)}>
-              Finish without them
-            </Button>
-          ) : null}
-        </CardBody>
-      </Card>
+          <Card>
+            <CardBody className="space-y-2">
+              <h2 className="text-lead font-bold text-ink">Is someone in danger?</h2>
+              <p className="text-body text-ink-muted">
+                For a fire, a gas smell or a burst pipe that is flooding, phone the emergency services or your landlord
+                first, then report it here so there is a record.
+              </p>
+            </CardBody>
+          </Card>
+        </aside>
+      </div>
     </main>
   );
 }

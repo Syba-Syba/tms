@@ -9,13 +9,17 @@ import {
   CardBody,
   ConfirmDialog,
   PageHeader,
+  ProgressBar,
   SignaturePad,
   useToast,
   type SignaturePadHandle,
 } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
-import { formatDate } from '../lib/format';
+import { CheckIcon, ChevronRightIcon } from '@hlonie/toolbox/icons';
+import { formatDate, status } from '../lib/format';
+import { LinkButton } from '../components/link-button';
+import { PAGE } from '../lib/layout';
 import { useOpenDocument } from '../lib/open-document';
 
 export interface InspectionState {
@@ -102,7 +106,7 @@ export function InspectionRooms() {
   // Once someone has signed, the findings are locked. Reopening is how the other party disputes
   // them instead of signing what they disagree with; the server withdraws any signature given.
   // The server says who may: a tenant who missed the booked exit inspection may not.
-  const canReopen = data.reopenable ?? (data.status === 'awaiting_signatures' && signedParties.length < 2);
+  const canReopen = data.status !== 'missed' && (data.reopenable ?? (data.status === 'awaiting_signatures' && signedParties.length < 2));
   const reopen = async () => {
     setBusy(true);
     try {
@@ -149,102 +153,159 @@ export function InspectionRooms() {
     }
   };
 
+  const missed = data.status === 'missed';
+  const reportReady = Boolean(reviewable) || ['awaiting_signatures', 'completed'].includes(data.status);
+  // Four steps: the walkthrough, the report, and a signature from each side.
+  const stepsDone = data.status === 'completed' ? 4 : reportReady ? 2 + Math.min(signedParties.length, 1) : 0;
+  const totalItems = data.findings.length;
+  const totalFlagged = rooms.reduce((sum, room) => sum + room.flagged, 0);
+
   return (
-    <main className="mx-auto max-w-lg px-4 py-6">
+    <main className={PAGE.wide}>
       <PageHeader
         title={data.kind === 'incoming' ? 'Move-in inspection' : 'Move-out inspection'}
-        description={`${data.unit} · ${formatDate(data.scheduledFor)}. Walk every room together, then both of you sign.`}
+        description={
+          missed
+            ? `${data.unit} · ${formatDate(data.scheduledFor)}`
+            : `${data.unit} · ${formatDate(data.scheduledFor)}. Walk every room together, then both of you sign.`
+        }
       />
 
-      <div className="space-y-3">
-        {rooms.map((room) => (
-          <Card key={room.room}>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-5 py-4 text-left"
-              onClick={() =>
-                navigate(`/inspections/${inspectionId}/room/${encodeURIComponent(room.room)}`)
-              }
-            >
-              <div>
-                <p className="text-lead font-semibold text-ink">{room.room}</p>
-                <p className="text-xs text-ink-muted">
-                  {room.total} items{room.noted ? ` · ${room.noted} recorded` : ''}
-                </p>
-              </div>
-              <span className="flex items-center gap-2">
-                {room.flagged > 0 ? <Badge tone="warning">{room.flagged} flagged</Badge> : null}
-                <span className="text-ink-muted">›</span>
-              </span>
-            </button>
-          </Card>
-        ))}
-      </div>
+      {/* A cancelled booking is a record, not a job: it explains itself and offers nothing to do. */}
+      {missed ? (
+        <Alert tone="warning" title="This inspection did not happen" className="mb-5">
+          <p>
+            It was booked for {formatDate(data.scheduledFor)} and then cancelled, because the notice was withdrawn or
+            the inspection was booked again for another day. Nothing can be recorded or signed on it.
+          </p>
+          <LinkButton to={`/leases/${data.leaseId}`} size="sm" className="mt-3">Back to the lease</LinkButton>
+        </Alert>
+      ) : null}
 
-      <div className="mt-5 space-y-3">
-        {data.status === 'completed' && data.reportKey ? (
-          <>
-            <Alert tone="success" title="Inspection complete">
-              Both signatures are on the sealed report. It is part of the lease now.
-            </Alert>
-            <Button block variant="outline" onClick={() => openDocument(data.reportKey!)}>
-              Open the signed report
-            </Button>
-          </>
-        ) : null}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
+            <h2 className="text-lead font-bold text-ink">Rooms</h2>
+            <p className="text-meta text-ink-muted">
+              {rooms.length} room{rooms.length === 1 ? '' : 's'}, {totalItems} item{totalItems === 1 ? '' : 's'}
+              {totalFlagged ? `, ${totalFlagged} need attention` : ''}
+            </p>
+          </div>
+          <ul className="divide-y divide-line-soft border-t border-line-soft">
+            {rooms.map((room) => (
+              <li key={room.room}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3.5 px-5 py-3.5 text-left hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--tb-ring)]"
+                  onClick={() =>
+                    navigate(`/inspections/${inspectionId}/room/${encodeURIComponent(room.room)}`)
+                  }
+                >
+                  <span
+                    aria-hidden
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 ${
+                      room.noted ? 'border-brand-500 bg-brand-500 text-ink-inverse' : 'border-neutral-300 text-transparent'
+                    }`}
+                  >
+                    <CheckIcon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-lead font-semibold text-ink">{room.room}</span>
+                    <span className="block text-meta text-ink-muted">
+                      {room.total} items{room.noted ? ` · ${room.noted} recorded` : ' · all marked good'}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {room.flagged > 0 ? <Badge tone="warning">{room.flagged} flagged</Badge> : null}
+                    <ChevronRightIcon className="shrink-0 text-ink-muted" aria-hidden />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
 
-        {data.status !== 'completed' ? (
+        <div className="space-y-4">
           <Card>
-            <CardBody className="space-y-3">
-              <p className="label">
-                Review and sign
-              </p>
-              {walkthroughOpen && !reviewable ? (
-                <p className="text-meta text-ink-muted">
-                  When the walkthrough is done, prepare the report. Signing locks the findings.
-                </p>
-              ) : null}
-
-              {!reviewable ? (
-                <Button block loading={busy} onClick={prepare}>
-                  Prepare the report
-                </Button>
-              ) : (
-                <>
-                  <Button block variant="outline" onClick={() => openDocument(reviewable.key)}>
-                    Open the report to review
-                  </Button>
-                  {iHaveSigned ? (
-                    <Alert tone="info" title="Your signature is on file">
-                      Waiting on the {party === 'tenant' ? 'landlord' : 'tenant'}.
-                    </Alert>
-                  ) : (
-                    <>
-                      <SignaturePad ref={padRef} />
-                      <Button block loading={busy} onClick={sign}>
-                        Sign as the {party}
-                      </Button>
-                      <p className="text-xs text-ink-muted">
-                        Your signature attests the exact report you just opened. If any finding
-                        changes, the report is re-prepared and both of you sign again.
-                      </p>
-                    </>
-                  )}
-                  {walkthroughOpen && !iHaveSigned ? (
-                    <Button block variant="ghost" loading={busy} onClick={prepare}>
-                      Findings changed? Prepare it again
-                    </Button>
-                  ) : null}
-                </>
-              )}
-              {canReopen ? (
-                <Button block variant="ghost" disabled={busy} onClick={() => setConfirmReopen(true)}>
-                  Reopen to correct the findings
-                </Button>
-              ) : null}
-            </CardBody>
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lead font-bold text-ink">Progress</h2>
+                <Badge tone={status(data.status).tone}>{data.status === 'in_progress' ? 'Walkthrough' : status(data.status).label}</Badge>
+              </div>
+              {missed ? null : <ProgressBar value={stepsDone} max={4} />}
+              <ol className="space-y-2 text-body">
+                <Step done={!missed && reportReady} label="Walk the rooms and record what you find" />
+                <Step done={!missed && reportReady} label="Prepare the report" />
+                <Step done={signedParties.includes('landlord')} label="The landlord signs" />
+                <Step done={signedParties.includes('tenant')} label="The tenant signs" />
+              </ol>
+            </div>
           </Card>
-        ) : null}
+
+          {data.status === 'completed' && data.reportKey ? (
+            <>
+              <Alert tone="success" title="Inspection complete">
+                Both signatures are on the sealed report. It is part of the lease now.
+              </Alert>
+              <Button block size="lg" onClick={() => openDocument(data.reportKey!)}>
+                Open the signed report
+              </Button>
+            </>
+          ) : null}
+
+          {data.status !== 'completed' && !missed ? (
+            <Card>
+              <CardBody className="space-y-3">
+                <h2 className="text-lead font-bold text-ink">
+                  Review and sign
+                </h2>
+                {walkthroughOpen && !reviewable ? (
+                  <p className="text-body text-ink-muted">
+                    When the walkthrough is done, prepare the report. Signing locks the findings.
+                  </p>
+                ) : null}
+
+                {!reviewable ? (
+                  <Button block size="lg" loading={busy} onClick={prepare}>
+                    Prepare the report
+                  </Button>
+                ) : (
+                  <>
+                    <Button block variant="outline" onClick={() => openDocument(reviewable.key)}>
+                      Open the report to review
+                    </Button>
+                    {iHaveSigned ? (
+                      <Alert tone="info" title="Your signature is on file">
+                        Waiting on the {party === 'tenant' ? 'landlord' : 'tenant'}.
+                      </Alert>
+                    ) : (
+                      <>
+                        <SignaturePad ref={padRef} />
+                        <Button block size="lg" loading={busy} onClick={sign}>
+                          Sign as the {party}
+                        </Button>
+                        <p className="text-meta text-ink-muted">
+                          Your signature attests the exact report you just opened. If any finding
+                          changes, the report is re-prepared and both of you sign again.
+                        </p>
+                      </>
+                    )}
+                    {walkthroughOpen && !iHaveSigned ? (
+                      <Button block variant="ghost" loading={busy} onClick={prepare}>
+                        Findings changed? Prepare it again
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+                {canReopen ? (
+                  <Button block variant="outline" disabled={busy} onClick={() => setConfirmReopen(true)}>
+                    Reopen to correct the findings
+                  </Button>
+                ) : null}
+              </CardBody>
+            </Card>
+          ) : null}
+        </div>
       </div>
 
       <ConfirmDialog
@@ -261,5 +322,24 @@ export function InspectionRooms() {
         onConfirm={reopen}
       />
     </main>
+  );
+}
+
+function Step({ done, label }: { done: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-2.5">
+      <span
+        aria-hidden
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+          done ? 'border-brand-500 bg-brand-500 text-ink-inverse' : 'border-neutral-300 text-transparent'
+        }`}
+      >
+        <CheckIcon className="h-3 w-3" />
+      </span>
+      <span className={done ? 'text-ink' : 'text-ink-muted'}>
+        {label}
+        <span className="sr-only">{done ? ', done' : ', still to do'}</span>
+      </span>
+    </li>
   );
 }

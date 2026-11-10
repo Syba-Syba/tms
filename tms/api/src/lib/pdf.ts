@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { zar } from '../domain/money';
-import { hasSafeDimensions, isWellFormedPng } from './images';
+import { REPORT_PIXEL_BUDGET, decodedPixels, hasSafeDimensions, isWellFormedJpeg, isWellFormedPng } from './images';
 
 const INK = rgb(0.137, 0.125, 0.11);
 const MUTED = rgb(0.49, 0.463, 0.424);
@@ -248,13 +248,28 @@ export interface InspectionPhoto {
  * on it. One bad photo used to fail every render and seal of its inspection, for good, so it
  * is left out here instead (and refused at upload, see isEmbeddableImage).
  */
-async function embedPhoto(doc: PDFDocument, photo: InspectionPhoto) {
+/** Decoded PNG pixels each open document already holds. */
+const pixelsHeld = new WeakMap<PDFDocument, number>();
+
+async function embedPhoto(doc: PDFDocument, photo: InspectionPhoto, counted = true) {
   // pdf-lib decodes a PNG in full, so a small file naming huge dimensions could exhaust memory.
   if (!hasSafeDimensions(photo.bytes)) return null;
-  // pdf-lib never returns on a truncated PNG, so a broken one is caught first.
+  // pdf-lib never returns on a truncated PNG, and decodes extra headers and frames a crafted
+  // one carries, so only a whole, plain PNG reaches it.
   if (photo.type === 'png' && !isWellFormedPng(photo.bytes)) return null;
+  // A JPEG is copied in undecoded; this makes sure the size written beside it is its real one.
+  if (photo.type === 'jpg' && !isWellFormedJpeg(photo.bytes)) return null;
+  // Each decoded PNG stays in memory until the document is saved, so one document holds only
+  // so many pixels, whoever built its photo list. Signatures are few and small, and never skipped.
+  const pixels = counted ? decodedPixels(photo.bytes) : 0;
+  const held = pixelsHeld.get(doc) ?? 0;
+  if (held + pixels > REPORT_PIXEL_BUDGET) return null;
   try {
-    return photo.type === 'png' ? await doc.embedPng(photo.bytes) : await doc.embedJpg(photo.bytes);
+    // pdf-lib reads a JPEG's header from the start of the underlying buffer, which for a view
+    // into a larger one (a pooled Buffer) is somebody else's bytes. It gets a copy of its own.
+    const image = photo.type === 'png' ? await doc.embedPng(photo.bytes) : await doc.embedJpg(new Uint8Array(photo.bytes));
+    pixelsHeld.set(doc, held + pixels);
+    return image;
   } catch {
     return null;
   }
@@ -368,7 +383,7 @@ export async function renderInspectionPdf(input: InspectionData) {
     ensureRoom(ctx, 64);
     // A bad image stored before sign checked it must not block the seal for good: the line
     // and the signature record still stand without the picture.
-    const image = signature.png ? await embedPhoto(ctx.doc, { bytes: signature.png, type: 'png' }) : null;
+    const image = signature.png ? await embedPhoto(ctx.doc, { bytes: signature.png, type: 'png' }, false) : null;
     if (image) {
       const dims = image.scale(42 / image.height);
       ctx.page.drawImage(image, { x: MARGIN, y: ctx.y - 42, width: dims.width, height: dims.height });

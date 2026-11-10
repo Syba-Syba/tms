@@ -187,7 +187,7 @@ describe('applying and processing the queue', () => {
       await screen.findByText('Application approved');
     }
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Approved/ }));
     const approvedRow = (await screen.findAllByText('Queue Applicant', undefined, { timeout: 5000 })).find((node) =>
       node.closest('tr'),
     )!;

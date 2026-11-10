@@ -133,7 +133,7 @@ export const handler = async () => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`Bad date ${today}`);
   const sqlToday = `'${today}'::date`;
   const counts = { slaSoon: 0, slaBreached: 0, inspections: 0, refunds: 0,
-                   unsettled: 0, leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
+                   unsettled: 0, awaitingNotices: 0, leaseEnding: 0, renewalsExpiring: 0, renewalsLapsed: 0 };
   const failures: string[] = [];
 
   // Unpaid rent is chased by the arrears run, which keeps the ladder on the lease.
@@ -215,6 +215,8 @@ export const handler = async () => {
          join landlord ll on ll.id = pr.landlord_id
         where t.status = 'settled'
           and t.refund_due_by is not null
+          -- Recorded as paid: nothing left to warn about.
+          and t.refund_paid_on is null
           and t.refund_due_by between ${sqlToday} and ${sqlToday} + 3
           and ll.cognito_sub is not null`,
     );
@@ -284,6 +286,76 @@ export const handler = async () => {
         data: { unit: row.unit, tenant: row.tenant, effectiveOn: row.effective_on, deadlineLine },
       });
       counts.unsettled += 1;
+    });
+  });
+
+  /* Notices the landlord recorded that the tenant has not confirmed. Such a notice is not in
+     force: rent is billed and the deposit cannot be settled. The tenant was asked once, when it
+     was recorded, and after that nobody heard of it again. Both are reminded 3 and 7 days after
+     it was recorded and weekly from 14. Once its end date has passed the tenant can no longer
+     confirm it, so only the landlord is told, at once and then on the same days. */
+  await runStep('awaitingNotices', failures, async () => {
+    const waiting = await query<{
+      id: string; lease_id: string; effective_on: string; recorded_on: string; age: number; unit: string;
+      tenant_sub: string | null; tenant_email: string; tenant_phone: string;
+      landlord_sub: string | null; landlord_email: string;
+    }>(
+      `select t.id, t.lease_id, t.effective_on::text,
+              (t.created_at at time zone 'Africa/Johannesburg')::date::text as recorded_on,
+              (${sqlToday} - (t.created_at at time zone 'Africa/Johannesburg')::date)::int as age,
+              pr.name || ' ' || u.code as unit,
+              a.cognito_sub as tenant_sub, a.email as tenant_email, a.phone as tenant_phone,
+              ll.cognito_sub as landlord_sub, ll.email as landlord_email
+         from termination t
+         join lease l on l.id = t.lease_id
+         join applicant a on a.id = l.applicant_id
+         join unit u on u.id = l.unit_id
+         join property pr on pr.id = u.property_id
+         join landlord ll on ll.id = pr.landlord_id
+        where t.status not in ('settled', 'withdrawn')
+          and l.status = 'active'
+          and t.needs_tenant_confirmation and t.tenant_confirmed_at is null`,
+    );
+    await eachRow('awaitingNotices', waiting, failures, async (row) => {
+      const past = today > row.effective_on;
+      const step = row.age >= 14 ? `w${Math.floor(row.age / 7)}` : row.age >= 7 ? 'd7' : row.age >= 3 ? 'd3' : null;
+      if (row.tenant_sub && !past && step) {
+        await notify({
+          leaseId: row.lease_id,
+          to: { sub: row.tenant_sub, email: row.tenant_email, phone: row.tenant_phone },
+          kind: 'notice_confirm_reminder',
+          dedupeKey: `notice_awaiting:${row.id}:tenant:${step}`,
+          data: { unit: row.unit, effectiveOn: row.effective_on },
+        });
+      }
+      const data = {
+        unit: row.unit, effectiveOn: row.effective_on, recordedOn: row.recorded_on,
+        stateLine: past
+          ? 'That date has passed, so the tenant can no longer confirm it in the app. The lease is still running: rent is billed and the deposit cannot be settled.'
+          : 'Until they do the notice is not in force: rent is billed as usual and the deposit cannot be settled.',
+        nextLine:
+          'If you hold the tenant’s written notice, attach it to the notice in the app and confirm it yourself. ' +
+          (past ? 'Otherwise withdraw it and record a fresh notice.' : 'Otherwise ask them to confirm it, or withdraw it.'),
+      };
+      if (row.landlord_sub && past) {
+        await notify({
+          leaseId: row.lease_id,
+          to: { sub: row.landlord_sub, email: row.landlord_email },
+          kind: 'notice_awaiting_tenant',
+          dedupeKey: `notice_awaiting:${row.id}:landlord:past`,
+          data,
+        });
+      }
+      if (row.landlord_sub && step) {
+        await notify({
+          leaseId: row.lease_id,
+          to: { sub: row.landlord_sub, email: row.landlord_email },
+          kind: 'notice_awaiting_tenant',
+          dedupeKey: `notice_awaiting:${row.id}:landlord:${step}`,
+          data,
+        });
+      }
+      counts.awaitingNotices += 1;
     });
   });
 

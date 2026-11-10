@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, CardBody, PageHeader, Switch, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Switch, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { ChangePassword } from '../components/change-password';
-import { SettingsNav } from '../components/settings-nav';
+import { SettingsCard, SettingsLayout } from '../components/settings-nav';
 import { TwoStep } from '../components/two-step';
 import { PrivacyRequests } from '../components/privacy-requests';
 import { YourData } from '../components/your-data';
 import { isLandlord } from '../lib/session';
 import { QueryState } from '../components/query-state';
-import { PAGE } from '../lib/layout';
 import { Appearance } from '../components/appearance';
 
 interface Preference {
@@ -78,73 +77,68 @@ export function NotificationPreferences() {
     return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Settings" />;
   }
 
+  const landlord = isLandlord();
+
   return (
-    <main className={PAGE.narrow}>
-      <PageHeader title="Settings" description="Your password, what reaches you, and your data." />
-      <SettingsNav />
+    <SettingsLayout description="Your password, what reaches you, and your data.">
+      <div className={`grid grid-cols-1 items-start gap-5 ${landlord ? 'xl:grid-cols-2' : 'lg:grid-cols-2'}`}>
+        <div className="min-w-0 space-y-5">
+          <SettingsCard title="Notifications" description="Sent by email to the address on your account.">
+            <ul className="-mx-5 divide-y divide-line-soft border-y border-line-soft">
+              {categories.map((category) => {
+                const channels = rows.filter((row) => row.category === category);
+                const locked = channels.some((row) => row.locked);
+                return (
+                  <li key={category} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                    <div className="min-w-0">
+                      <p className="text-body font-semibold capitalize text-ink">{category}</p>
+                      <p className="text-meta text-ink-muted">{CATEGORY_COPY[category]}</p>
+                      {locked ? (
+                        <p className="mt-0.5 text-meta text-ink-muted">
+                          You cannot switch these off: they are the ones that cost money at a tribunal.
+                        </p>
+                      ) : null}
+                    </div>
+                    {locked ? (
+                      <Badge tone="brand">Always on</Badge>
+                    ) : (
+                      <div className="flex shrink-0 flex-wrap justify-end gap-4">
+                        {channels.map((row) => (
+                          <label key={row.channel} className="flex items-center gap-2 text-meta text-ink">
+                            <span className="capitalize">{row.channel}</span>
+                            <Switch
+                              label={`${category} by ${row.channel}`}
+                              checked={row.enabled}
+                              onCheckedChange={(next: boolean) => toggle(row.category, row.channel, next)}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {import.meta.env.DEV ? (
+              <Alert tone="info" title="Email is switched off in development">
+                The dispatcher writes what it would have sent to the log instead of sending it, so you
+                can develop without a verified sending domain.
+              </Alert>
+            ) : null}
+            <Button loading={saving} onClick={save}>
+              Save preferences
+            </Button>
+          </SettingsCard>
+          <Appearance />
+        </div>
 
-      <div className="mb-6">
-        <ChangePassword />
+        <div className="min-w-0 space-y-5">
+          <ChangePassword />
+          <TwoStep />
+          {landlord ? <PrivacyRequests /> : null}
+          <YourData />
+        </div>
       </div>
-      <div className="mb-6">
-        <TwoStep />
-      </div>
-      <div className="mb-6">
-        <Appearance />
-      </div>
-
-      <h2 className="label mb-1">Notifications</h2>
-      <p className="mb-3 text-xs text-ink-muted">Sent by email to the address on your account.</p>
-
-      <div className="space-y-3">
-        {categories.map((category) => {
-          const channels = rows.filter((row) => row.category === category);
-          const locked = channels.some((row) => row.locked);
-          return (
-            <Card key={category}>
-              <CardBody className="space-y-3">
-                <div>
-                  <p className="text-lead font-semibold capitalize">{category}</p>
-                  <p className="text-xs text-ink-muted">{CATEGORY_COPY[category]}</p>
-                </div>
-                {locked ? (
-                  <p className="text-xs font-semibold text-brand-500">
-                    Always on. These are the ones that cost money at a tribunal.
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-5">
-                    {channels.map((row) => (
-                      <label key={row.channel} className="flex items-center gap-2 text-meta">
-                        <Switch
-                          checked={row.enabled}
-                          onCheckedChange={(next: boolean) => toggle(row.category, row.channel, next)}
-                        />
-                        <span className="capitalize">{row.channel}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          );
-        })}
-      </div>
-
-      {import.meta.env.DEV ? (
-        <Alert tone="info" title="Email is switched off in development" className="mt-4">
-          The dispatcher writes what it would have sent to the log instead of sending it, so you
-          can develop without a verified sending domain.
-        </Alert>
-      ) : null}
-
-      <Button className="mt-4" loading={saving} onClick={save}>
-        Save preferences
-      </Button>
-
-      <div className="mt-8 space-y-8">
-        {isLandlord() ? <PrivacyRequests /> : null}
-        <YourData />
-      </div>
-    </main>
+    </SettingsLayout>
   );
 }

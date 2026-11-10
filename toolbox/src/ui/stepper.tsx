@@ -9,7 +9,7 @@ export interface Step {
   done?: boolean;
 }
 
-/** Timestamps sit in a mono gutter like a logbook, because a job history is a record, not a wizard. */
+/** Times sit in a quiet gutter beside each step: a job history is a record, not a wizard. */
 export function Stepper({
   steps,
   current,
@@ -25,13 +25,13 @@ export function Stepper({
         const done = step.done ?? index < current;
         const active = index === current;
         return (
-          <li key={step.title} className="grid grid-cols-[52px_20px_1fr] gap-x-2 pb-5 last:pb-0">
+          <li key={step.title} className="grid grid-cols-[56px_20px_1fr] gap-x-2.5 pb-6 last:pb-0">
             {/* No time yet is blank: '--:--' beside a step already done read as broken. */}
-            <span className="pt-0.5 text-right font-mono text-2xs text-ink-muted">{step.at ?? ''}</span>
+            <span className="pt-0.5 text-right text-xs text-ink-muted">{step.at ?? ''}</span>
             <span className="relative flex justify-center">
               <span
                 className={cn(
-                  'z-10 mt-1 h-2.5 w-2.5 rounded-full border-2',
+                  'z-10 mt-1 h-3 w-3 rounded-full border-2',
                   done && 'border-brand-500 bg-brand-500',
                   active && 'border-brand-500 bg-surface ring-4 ring-brand-100',
                   !done && !active && 'border-line bg-surface',
@@ -40,17 +40,17 @@ export function Stepper({
               {index < steps.length - 1 ? (
                 <span
                   className={cn(
-                    'absolute top-3 h-full w-px',
+                    'absolute top-3 h-full w-0.5',
                     done ? 'bg-brand-500' : 'border-l border-dashed border-line',
                   )}
                 />
               ) : null}
             </span>
             <div>
-              <p className={cn('text-body font-medium', active ? 'text-ink' : done ? 'text-ink' : 'text-ink-muted')}>
+              <p className={cn('text-body', active ? 'font-bold text-ink' : done ? 'font-semibold text-ink' : 'font-medium text-ink-muted')}>
                 {step.title}
               </p>
-              {step.detail ? <p className="text-xs text-ink-muted">{step.detail}</p> : null}
+              {step.detail ? <p className="mt-0.5 text-meta text-ink-muted">{step.detail}</p> : null}
             </div>
           </li>
         );

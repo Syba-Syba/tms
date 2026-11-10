@@ -1,9 +1,12 @@
 /** Maps the CSS variables in tokens.css onto Tailwind so apps never hardcode a hex value. */
+/** A token colour that also takes Tailwind's opacity modifier (`border-danger/30`). */
+const tint = (variable) => `color-mix(in srgb, var(${variable}) calc(<alpha-value> * 100%), transparent)`;
+
 const ramp = (name) =>
   Object.fromEntries(
     [50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((step) => [
       step,
-      `var(--tb-${name}-${step})`,
+      name === 'brand' ? tint(`--tb-${name}-${step}`) : `var(--tb-${name}-${step})`,
     ]),
   );
 
@@ -18,23 +21,25 @@ module.exports = {
         line: { DEFAULT: 'var(--tb-border)', soft: 'var(--tb-border-soft)' },
         marker: 'var(--tb-marker)',
         ink: { DEFAULT: 'var(--tb-text)', muted: 'var(--tb-text-muted)', inverse: 'var(--tb-text-inverse)' },
-        success: 'var(--tb-success)',
-        warning: 'var(--tb-warning)',
-        danger: 'var(--tb-danger)',
-        info: 'var(--tb-info)',
+        success: tint('--tb-success'),
+        warning: tint('--tb-warning'),
+        danger: tint('--tb-danger'),
+        info: tint('--tb-info'),
+        tint: { success: 'var(--tb-success-tint)', warning: 'var(--tb-warning-tint)', danger: 'var(--tb-danger-tint)', info: 'var(--tb-info-tint)' },
+        nav: { DEFAULT: 'var(--tb-nav)', active: 'var(--tb-nav-active)', text: 'var(--tb-nav-text)', muted: 'var(--tb-nav-muted)', accent: 'var(--tb-nav-accent)' },
         action: { DEFAULT: 'var(--tb-action)', hover: 'var(--tb-action-hover)' },
       },
       // The type scale. Nine sizes, named for their job; screens never set a pixel size by hand.
       fontSize: {
-        '2xs': ['11px', { lineHeight: '14px' }], // tab bar labels
-        xs: ['12px', { lineHeight: '16px' }], // hints, badges, fine print
-        meta: ['13px', { lineHeight: '19px' }], // secondary lines, table cells, links in rows
-        body: ['14px', { lineHeight: '21px' }], // running text, form values
-        lead: ['15px', { lineHeight: '22px' }], // card titles, row titles
-        title: ['20px', { lineHeight: '26px' }], // section and drawer headings, the wordmark
-        figure: ['24px', { lineHeight: '30px' }], // stat figures and prices
-        display: ['30px', { lineHeight: '36px', letterSpacing: '-0.01em' }], // page titles
-        hero: ['42px', { lineHeight: '46px', letterSpacing: '-0.015em' }], // the one big number
+        '2xs': ['11.5px', { lineHeight: '14px' }], // tab bar labels
+        xs: ['12.5px', { lineHeight: '17px' }], // hints, pills, fine print
+        meta: ['14px', { lineHeight: '20px' }], // secondary lines, table cells, links in rows
+        body: ['15px', { lineHeight: '22px' }], // running text, form values
+        lead: ['16px', { lineHeight: '23px' }], // card titles, row titles
+        title: ['20px', { lineHeight: '26px', letterSpacing: '-0.01em' }], // section and drawer headings
+        figure: ['26px', { lineHeight: '32px', letterSpacing: '-0.02em' }], // stat figures and prices
+        display: ['28px', { lineHeight: '34px', letterSpacing: '-0.02em' }], // page titles
+        hero: ['40px', { lineHeight: '44px', letterSpacing: '-0.025em' }], // the one big number
       },
       fontFamily: {
         display: ['var(--tb-font-display)'],

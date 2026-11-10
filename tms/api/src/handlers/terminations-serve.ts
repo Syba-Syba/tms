@@ -14,7 +14,7 @@ import {
   type TerminationReason,
 } from '../domain/termination';
 import { addDaysIso, dateFromIso, isoDate, sastToday } from '../domain/dates';
-import { movePendingChargesPast, trimInvoicesAfter } from '../lib/billing';
+import { putNoticeInForce, scheduledRenewal, signedRenewalRefusal, takeNoticeEvidence } from '../lib/notice';
 import { notify } from '../lib/notify';
 import { query } from '../lib/db';
 import { rentForPeriod, zar } from '../domain/money';
@@ -90,6 +90,20 @@ export const handler = route(async (event) => {
   // then the tenant may refuse it and the landlord may withdraw their own entry.
   const recordedByTenant = access.isTenant && !access.isLandlord;
   const needsTenantConfirmation = !recordedByTenant && input.initiatedBy !== 'landlord';
+  // With the tenant's written notice attached and the landlord's statement that it is genuine,
+  // the notice stands at once: a tenant who gave notice on paper and never opens the app, or
+  // one imported without an account, otherwise left a notice nobody could confirm.
+  if (Boolean(input.evidenceKey) !== Boolean(input.statement)) {
+    throw badRequest('Attach the tenant’s written notice and say how you received it, or leave both out.', {
+      [input.evidenceKey ? 'statement' : 'evidenceKey']: 'Required with the other.',
+    });
+  }
+  if (input.evidenceKey && !needsTenantConfirmation) {
+    throw badRequest('A written notice is attached only to a tenant’s or a mutual notice that the landlord records.');
+  }
+  const attested = needsTenantConfirmation && Boolean(input.evidenceKey);
+  // Not in force until the tenant confirms: rent is billed and renewals stand as before.
+  const awaitingTenant = needsTenantConfirmation && !attested;
 
   const result = await withTransaction(async (run) => {
     const [lease] = await run<{
@@ -105,11 +119,11 @@ export const handler = route(async (event) => {
     if (!lease) throw badRequest('That lease no longer exists.');
     if (lease.status !== 'active') throw conflict(`This lease is ${lease.status}.`);
     // A tenant imported without an account cannot confirm, so the notice would never stand
-    // and the deposit could never be settled.
-    if (needsTenantConfirmation && !lease.has_account) {
+    // and the deposit could never be settled. Their written notice, attached, stands instead.
+    if (awaitingTenant && !lease.has_account) {
       throw conflict(
         'The tenant has to confirm this notice in the app, and they have no account yet. ' +
-          'Invite them to the app first, then record the notice.',
+          'Attach their written notice to record it now, or invite them to the app first.',
       );
     }
 
@@ -119,18 +133,8 @@ export const handler = route(async (event) => {
     // binding lease, and the notice is refused. Until then it is only an acceptance: it is
     // cancelled with the notice. Refusing that too left a tenant who accepted and changed their
     // mind with no way out at all, since an unsigned scheduled lease cannot be cancelled.
-    const [renewed] = await run<{ id: string; start_date: string; signed: boolean }>(
-      `select l.id, l.start_date::text,
-              (select count(*) from lease_signature s where s.lease_id = l.id) = 2 as signed
-         from lease l where l.previous_lease_id = $1 and l.status = 'scheduled' for update`,
-      [leaseId],
-    );
-    if (renewed?.signed) {
-      throw conflict(
-        `A renewal of this lease has been signed and starts on ${renewed.start_date}, so notice ` +
-          'cannot be served on it. Once the new lease starts, notice is given on that one.',
-      );
-    }
+    const renewed = await scheduledRenewal(run, leaseId);
+    if (renewed?.signed) throw signedRenewalRefusal(renewed.start_date);
 
     const notice = dateFromIso(noticeGivenOn);
     const leaseEnd = dateFromIso(lease.end_date);
@@ -153,9 +157,12 @@ export const handler = route(async (event) => {
     // With no date chosen, the earliest lawful day, or today when a backdated notice's earliest
     // day has already passed: the form leaves the date optional, and it was refused below.
     const todayDate = dateFromIso(today);
+    // Never past the latest day either: a tenant's end-of-term notice recorded after the end
+    // date defaulted to today, which the latest-date check below then refused.
+    const fromToday = earliest < todayDate ? todayDate : earliest;
     const effective = input.effectiveOn
       ? dateFromIso(isoDate(input.effectiveOn))
-      : earliest < todayDate ? todayDate : earliest;
+      : fromToday > latest ? latest : fromToday;
     // The parties may agree a later date than the minimum, never an earlier one.
     if (effective < earliest) {
       throw badRequest(
@@ -169,7 +176,12 @@ export const handler = route(async (event) => {
       throw badRequest(`The latest end date for this notice is ${isoDate(latest)}.`);
     }
     // Nor can a lease end before today: the tenancy that ran until now happened.
-    if (isoDate(effective) < today) {
+    // The one exception: a tenant's notice, given before the term ran out, that the landlord
+    // records after it did. The lease ended on its end date. Refusing that left only a notice
+    // dated today, which billed a month of holdover rent to a tenant who left on time.
+    const endedOnTerm =
+      needsTenantConfirmation && input.initiatedBy === 'tenant' && effective.getTime() === leaseEnd.getTime();
+    if (isoDate(effective) < today && !endedOnTerm) {
       throw badRequest(`The end date cannot be before today (${today}).`);
     }
     // CPA s14(3)(b): the penalty is for cancelling a fixed term before it expires. A lease
@@ -195,8 +207,9 @@ export const handler = route(async (event) => {
     const [termination] = await run<{ id: string }>(
       `insert into termination
          (lease_id, initiated_by, reason, notice_given_on, effective_on, notice_days, penalty_cents,
-          needs_tenant_confirmation)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+          needs_tenant_confirmation, tenant_confirmed_at, attested_at, attested_by, attestation_statement)
+       values ($1, $2, $3, $4, $5, $6, $7, $8,
+               case when $9 then now() end, case when $9 then now() end, case when $9 then $10 end, $11)
        on conflict (lease_id) where status <> 'withdrawn' do nothing
        returning id`,
       [
@@ -208,47 +221,30 @@ export const handler = route(async (event) => {
         noticeDays,
         penaltyCents,
         needsTenantConfirmation,
+        attested,
+        access.person.sub,
+        attested ? input.statement : null,
       ],
     );
     if (!termination) throw conflict('Notice has already been served on this lease.');
 
-    // An offer to renew a lease that is ending lapses with the notice; accepting it afterwards
-    // would start a new lease the tenant has just said they are leaving.
-    // Both are recorded on the notice, so withdrawing it can put them back.
-    const lapsed = await run<{ id: string }>(
-      `update renewal set status = 'lapsed' where lease_id = $1 and status = 'offered' returning id`,
-      [leaseId],
-    );
-    if (renewed) {
-      await run(`update lease set status = 'cancelled' where id = $1`, [renewed.id]);
-      lapsed.push(
-        ...(await run<{ id: string }>(
-          `update renewal set status = 'lapsed' where new_lease_id = $1 and status = 'accepted' returning id`,
-          [renewed.id],
-        )),
-      );
+    const inForce = awaitingTenant
+      ? { invoicesAdjusted: 0, chargesMoved: 0, renewalCancelled: null }
+      : await putNoticeInForce(run, leaseId, termination.id, isoDate(effective));
+    // Last, so a notice refused above leaves the upload as it was.
+    if (attested) {
+      const evidenceKey = await takeNoticeEvidence(run, leaseId, input.evidenceKey!);
+      await run('update termination set evidence_s3_key = $2 where id = $1', [termination.id, evidenceKey]);
     }
-    await run('update termination set lapsed_renewal_ids = $2, cancelled_lease_id = $3 where id = $1', [
-      termination.id,
-      lapsed.map((row) => row.id),
-      renewed?.id ?? null,
-    ]);
-
-    // Next month's rent may already have been invoiced in full on the 25th.
-    const trimmed = await trimInvoicesAfter(run, leaseId, isoDate(effective));
-    // A charge already added for a month after the lease now ends would never be billed: the
-    // invoice run stops at the last month. It goes on the last invoice instead.
-    const chargesMoved = await movePendingChargesPast(run, leaseId, isoDate(effective));
 
     return {
       id: termination.id,
       effectiveOn: isoDate(effective),
       earliestLawful: isoDate(earliest),
       noticeGivenOn,
-      invoicesAdjusted: trimmed,
-      chargesMoved,
-      renewalCancelled: renewed?.id ?? null,
-      awaitingTenant: needsTenantConfirmation,
+      ...inForce,
+      awaitingTenant,
+      attested,
     };
   });
 
@@ -280,7 +276,7 @@ export const handler = route(async (event) => {
     await notify({
       leaseId,
       to: { sub: parties.tenant_sub, email: parties.tenant_email, phone: parties.tenant_phone },
-      kind: needsTenantConfirmation ? 'notice_confirm_requested' : 'notice_served',
+      kind: awaitingTenant ? 'notice_confirm_requested' : attested ? 'notice_attested' : 'notice_served',
       dedupeKey: `notice_served:${result.id}:tenant`,
       data: noticeData,
     });
@@ -304,6 +300,7 @@ export const handler = route(async (event) => {
     detail: {
       recordedBy: recordedByTenant ? 'tenant' : 'landlord',
       needsTenantConfirmation,
+      attested,
       reason: input.reason,
       initiatedBy: input.initiatedBy,
       noticeGivenOn,

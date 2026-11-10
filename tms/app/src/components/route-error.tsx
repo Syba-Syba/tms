@@ -1,4 +1,6 @@
-import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
+import { isRouteErrorResponse, useRouteError } from 'react-router';
+import { LinkButton } from './link-button';
+import { Wordmark } from './wordmark';
 import { Button } from '@hlonie/toolbox/ui';
 
 /**
@@ -16,15 +18,18 @@ export function RouteError() {
   if (!notFound && import.meta.env.DEV) console.error(error);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
+      <span className="mb-8 block">
+        <Wordmark />
+      </span>
+      <h1 className="mb-2 font-display text-display font-bold leading-tight tracking-[-0.01em] text-ink">
         {notFound
           ? 'Page not found'
           : staleBuild
             ? 'There is a newer version'
             : 'Something went wrong'}
       </h1>
-      <p className="mb-5 text-body text-ink-muted">
+      <p className="mb-6 text-lead text-ink-muted">
         {notFound
           ? 'That address does not lead anywhere. It may have been mistyped, or the page has moved.'
           : staleBuild
@@ -33,12 +38,9 @@ export function RouteError() {
       </p>
       <div className="flex gap-2">
         {notFound ? null : <Button onClick={() => window.location.reload()}>Reload</Button>}
-        <Link
-          to="/"
-          className="inline-flex h-11 items-center px-3 text-lead font-semibold text-brand-600"
-        >
+        <LinkButton to="/" variant={notFound ? 'primary' : 'outline'}>
           Go home
-        </Link>
+        </LinkButton>
       </div>
     </main>
   );

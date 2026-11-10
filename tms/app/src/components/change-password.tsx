@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Button, Input, useToast } from '@hlonie/toolbox/ui';
+import { SettingsCard } from './settings-nav';
 import { api, humanError } from '../api/client';
 import { startSession, type SessionUser } from '../lib/session';
 
@@ -55,12 +56,7 @@ export function ChangePassword() {
   };
 
   return (
-    <Card>
-      <CardBody className="space-y-3">
-        <div>
-          <p className="text-lead font-semibold">Password</p>
-          <p className="text-xs text-ink-muted">Changing it signs you out everywhere else.</p>
-        </div>
+    <SettingsCard title="Password" description="Changing it signs you out everywhere else.">
         <FieldInput
           label="Current password"
           autoComplete="current-password"
@@ -86,11 +82,10 @@ export function ChangePassword() {
           error={mismatch ? 'These do not match.' : undefined}
           onEnter={() => ready && !busy && submit()}
         />
-        <Button loading={busy} disabled={!ready} onClick={submit}>
+        <Button variant="secondary" loading={busy} disabled={!ready} onClick={submit}>
           Change password
         </Button>
-      </CardBody>
-    </Card>
+    </SettingsCard>
   );
 }
 
@@ -103,8 +98,8 @@ function FieldInput(props: {
   onEnter?: () => void;
 }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-meta font-medium">{props.label}</span>
+    <label className="block space-y-1.5">
+      <span className="block text-body font-medium text-ink">{props.label}</span>
       <Input
         type="password"
         autoComplete={props.autoComplete}

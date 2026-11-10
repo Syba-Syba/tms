@@ -18,6 +18,15 @@ function SettingsIndex() {
   return <Navigate to={isLandlord() ? '/settings/account' : '/settings/notifications'} replace />;
 }
 
+/**
+ * The landlord's side of the app. A tenant who opens one of these addresses (an old bookmark, a
+ * link a landlord forwarded) used to get a blank page, because the screen's queries never ran.
+ * They are sent to their own home instead.
+ */
+export function LandlordOnly() {
+  return isLandlord() ? <Outlet /> : <Navigate to="/" replace />;
+}
+
 function RequireAuth() {
   const location = useLocation();
   if (!currentUser()) {
@@ -57,15 +66,21 @@ export const router = createBrowserRouter([
             children: [
               { path: '/', lazy: screen('home', 'Home') },
               {
-                path: '/applications',
-                lazy: screen('landlord-queue', 'LandlordQueue'),
+                element: <LandlordOnly />,
+                children: [
+                  { path: '/applications', lazy: screen('landlord-queue', 'LandlordQueue') },
+                  { path: '/properties', lazy: screen('properties', 'Properties') },
+                  { path: '/payments', lazy: screen('payments', 'Payments') },
+                  { path: '/reports', lazy: screen('reports', 'Reports') },
+                  { path: '/activity', lazy: screen('activity', 'Activity') },
+                  { path: '/tenants/import', lazy: screen('import-tenants', 'ImportTenants') },
+                  { path: '/settings/account', lazy: screen('settings-account', 'SettingsAccount') },
+                  { path: '/settings/team', lazy: screen('settings-team', 'SettingsTeam') },
+                  { path: '/settings/billing', lazy: screen('settings-billing', 'SettingsBilling') },
+                ],
               },
-              { path: '/properties', lazy: screen('properties', 'Properties') },
-              { path: '/payments', lazy: screen('payments', 'Payments') },
-              { path: '/reports', lazy: screen('reports', 'Reports') },
               { path: '/documents', lazy: screen('documents', 'Documents') },
               { path: '/tickets', lazy: screen('tickets-list', 'TicketsList') },
-              { path: '/activity', lazy: screen('activity', 'Activity') },
               {
                 path: '/tickets/:ticketId',
                 lazy: screen('ticket-detail', 'TicketDetail'),
@@ -78,11 +93,7 @@ export const router = createBrowserRouter([
                 path: '/terminations/:terminationId',
                 lazy: screen('termination', 'Termination'),
               },
-              { path: '/tenants/import', lazy: screen('import-tenants', 'ImportTenants') },
               { path: '/settings', element: <SettingsIndex /> },
-              { path: '/settings/account', lazy: screen('settings-account', 'SettingsAccount') },
-              { path: '/settings/team', lazy: screen('settings-team', 'SettingsTeam') },
-              { path: '/settings/billing', lazy: screen('settings-billing', 'SettingsBilling') },
               {
                 path: '/settings/notifications',
                 lazy: screen('notification-preferences', 'NotificationPreferences'),

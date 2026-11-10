@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { Alert, Button, Card, CardBody, Input, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Button, Input, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
+import { AuthHeading, AuthLayout } from '../components/auth-layout';
+import { TEXT_LINK } from '../components/link-button';
 
 /** The server answers the same whether or not the email has an account, so this screen does too. */
 export function ForgotPassword() {
@@ -24,18 +26,16 @@ export function ForgotPassword() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Forgot your password?</h1>
-      <p className="mb-5 text-body text-ink-muted">
+    <AuthLayout>
+      <AuthHeading title="Forgot your password?">
         Enter the email you signed up with. We send a link to choose a new password.
-      </p>
+      </AuthHeading>
       {sent ? (
         <Alert tone="success" title="Check your email" className="mb-4">
           {sent}
         </Alert>
       ) : null}
-      <Card>
-        <CardBody className="space-y-3">
+      <div className="space-y-4">
           <Field label="Email" htmlFor="forgot-email">
           <Input
             id="forgot-email"
@@ -47,14 +47,13 @@ export function ForgotPassword() {
             onKeyDown={(event) => event.key === 'Enter' && email.includes('@') && send()}
           />
           </Field>
-          <Button block loading={busy} disabled={!email.includes('@')} onClick={send}>
+          <Button block size="lg" loading={busy} disabled={!email.includes('@')} onClick={send}>
             {sent ? 'Send another link' : 'Send reset link'}
           </Button>
           <p className="text-center text-meta text-ink-muted">
-            Remembered it? <Link to="/login" className="font-bold text-brand-500">Sign in</Link>
+            Remembered it? <Link to="/login" className={TEXT_LINK}>Sign in</Link>
           </p>
-        </CardBody>
-      </Card>
-    </main>
+      </div>
+    </AuthLayout>
   );
 }

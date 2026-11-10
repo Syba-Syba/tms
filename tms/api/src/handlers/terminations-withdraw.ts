@@ -46,10 +46,12 @@ export const handler = route(async (event) => {
       cancelled_lease_id: string | null;
       initiated_by: 'tenant' | 'landlord' | 'mutual';
       awaiting_tenant: boolean;
+      attested: boolean;
     }>(
       `select t.lease_id, t.status, t.effective_on::text, l.status as lease_status,
               t.lapsed_renewal_ids, t.cancelled_lease_id, t.initiated_by,
-              (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant
+              (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
+              t.attested_at is not null as attested
          from termination t join lease l on l.id = t.lease_id
         where t.id = $1
         for update of t, l`,
@@ -64,7 +66,10 @@ export const handler = route(async (event) => {
       throw forbidden('Only the party who gave this notice can withdraw it.');
     }
     // Agreed by both: the tenant may have signed elsewhere, the landlord re-let the unit.
-    if (termination.initiated_by === 'mutual' && !termination.awaiting_tenant) {
+    // One the landlord attested to is not that: the tenant never confirmed it, and withdrawing
+    // is how they dispute it.
+    const tenantDisputesAttested = termination.attested && withdrawnBy === 'tenant';
+    if (termination.initiated_by === 'mutual' && !termination.awaiting_tenant && !tenantDisputesAttested) {
       throw conflict('Both parties agreed this end date. Undoing it needs both: record a new agreement instead.');
     }
     if (termination.status === 'withdrawn') throw conflict('This notice has already been withdrawn.');
@@ -81,7 +86,7 @@ export const handler = route(async (event) => {
     await run(`update termination set status = 'withdrawn' where id = $1`, [terminationId]);
     // Before the invoices: a revived renewal sets where this lease's billing stops.
     const renewalsRestored = await restoreRenewals(run, termination, today);
-    const invoicesRestored = await restoreInvoicesAfter(run, termination.lease_id, termination.effective_on);
+    const invoicesRestored = await restoreInvoicesAfter(run, termination.lease_id, termination.effective_on, today);
     // An exit inspection booked for the old end date would otherwise be reminded and held.
     const inspections = await run<{ id: string }>(
       `update inspection set status = 'missed'
@@ -152,7 +157,7 @@ export const handler = route(async (event) => {
  * takeover voids by zeroing the total, and those stay void. Other charges on an invoice stand
  * as entered. Returns how many invoices changed.
  */
-async function restoreInvoicesAfter(run: Run, leaseId: string, effectiveOn: string): Promise<number> {
+async function restoreInvoicesAfter(run: Run, leaseId: string, effectiveOn: string, today: string): Promise<number> {
   const invoices = await run<{
     id: string;
     period_start: string;
@@ -237,11 +242,14 @@ async function restoreInvoicesAfter(run: Run, leaseId: string, effectiveOn: stri
     }
     const paid = Number(invoice.paid);
     await run(
+      // A trimmed month that was paid in full owes the difference from today, not from its old
+      // due date: otherwise the tenant was weeks in arrears the moment the notice was withdrawn.
       `update invoice
           set total_cents = $2, covers_from = $3, covers_to = $4,
-              status = case when $5::bigint >= $2 then 'paid' when $5::bigint > 0 then 'part_paid' else 'issued' end
+              status = case when $5::bigint >= $2 then 'paid' when $5::bigint > 0 then 'part_paid' else 'issued' end,
+              due_on = case when status = 'paid' and $5::bigint < $2 then greatest(due_on, $6::date) else due_on end
         where id = $1`,
-      [invoice.id, total, from, to, paid],
+      [invoice.id, total, from, to, paid, today],
     );
     changed += 1;
   }

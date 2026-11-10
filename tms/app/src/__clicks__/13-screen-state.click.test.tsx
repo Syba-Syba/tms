@@ -175,7 +175,7 @@ describe('an inspection photo', () => {
       return {};
     });
     mount('/inspections/n1/room/Lounge', <Route path="/inspections/:inspectionId/room/:room" element={<InspectionRoom />} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a photo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a photo of Wall' }));
     await screen.findByAltText('Wall photo');
     await waitFor(() => expect(screen.queryByAltText('Captured photo')).toBeNull());
     expect(screen.getAllByRole('img')).toHaveLength(1);

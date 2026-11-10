@@ -282,7 +282,7 @@ describe('approved applications whose lease has moved on (item 46)', () => {
         <Route path="/lease/:leaseId" element={<div>PROBE-SIGNING</div>} />
       </>
     ));
-    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Approved/ }));
     expect((await screen.findAllByRole('button', { name: 'Continue signing' })).length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole('button', { name: 'Open lease' })[0]!);
     expect(await screen.findByText('PROBE-LEASE-DETAIL')).toBeTruthy();
@@ -313,7 +313,8 @@ describe('an expense whose slip did not upload (item 44)', () => {
       });
       fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
       await screen.findByText('Expense saved, slip not uploaded');
-      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      // The form stays open so the slip can be tried again (see 16-redesign-records).
+      expect(await within(dialog).findByRole('button', { name: 'Try the slip again' })).toBeTruthy();
       expect(screen.queryByText('Expense saved')).toBeNull();
     } finally {
       globalThis.fetch = realFetch;

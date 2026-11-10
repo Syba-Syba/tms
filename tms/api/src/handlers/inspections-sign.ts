@@ -4,7 +4,7 @@ import { query, withTransaction } from '../lib/db';
 import { storage } from '../lib/storage';
 import { badRequest, conflict, json, notFound, parseBody, route } from '../lib/http';
 import { signInspectionSchema } from '../domain/inspection';
-import { hasSafeDimensions, pngBytesFromDataUrl, sniffImageType } from '../lib/images';
+import { REPORT_PIXEL_BUDGET, decodedPixels, hasSafeDimensions, pngBytesFromDataUrl, sniffImageType } from '../lib/images';
 import { isEmbeddableImage, renderInspectionPdf, type InspectionData, type InspectionPhoto } from '../lib/pdf';
 import { logger } from '../lib/logger';
 
@@ -60,6 +60,7 @@ export async function collectReportFindings(inspectionId: string): Promise<{
 
   let embedded = 0;
   let embeddedBytes = 0;
+  let embeddedPixels = 0;
   let omitted = 0;
   const result: InspectionData['findings'] = [];
   for (const finding of findings) {
@@ -82,7 +83,16 @@ export async function collectReportFindings(inspectionId: string): Promise<{
         logger.warn('Photo is too large to decode; left out of the report.', { key });
         continue;
       }
+      // Decoded PNGs are held until the PDF is saved: sixty large ones were gigabytes. Past
+      // the budget a photo stays on file and is counted in the report's note, so an
+      // inspection that already holds too many still renders and seals.
+      const pixels = decodedPixels(bytes);
+      if (embeddedPixels + pixels > REPORT_PIXEL_BUDGET) {
+        omitted += 1;
+        continue;
+      }
       photos.push({ bytes, type });
+      embeddedPixels += pixels;
       embedded += 1;
       embeddedBytes += bytes.byteLength;
     }

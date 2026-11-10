@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
 import { Button, Card, CardBody, Checkbox, Spinner, useToast } from '@hlonie/toolbox/ui';
 import { api, humanError } from '../api/client';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { TERMS_VERSION } from '../lib/terms';
 import { formatDate } from '../lib/format';
+import { currentUser, endSession } from '../lib/session';
+import { Wordmark } from './wordmark';
+import { LinkButton } from './link-button';
 
 interface PrivacyState {
   currentVersion: string;
@@ -61,10 +63,13 @@ export function ConsentGate({ children }: { children: ReactNode }) {
   const title = changed ? `Our ${what} ${needsPrivacy && needsTerms ? 'have' : 'has'} changed` : 'Before you carry on';
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-10">
+    <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-4 py-10">
+      <span className="mb-6 block">
+        <Wordmark />
+      </span>
       <Card>
-        <CardBody className="space-y-4">
-          <h1 className="font-display text-display font-medium leading-tight tracking-[-0.01em]">{title}</h1>
+        <CardBody className="space-y-4 sm:px-7 sm:py-6">
+          <h1 className="font-display text-display font-bold leading-tight tracking-[-0.01em] text-ink">{title}</h1>
           {needsTerms ? (
             <p className="text-body text-ink-muted">
               The terms of service of {formatDate(TERMS_VERSION)} set out what Threshold does for your business, what
@@ -79,14 +84,14 @@ export function ConsentGate({ children }: { children: ReactNode }) {
           ) : null}
           <p className="text-body text-ink-muted">Read {needsPrivacy && needsTerms ? 'them' : 'it'}, then agree to continue.</p>
           {needsTerms ? (
-            <Link to="/terms" target="_blank" className="block text-body font-bold text-brand-500">
+            <LinkButton to="/terms" target="_blank" variant="secondary" block>
               Read the terms of service
-            </Link>
+            </LinkButton>
           ) : null}
           {needsPrivacy ? (
-            <Link to="/privacy" target="_blank" className="block text-body font-bold text-brand-500">
+            <LinkButton to="/privacy" target="_blank" variant="secondary" block>
               Read the privacy notice
-            </Link>
+            </LinkButton>
           ) : null}
           <Checkbox
             id="privacy-consent"
@@ -94,11 +99,20 @@ export function ConsentGate({ children }: { children: ReactNode }) {
             onChange={(event) => setTicked(event.target.checked)}
             label={`I have read the ${what} and agree to ${needsPrivacy && needsTerms ? 'them' : 'it'}`}
           />
-          <Button block loading={busy} disabled={!ticked} onClick={accept}>
+          <Button block size="lg" loading={busy} disabled={!ticked} onClick={accept}>
             Continue
           </Button>
         </CardBody>
       </Card>
+      {/* Not agreeing has to be possible too: without this the only way out was to clear the browser. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-meta text-ink-muted">
+          {currentUser()?.email ? `Signed in as ${currentUser()!.email}` : 'Not ready to agree?'}
+        </p>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => endSession()}>
+          Sign out
+        </Button>
+      </div>
     </main>
   );
 }

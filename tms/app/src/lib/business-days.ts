@@ -64,3 +64,33 @@ export function addBusinessDays(from: string, count: number): string {
   }
   return iso(cursor);
 }
+
+const parse = (day: string) => {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d));
+};
+
+/** Business days after `from` up to and including `to`, as the API's businessDaysBetween. */
+export function businessDaysBetween(from: string, to: string): number {
+  const end = parse(to);
+  let cursor = parse(from);
+  let count = 0;
+  while (cursor < end) {
+    cursor = shift(cursor, 1);
+    if (isBusinessDay(cursor)) count += 1;
+  }
+  return count;
+}
+
+/** The API's LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS (CPA s14(2)(c): 40 to 80 before expiry). */
+export const LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS = 80;
+
+/** The first day a landlord's end-of-term notice can be served, as the API's
+    landlordEndOfTermServableFrom: 80 business days or fewer before the end date. */
+export function landlordEndOfTermServableFrom(leaseEnd: string): string {
+  let day = leaseEnd;
+  const before = (value: string) => iso(shift(parse(value), -1));
+  // Walk back while the day before is still inside the window.
+  while (businessDaysBetween(before(day), leaseEnd) <= LANDLORD_END_OF_TERM_MAX_BUSINESS_DAYS) day = before(day);
+  return day;
+}

@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, EmptyState, Modal, PageHeader, Select, Spinner, Tabs,
+  Alert, Avatar, Badge, Button, Card, CardBody, CurrencyInput, EmptyState, Modal, PageHeader, Select, Spinner,
   Textarea, useToast,
 } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { useOpenDocument } from '../lib/open-document';
 import { QueryError } from '../components/query-state';
-import { formatDate, formatInstant, headlineZar } from '../lib/format';
+import { formatDate, formatInstant, formatMonth, headlineZar } from '../lib/format';
 import { localToday as today } from '../lib/dates';
 import { invalidateMoneyCaches } from '../lib/money-caches';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
+import { ListsSteps, ListsTabs, ListsTile, ListsTiles, ListsUploadArea } from '../components/lists-kit';
 
 interface ProofRow {
   id: string;
@@ -59,27 +60,19 @@ interface ImportDetail {
 
 const zar = (cents: number) => formatZar(cents / 100);
 const confidenceTone = { high: 'success', medium: 'warning', low: 'neutral' } as const;
+const confidenceLabel = { high: 'Strong match', medium: 'Likely match', low: 'Weak guess' } as const;
+
+interface ArrearsRow {
+  leaseId?: string;
+  tenant?: string;
+  unit?: string;
+  totalCents: number;
+  ageing?: { current: number };
+}
 
 /** Money coming in that the landlord has not typed: tenants' slips and the bank statement. */
 export function Payments() {
-  return (
-    <main className={PAGE.reading}>
-      <PageHeader title="Payments" description="Check tenants' slips and match your bank statement to leases." />
-      <Tabs
-        items={[
-          { value: 'slips', label: 'Slips to check', content: <Slips /> },
-          { value: 'bank', label: 'Bank import', content: <BankImport /> },
-        ]}
-      />
-    </main>
-  );
-}
-
-/**
- * Nothing to check, so the tab shows where the month stands instead of an empty box: what came
- * in, what is still owed, and where to look next.
- */
-function NoSlips() {
+  const [tab, setTab] = useState<'slips' | 'bank'>('slips');
   const monthStart = `${today().slice(0, 7)}-01`;
   const month = useQuery({
     queryKey: ['report-income', monthStart, today()],
@@ -90,53 +83,118 @@ function NoSlips() {
   });
   const arrears = useQuery({
     queryKey: ['report-arrears'],
-    queryFn: () =>
-      api.get<{ items: { totalCents: number; ageing: { current: number } }[]; totals: { totalCents: number } }>(
-        '/reports/arrears',
-      ),
+    queryFn: () => api.get<{ items: ArrearsRow[]; totals: { totalCents: number } }>('/reports/arrears'),
   });
+  const proofs = useQuery({
+    queryKey: ['payment-proofs'],
+    queryFn: () => api.get<{ items: ProofRow[] }>('/payment-proofs'),
+  });
+
   // 'current' is rent not yet late: next month's, issued on the 25th. Only the rest is behind.
-  const late = (arrears.data?.items ?? []).map((item) => item.totalCents - (item.ageing?.current ?? 0));
-  const owing = late.filter((cents) => cents > 0).length;
-  const lateCents = late.reduce((sum, cents) => sum + Math.max(0, cents), 0);
+  const behind = (arrears.data?.items ?? [])
+    .map((item) => ({ ...item, lateCents: item.totalCents - (item.ageing?.current ?? 0) }))
+    .filter((item) => item.lateCents > 0);
+  const lateCents = behind.reduce((sum, item) => sum + item.lateCents, 0);
   const notDueCents = (arrears.data?.totals.totalCents ?? 0) - lateCents;
+  const slipCount = proofs.data?.items.length;
+  const monthName = formatMonth(today()).split(' ')[0];
 
   return (
-    <section className="space-y-4">
-      <div>
-        <p className="text-lead font-semibold text-ink">No slips waiting</p>
-        <p className="text-meta text-ink-muted">When a tenant sends proof of payment, it shows up here.</p>
+    <main className={PAGE.wide}>
+      <PageHeader title="Payments" description="Check tenants' slips and match your bank statement to leases." />
+
+      <ListsTiles columns={3}>
+        <ListsTile
+          label={`Collected in ${monthName}`}
+          value={month.data ? <Money whole cents={month.data.totals.collectedCents} /> : '–'}
+          note={month.data ? `of ${headlineZar(month.data.totals.invoicedCents)} invoiced` : month.isError ? 'Not available right now' : 'Loading'}
+        />
+        <ListsTile
+          tone={lateCents > 0 ? 'danger' : 'plain'}
+          label="Overdue from tenants"
+          value={arrears.data ? <Money whole cents={lateCents} /> : '–'}
+          note={
+            !arrears.data
+              ? arrears.isError ? 'Not available right now' : 'Loading'
+              : behind.length === 0
+                ? notDueCents > 0 ? `Nobody is behind. ${headlineZar(notDueCents)} not yet due` : 'Nobody is behind'
+                : `${behind.length} lease${behind.length === 1 ? '' : 's'} behind${notDueCents > 0 ? `, ${headlineZar(notDueCents)} more not yet due` : ''}`
+          }
+        />
+        <div className="col-span-2 lg:col-span-1">
+          <ListsTile
+            label="Slips to check"
+            value={slipCount ?? '–'}
+            note={slipCount === undefined ? (proofs.isError ? 'Not available right now' : 'Loading') : slipCount === 0 ? 'Nothing waiting on you' : 'Sent by tenants, waiting on you'}
+          />
+        </div>
+      </ListsTiles>
+
+      <ListsTabs
+        className="mb-5"
+        label="Payments"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'slips', label: 'Slips to check', count: slipCount, tone: 'danger' },
+          { value: 'bank', label: 'Bank import' },
+        ]}
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div role="tabpanel" aria-label={tab === 'slips' ? 'Slips to check' : 'Bank import'} className="min-w-0">
+          {tab === 'slips' ? <Slips onOpenBank={() => setTab('bank')} /> : <BankImport />}
+        </div>
+
+        <aside className="space-y-5">
+          <Card>
+            <div className="flex items-center justify-between gap-3 border-b border-line-soft px-5 py-4">
+              <h2 className="text-lead font-bold text-ink">Behind on rent</h2>
+              <Link to="/reports" className="inline-flex min-h-6 items-center text-meta font-semibold text-brand-500 hover:underline">
+                Arrears by lease
+              </Link>
+            </div>
+            {behind.length === 0 ? (
+              <p className="px-5 py-4 text-body text-ink-muted">
+                {arrears.data ? 'Nobody is behind. Leases with overdue rent show here.' : arrears.isError ? 'Not available right now.' : 'Loading…'}
+              </p>
+            ) : (
+              <ul className="divide-y divide-line-soft">
+                {behind.slice(0, 6).map((item, index) => (
+                  <li key={item.leaseId ?? index}>
+                    <Link to={item.leaseId ? `/leases/${item.leaseId}` : '/reports'} className="flex items-center gap-3 px-5 py-3.5 hover:bg-surface-muted">
+                      <Avatar name={item.tenant ?? 'Tenant'} tone="danger" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-body font-semibold text-ink">{item.tenant ?? 'Tenant'}</span>
+                        <span className="block text-meta text-ink-muted">{item.unit ?? ''}</span>
+                        <Badge tone="danger" className="mt-1.5">Owes {headlineZar(item.lateCents)}</Badge>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardBody className="space-y-4">
+              <h2 className="text-lead font-bold text-ink">How matching works</h2>
+              <ListsSteps
+                steps={[
+                  { title: 'A tenant sends a slip', detail: 'Accept it once the money shows in your account. Reject it with a reason if it has not.' },
+                  { title: 'Or upload your bank statement', detail: 'Each credit is matched to a lease by its reference, then by amount.' },
+                  { title: 'You confirm', detail: 'The payment goes against the oldest unpaid rent first and the tenant is told.' },
+                ]}
+              />
+            </CardBody>
+          </Card>
+        </aside>
       </div>
-      {month.data && arrears.data ? (
-        <dl className="grid grid-cols-2 border-y border-line">
-          <div className="py-3 pr-4">
-            <dt className="text-xs text-ink-muted">Collected this month</dt>
-            <dd className="text-figure"><Money whole cents={month.data.totals.collectedCents} /></dd>
-            <dd className="text-xs text-ink-muted">of {headlineZar(month.data.totals.invoicedCents)} invoiced</dd>
-          </div>
-          <div className="border-l border-line py-3 pl-4">
-            <dt className="text-xs text-ink-muted">Overdue from tenants</dt>
-            <dd className={`text-figure ${lateCents > 0 ? 'text-danger' : ''}`}>
-              <Money whole cents={lateCents} />
-            </dd>
-            <dd className="text-xs text-ink-muted">
-              {owing === 0 ? 'Nobody is behind' : `${owing} lease${owing === 1 ? '' : 's'} behind`}
-            </dd>
-            {notDueCents > 0 ? (
-              <dd className="text-xs text-ink-muted">{headlineZar(notDueCents)} more not yet due</dd>
-            ) : null}
-          </div>
-        </dl>
-      ) : null}
-      <p className="text-meta text-ink-muted">
-        Paid by EFT without a slip? Upload the statement under Bank import to match it.{' '}
-        <Link to="/reports" className="inline-flex min-h-6 items-center font-semibold text-brand-500">Arrears by lease</Link>
-      </p>
-    </section>
+    </main>
   );
 }
 
-function Slips() {
+function Slips({ onOpenBank }: { onOpenBank: () => void }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const openDocument = useOpenDocument();
@@ -168,34 +226,48 @@ function Slips() {
   if (isLoading) return <Spinner />;
   if (isError) return <QueryError error={error} onRetry={() => void refetch()} what="The slips" />;
   if (!data?.items.length) {
-    return <NoSlips />;
+    return (
+      <EmptyState
+        title="No slips waiting"
+        description="When a tenant sends proof of payment it shows up here for you to accept or reject. Paid by EFT without a slip? Upload your bank statement and match it to the lease."
+        action={<Button onClick={onOpenBank}>Upload a bank statement</Button>}
+      />
+    );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {data.items.map((proof) => (
         <Card key={proof.id}>
-          <CardBody className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-lead font-semibold text-ink">{proof.tenant}</p>
-                <p className="text-xs text-ink-muted">
-                  <Link to={`/leases/${proof.leaseId}`} className="underline">{proof.unit}</Link>, {proof.leaseRef}
-                </p>
+          <CardBody className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar name={proof.tenant} size="lg" />
+                <div className="min-w-0">
+                  <p className="truncate text-lead font-bold text-ink">{proof.tenant}</p>
+                  <p className="text-meta text-ink-muted">
+                    <Link to={`/leases/${proof.leaseId}`} className="font-semibold text-brand-500 hover:underline">{proof.unit}</Link>, {proof.leaseRef}
+                  </p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-title"><Money cents={proof.amountCents} /></p>
-                <p className="text-xs text-ink-muted">paid {formatDate(proof.paidOn)}</p>
+              <div className="sm:text-right">
+                <p className="text-figure text-ink"><Money cents={proof.amountCents} /></p>
+                <p className="text-meta text-ink-muted">paid {formatDate(proof.paidOn)}</p>
               </div>
             </div>
-            <p className="text-xs text-ink-muted">
-              {proof.target === 'deposit' ? 'For the deposit.' : proof.period ? `For rent ${proof.period}.` : 'For rent.'}{' '}
-              Reference: {proof.reference ?? 'none given'}. The lease owes {zar(proof.owedCents)}.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => openDocument(proof.fileKey)}>View slip</Button>
-              <Button onClick={() => setAccepting({ proof, cents: proof.amountCents })}>Accept</Button>
-              <Button variant="ghost" onClick={() => setRejecting({ proof, reason: '' })}>Reject</Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="info">
+                {proof.target === 'deposit' ? 'Deposit' : proof.period ? `Rent for ${formatMonth(proof.period)}` : 'Rent'}
+              </Badge>
+              <Badge tone="neutral">Reference: {proof.reference ?? 'none given'}</Badge>
+              <Badge tone={proof.owedCents > 0 ? 'warning' : 'neutral'}>Lease owes {zar(proof.owedCents)}</Badge>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-4">
+              <Button variant="secondary" onClick={() => openDocument(proof.fileKey)}>View slip</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setRejecting({ proof, reason: '' })}>Reject</Button>
+                <Button onClick={() => setAccepting({ proof, cents: proof.amountCents })}>Accept</Button>
+              </div>
             </div>
           </CardBody>
         </Card>
@@ -309,27 +381,25 @@ function BankImport() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <Card>
-        <CardBody className="space-y-3">
-          <p className="text-body text-ink">
-            Download your statement from internet banking as <b>OFX</b> (best) or <b>CSV</b>, then upload it here.
-            Only money coming in is read. Lines you already imported are skipped.
-          </p>
-          <label className="block">
-            <span className="sr-only">Statement file</span>
-            <input
-              type="file"
-              accept=".csv,.ofx,.qfx,text/csv"
-              disabled={uploading}
-              onChange={(event) => {
-                void upload(event.target.files?.[0]);
-                event.target.value = '';
-              }}
-              className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-500"
-            />
-          </label>
-          {uploading ? <Spinner /> : null}
+        <CardBody className="space-y-4">
+          <div>
+            <h2 className="text-lead font-bold text-ink">Upload your bank statement</h2>
+            <p className="mt-1 text-body text-ink-muted">
+              Download it from internet banking as <b className="text-ink">OFX</b> (best) or <b className="text-ink">CSV</b>.
+              Only money coming in is read. Lines you already imported are skipped.
+            </p>
+          </div>
+          <ListsUploadArea
+            label="Statement file"
+            title="Choose your statement"
+            hint="OFX, QFX or CSV, up to about 900 KB. For a bigger file, export a shorter date range."
+            accept=".csv,.ofx,.qfx,text/csv"
+            disabled={uploading}
+            busy={uploading}
+            onFile={(file) => void upload(file)}
+          />
         </CardBody>
       </Card>
 
@@ -337,25 +407,26 @@ function BankImport() {
         <QueryError error={history.error} onRetry={() => void history.refetch()} what="Earlier imports" />
       ) : null}
       {history.data?.items.length ? (
-        <div className="space-y-2">
-          <h2 className="label">Earlier imports</h2>
-          {history.data.items.map((item) => (
-            <Card key={item.id}>
-              <CardBody className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-body font-semibold">{item.fileName}</p>
-                  <p className="text-xs text-ink-muted">
-                    {formatInstant(item.importedAt)}, {item.lines} credits, {item.matched} matched
+        <Card>
+          <h2 className="border-b border-line-soft px-5 py-4 text-lead font-bold text-ink">Earlier imports</h2>
+          <ul className="divide-y divide-line-soft">
+            {history.data.items.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                <div className="min-w-0">
+                  <p className="truncate text-body font-semibold text-ink">{item.fileName}</p>
+                  <p className="text-meta text-ink-muted">
+                    {formatInstant(item.importedAt)}, {item.lines} credit{item.lines === 1 ? '' : 's'}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {item.unmatched > 0 ? <Badge tone="warning">{item.unmatched} to review</Badge> : <Badge tone="success">done</Badge>}
-                  <Button variant="outline" onClick={() => setOpenId(item.id)}>Open</Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="success">{item.matched} matched</Badge>
+                  {item.unmatched > 0 ? <Badge tone="warning">{item.unmatched} to review</Badge> : <Badge tone="neutral">Done</Badge>}
+                  <Button size="sm" variant="outline" onClick={() => setOpenId(item.id)}>Open</Button>
                 </div>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
       ) : null}
     </div>
   );
@@ -423,9 +494,13 @@ function ImportReview({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <Button variant="ghost" onClick={onBack}>Back</Button>
-        <p className="truncate text-xs text-ink-muted">{data.fileName}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button size="sm" variant="outline" onClick={onBack}>Back</Button>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <p className="truncate text-meta font-semibold text-ink">{data.fileName}</p>
+          <Badge tone="success">{data.lines.filter((line) => line.status === 'matched').length} matched</Badge>
+          <Badge tone={unmatched.length > 0 ? 'warning' : 'neutral'}>{unmatched.length} unmatched</Badge>
+        </div>
       </div>
       {summary ? (
         <Alert tone="info" title={summary.added === 1 ? '1 new credit read' : `${summary.added} new credits read`}>
@@ -438,26 +513,29 @@ function ImportReview({
         <EmptyState title="Nothing left to match" description="Every credit in this statement is recorded or set aside." />
       ) : (
         <>
-          <p className="text-meta text-ink-muted">
+          <p className="text-body text-ink-muted">
             Check each suggestion before you confirm. Confirming records the payment and tells the tenant.
           </p>
           {unmatched.map((line) => (
             <Card key={line.id}>
-              <CardBody className="space-y-2">
+              <CardBody className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="break-words text-body font-semibold text-ink">{line.description}</p>
-                    <p className="text-xs text-ink-muted">{formatDate(line.postedOn)}</p>
+                    <p className="text-meta text-ink-muted">{formatDate(line.postedOn)}</p>
                   </div>
-                  <p className="whitespace-nowrap text-lead"><Money cents={line.amountCents} /></p>
+                  <p className="whitespace-nowrap text-title text-ink"><Money cents={line.amountCents} /></p>
                 </div>
                 {line.suggestion ? (
-                  <p className="flex items-center gap-2 text-xs text-ink-muted">
-                    <Badge tone={confidenceTone[line.suggestion.confidence]}>{line.suggestion.confidence}</Badge>
+                  <p className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
+                    <Badge tone={confidenceTone[line.suggestion.confidence]}>{confidenceLabel[line.suggestion.confidence]}</Badge>
                     {line.suggestion.reason}
                   </p>
                 ) : (
-                  <p className="text-xs text-ink-muted">No match found. Pick the lease, or set it aside.</p>
+                  <p className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
+                    <Badge tone="neutral">No match</Badge>
+                    Pick the lease, or set it aside.
+                  </p>
                 )}
                 <div className="flex flex-wrap gap-2">
                   <Select
@@ -468,13 +546,13 @@ function ImportReview({
                     options={leaseOptions}
                   />
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     disabled={busy || !picked(line)}
                     onClick={() => resolve([{ lineId: line.id, leaseId: picked(line) }])}
                   >
                     Confirm
                   </Button>
-                  <Button variant="ghost" disabled={busy} onClick={() => resolve([{ lineId: line.id, ignore: true }])}>
+                  <Button variant="outline" disabled={busy} onClick={() => resolve([{ lineId: line.id, ignore: true }])}>
                     Not rent
                   </Button>
                 </div>
@@ -493,21 +571,24 @@ function ImportReview({
       )}
 
       {data.lines.some((line) => line.status !== 'unmatched') ? (
-        <div className="space-y-1 pt-2">
-          <h2 className="label">Done</h2>
-          {data.lines
-            .filter((line) => line.status !== 'unmatched')
-            .map((line) => (
-              <p key={line.id} className="flex justify-between gap-3 text-xs text-ink-muted">
-                <span className="truncate">
-                  {formatDate(line.postedOn)} {line.description}
-                </span>
-                <span className="whitespace-nowrap">
-                  {zar(line.amountCents)} {line.status === 'matched' ? `to ${leaseLabel(line.leaseId)}` : 'set aside'}
-                </span>
-              </p>
-            ))}
-        </div>
+        <Card>
+          <h2 className="border-b border-line-soft px-5 py-4 text-lead font-bold text-ink">Done</h2>
+          <ul className="divide-y divide-line-soft">
+            {data.lines
+              .filter((line) => line.status !== 'unmatched')
+              .map((line) => (
+                <li key={line.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-5 py-3.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-body text-ink">{line.description}</span>
+                    <span className="block text-meta text-ink-muted">{formatDate(line.postedOn)} · {zar(line.amountCents)}</span>
+                  </span>
+                  {line.status === 'matched'
+                    ? <Badge tone="success">Matched to {leaseLabel(line.leaseId)}</Badge>
+                    : <Badge tone="neutral">Set aside</Badge>}
+                </li>
+              ))}
+          </ul>
+        </Card>
       ) : null}
     </div>
   );

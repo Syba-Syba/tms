@@ -121,7 +121,7 @@ describe('the exit, clicked', () => {
     );
     await screen.findByText('Scuffed wall behind the couch');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the deduction for Scuffed wall behind the couch' }));
     await screen.findByText('Deduction removed');
 
     fireEvent.click(screen.getByRole('button', { name: 'Settle the deposit' }));
@@ -138,7 +138,8 @@ describe('the documents screen, clicked', () => {
   it('opens the signed lease and the sealed report from one place', async () => {
     await signInApplicant();
     mount('/documents', <Route path="/documents" element={<Documents />} />);
-    const openButtons = await screen.findAllByRole('button', { name: 'Open' });
+    // Each button says what it opens ("Open the lease"), so they are found by how they start.
+    const openButtons = await screen.findAllByRole('button', { name: /^Open the / });
     const before = openedUrls.length;
     for (const button of openButtons) fireEvent.click(button);
     await new Promise((resolve) => setTimeout(resolve, 1500));

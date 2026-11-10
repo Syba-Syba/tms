@@ -19,7 +19,7 @@ export function Pagination({
       >
         Previous
       </Button>
-      <span className="text-body text-ink-muted">
+      <span className="text-meta font-medium text-ink-muted">
         Page {page} of {Math.max(pageCount, 1)}
       </span>
       <Button

@@ -1,20 +1,20 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { Badge, Card, CardBody, EmptyState, Input, PageHeader } from '@hlonie/toolbox/ui';
+import { Avatar, Badge, Button, Input, Modal } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api } from '../api/client';
-import { ChevronRightIcon } from '@hlonie/toolbox/icons';
 import { daysUntil, formatDate, headlineZar, status } from '../lib/format';
 import { QueryState } from '../components/query-state';
 import { SetupChecklist } from '../components/setup-checklist';
-import { isLandlord } from '../lib/session';
+import { currentUser, isLandlord } from '../lib/session';
 import { localToday } from '../lib/dates';
 import { useLandlord } from '../lib/landlord';
 import { TenantHome } from './tenant-home';
 import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
 import { CollectionsChart, type MonthTotal } from '../components/collections-chart';
+import { ActionLink, NAV_LINK, ROWS, SectionCard, ShareBar, StatTile, StateMark } from '../components/core-kit';
 
 interface LeaseRow {
   id: string;
@@ -43,9 +43,14 @@ interface Task {
   title: string;
   detail: string;
   tone: 'danger' | 'warning' | 'info';
+  /** One or two characters in the tinted square: a count, days left, R for money. */
+  mark: string;
+  /** What tapping the row does, said as a verb. */
+  action: string;
 }
 
-const zar = (cents: number) => formatZar(cents / 100);
+// Whole rands read faster in a list; cents show only when there are any.
+const zar = (cents: number) => formatZar(cents / 100, cents % 100 !== 0);
 
 const STAGE: Record<string, string> = {
   reminder_1: 'first reminder sent',
@@ -55,6 +60,31 @@ const STAGE: Record<string, string> = {
 };
 // The device's calendar (SAST for our users), not UTC: before 02:00 UTC was still yesterday.
 const today = localToday;
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const LONG_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+/** "2026-11-10" as "Tuesday 10 November". */
+const longDay = (iso: string) => {
+  const [year, month, day] = iso.split('-').map(Number) as [number, number, number];
+  return `${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]} ${day} ${LONG_MONTHS[month - 1]}`;
+};
+/** The greeting for the hour in Johannesburg, where the landlord's day runs. */
+const greeting = (now: Date = new Date()) => {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Johannesburg', hour: '2-digit', hour12: false }).format(now)) % 24;
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+};
+
+/** The tone a lease's row and avatar take: owing, ending soon, or fine. */
+const leaseTone = (lease: LeaseRow): 'danger' | 'warning' | 'success' | undefined => {
+  if (lease.overdueCents > 0) return 'danger';
+  if (lease.terminationEffectiveOn) return 'warning';
+  const days = daysUntil(lease.endDate);
+  if (lease.status === 'active' && days <= 60) return 'warning';
+  return lease.status === 'active' ? 'success' : undefined;
+};
 
 export function Home() {
   // A tenant has one home, not a portfolio, so they get a different screen entirely.
@@ -83,7 +113,6 @@ function LandlordHome() {
     queryFn: () => api.get<{ months: MonthTotal[] }>(`/reports/income-expense?from=${sixMonthsAgo}&to=${today()}`),
   });
   const thisMonth = trend.data?.months.at(-1);
-  const month = { data: thisMonth ? { totals: thisMonth } : undefined };
   const slips = useQuery({
     queryKey: ['payment-proofs'],
     queryFn: () => api.get<{ items: { id: string }[] }>('/payment-proofs'),
@@ -107,6 +136,13 @@ function LandlordHome() {
     queryFn: () =>
       api.get<{ items: { leaseId: string; stage: string | null; pausedUntil: string | null }[] }>('/reports/arrears'),
   });
+
+  // For occupancy only. The same cache the Properties screen fills.
+  const properties = useQuery({
+    queryKey: ['properties'],
+    queryFn: () => api.get<{ items: { units: { status: string }[] }[] }>('/properties'),
+  });
+  const [choosing, setChoosing] = useState(false);
 
   const landlordAccount = useLandlord();
   const privacy = useQuery({
@@ -153,28 +189,28 @@ function LandlordHome() {
   const tasks: Task[] = [];
   for (const lease of letterReady.slice(0, 3)) {
     tasks.push({
-      key: `letter-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
+      key: `letter-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger', mark: 'R', action: 'Review',
       title: `Letter of demand ready: ${lease.tenant}`,
       detail: `${lease.unit}, ${zar(lease.overdueCents)}, final reminder sent.`,
     });
   }
   if (slipCount > 0) {
     tasks.push({
-      key: 'slips', to: '/payments', tone: 'warning',
+      key: 'slips', to: '/payments', tone: 'warning', mark: String(slipCount), action: 'Check',
       title: `${slipCount} proof${slipCount === 1 ? '' : 's'} of payment to check`,
       detail: 'Accept once the money shows in your account.',
     });
   }
   if (unmatched > 0) {
     tasks.push({
-      key: 'bank', to: '/payments', tone: 'info',
+      key: 'bank', to: '/payments', tone: 'info', mark: String(unmatched), action: 'Match',
       title: `${unmatched} bank ${unmatched === 1 ? 'line' : 'lines'} to match`,
       detail: 'From a statement you imported.',
     });
   }
   for (const ticket of lateTickets.slice(0, 3)) {
     tasks.push({
-      key: `ticket-${ticket.id}`, to: `/tickets/${ticket.id}`, tone: 'danger',
+      key: `ticket-${ticket.id}`, to: `/tickets/${ticket.id}`, tone: 'danger', mark: '!', action: 'Open',
       title: `Overdue: ${ticket.title}`, detail: `${ticket.unit}, past its response target.`,
     });
   }
@@ -182,7 +218,7 @@ function LandlordHome() {
   for (const lease of [...rows].filter((l) => l.overdueCents > 0 && !ready.has(l.id)).sort((a, b) => b.overdueCents - a.overdueCents).slice(0, 3)) {
     const stage = stageOf.get(lease.id);
     tasks.push({
-      key: `arrears-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger',
+      key: `arrears-${lease.id}`, to: `/leases/${lease.id}`, tone: 'danger', mark: 'R', action: 'Follow up',
       title: `${lease.tenant} owes ${zar(lease.overdueCents)}`,
       detail: [lease.unit, stage?.pausedUntil ? `reminders paused to ${formatDate(stage.pausedUntil)}` : stage?.stage ? STAGE[stage.stage] : null]
         .filter(Boolean)
@@ -194,7 +230,7 @@ function LandlordHome() {
     // Only the owner can answer one; an agent who tapped Erase was refused.
     const owner = landlordAccount.data?.me.role === 'owner';
     tasks.push({
-      key: 'privacy', to: '/settings/notifications', tone: 'warning',
+      key: 'privacy', to: '/settings/notifications', tone: 'warning', mark: String(privacyWaiting), action: owner ? 'Answer' : 'View',
       title: `${privacyWaiting} privacy request${privacyWaiting === 1 ? '' : 's'} ${owner ? 'to answer' : 'waiting'}`,
       detail: owner
         ? 'POPIA expects an answer within a reasonable time.'
@@ -203,32 +239,35 @@ function LandlordHome() {
   }
   if (waiting > 0) {
     tasks.push({
-      key: 'applications', to: '/applications', tone: 'info',
+      key: 'applications', to: '/applications', tone: 'info', mark: String(waiting), action: 'Review',
       title: `${waiting} application${waiting === 1 ? '' : 's'} waiting`, detail: 'Read the paperwork and decide.',
     });
   }
   for (const lease of rows) {
     if (lease.terminationEffectiveOn) {
       const days = daysUntil(lease.terminationEffectiveOn);
-      if (days >= 0 && days <= 30) {
+      // Said whatever the date: settling is refused until the tenant confirms the notice the
+      // landlord recorded. It used to sit behind the exit-inspection task, so in the usual case
+      // (a notice about four weeks out) the landlord never saw it.
+      if (lease.awaitingTenant) {
         tasks.push({
-          key: `exit-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning',
-          title: `${lease.unit} ends ${formatDate(lease.terminationEffectiveOn)}`,
-          detail: 'Book the exit inspection for the last three days, with the tenant there.',
-        });
-      } else if (lease.awaitingTenant) {
-        // Settling is refused until the tenant confirms the notice the landlord recorded.
-        tasks.push({
-          key: `confirm-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning',
+          key: `confirm-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning', mark: '?', action: 'View',
           title: `${lease.unit}: waiting for the tenant to confirm the notice`,
           detail: 'The deposit can be settled once the tenant confirms it in the app.',
         });
-      } else if (days < 0) {
+      }
+      if (days >= 0 && days <= 30) {
+        tasks.push({
+          key: `exit-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning', mark: String(days), action: 'Book',
+          title: `${lease.unit} ends ${formatDate(lease.terminationEffectiveOn)}`,
+          detail: 'Book the exit inspection for the last three days, with the tenant there.',
+        });
+      } else if (days < 0 && !lease.awaitingTenant) {
         // Still listed, so not settled: settling ends the lease. The refund deadline is running.
         tasks.push({
           key: `settle-${lease.id}`,
           to: lease.terminationId ? `/terminations/${lease.terminationId}` : `/leases/${lease.id}`,
-          tone: 'danger',
+          tone: 'danger', mark: 'R', action: 'Settle',
           title: `Settle the deposit for ${lease.unit}`,
           detail: `The lease ended ${formatDate(lease.terminationEffectiveOn)}. The Rental Housing Act refund deadline is running.`,
         });
@@ -236,113 +275,178 @@ function LandlordHome() {
       continue;
     }
     const days = daysUntil(lease.endDate);
+    if (lease.status !== 'active') continue;
     if (!lease.renewalOffered && !renewed.has(lease.id) && days >= 0 && days <= 60) {
       tasks.push({
-        key: `renew-${lease.id}`, to: `/leases/${lease.id}`, tone: 'info',
-        title: `${lease.unit} ends in ${days} days`, detail: 'Offer a renewal, or plan the exit.',
+        key: `renew-${lease.id}`, to: `/leases/${lease.id}`, tone: 'info', mark: String(days), action: 'Renew',
+        title: `${lease.unit} ends in ${days} days`, detail: `${lease.tenant}. Offer a renewal, or plan the exit.`,
+      });
+    } else if (days < 0 && !renewed.has(lease.id)) {
+      // Past its end date with no notice: it runs month to month until someone acts.
+      tasks.push({
+        key: `runout-${lease.id}`, to: `/leases/${lease.id}`, tone: 'warning', mark: '!', action: 'Decide',
+        title: `${lease.unit} is past its end date`,
+        detail: `It ended ${formatDate(lease.endDate)} and now runs month to month. Offer a renewal or record a notice.`,
       });
     }
   }
 
+  const units = properties.data?.items.flatMap((property) => property.units) ?? null;
+  const vacant = units?.filter((unit) => unit.status === 'vacant').length ?? 0;
+  const occupied = units?.filter((unit) => unit.status === 'occupied').length ?? 0;
+  const depositsHeld = rows.reduce((sum, lease) => sum + lease.depositBalanceCents, 0);
+  const firstName = currentUser()?.name?.trim().split(/\s+/)[0];
+  // Money is recorded on a lease, so "Record a payment" asks which one when there are several.
+  const payable = rows.filter((lease) => lease.status === 'active');
+  const owingRow = owing === 1 ? rows.find((lease) => lease.overdueCents > 0) : undefined;
+  const monthName = LONG_MONTHS[Number(today().slice(5, 7)) - 1];
+  const collectedCents = thisMonth?.collectedCents;
+  const invoicedCents = thisMonth?.invoicedCents;
+  const repairs = `${openTickets.length} open repair${openTickets.length === 1 ? '' : 's'}${lateTickets.length > 0 ? `, ${lateTickets.length} overdue` : ''}`;
+
   return (
     <main className={PAGE.wide}>
-      <PageHeader title="Overview" description={`${running} lease${running === 1 ? '' : 's'} running.`} />
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-display font-bold leading-tight tracking-[-0.01em] text-ink">
+            {greeting()}{firstName ? `, ${firstName}` : ''}
+          </h1>
+          <p className="mt-1 text-body text-ink-muted">
+            {longDay(today())} · {running} lease{running === 1 ? '' : 's'} running
+            {units ? `, ${vacant} unit${vacant === 1 ? '' : 's'} vacant` : ''}
+          </p>
+        </div>
+        {payable.length === 1 ? (
+          <ActionLink variant="primary" to={`/leases/${payable[0]!.id}?pay=1`}>Record a payment</ActionLink>
+        ) : payable.length > 1 ? (
+          <Button onClick={() => setChoosing(true)}>Record a payment</Button>
+        ) : (
+          <ActionLink variant="primary" to="/tenants/import">Add current tenants</ActionLink>
+        )}
+      </header>
+
       <SetupChecklist />
 
-      <Headline
-        arrearsCents={arrears}
-        notYetDueCents={notYetDue}
-        owing={owing}
-        collectedCents={month.data?.totals.collectedCents}
-        invoicedCents={month.data?.totals.invoicedCents}
-        slips={slipCount}
-        openTickets={openTickets.length}
-        lateTickets={lateTickets.length}
-      />
+      <section aria-label="This month" className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-[1.25fr_1fr_1fr_1fr]">
+        <div className="col-span-2 lg:col-span-1">
+          <StatTile
+            to="/reports"
+            tone={arrears > 0 ? 'danger' : 'plain'}
+            label="Overdue rent"
+            value={<Money whole cents={arrears} />}
+            note={
+              <>
+                {arrears > 0
+                  ? owingRow ? `${owingRow.tenant} is behind on rent.` : `${owing} tenants behind on rent.`
+                  : 'Nobody is behind.'}
+                {notYetDue > 0 ? ` ${headlineZar(notYetDue)} more is invoiced and not yet due.` : ''}
+              </>
+            }
+          />
+        </div>
+        <StatTile
+          to="/payments"
+          label={`Collected in ${monthName}`}
+          value={collectedCents === undefined ? '...' : <Money whole cents={collectedCents} />}
+          note={invoicedCents === undefined ? 'Loading this month.' : `of ${headlineZar(invoicedCents)} invoiced`}
+        >
+          {collectedCents !== undefined && invoicedCents ? (
+            <ShareBar value={collectedCents} max={invoicedCents} label={`Share of ${monthName} rent collected`} />
+          ) : null}
+        </StatTile>
+        {units ? (
+          <StatTile
+            to="/properties"
+            label="Occupancy"
+            value={`${occupied} of ${units.length}`}
+            note={vacant === 0 ? 'No units vacant.' : `${vacant} unit${vacant === 1 ? '' : 's'} vacant`}
+          />
+        ) : (
+          <StatTile to="/properties" label="Leases running" value={String(running)} note={`${rows.length} on the books`} />
+        )}
+        <div className="col-span-2 sm:col-span-1">
+          <StatTile
+            label="Deposits held"
+            value={<Money whole cents={depositsHeld} />}
+            note={`across ${rows.length} lease${rows.length === 1 ? '' : 's'}`}
+          />
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <div className="space-y-6">
-        <section>
-          <h2 className="label mb-2">Needs you</h2>
-          {tasks.length === 0 ? (
-            <Card>
-              <CardBody>
-                <p className="text-lead font-semibold text-ink">All clear</p>
-                <p className="text-meta text-ink-muted">No payments to check, no arrears, nothing overdue.</p>
-              </CardBody>
-            </Card>
-          ) : (
-            <Card>
-              <ul className="divide-y divide-line-soft">
+      {/* Phone: tasks, leases, then the chart. Laptop: tasks and the chart on the left, leases on the right. */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr]">
+          <SectionCard title="To do today" className="lg:col-start-1 lg:row-start-1" count={tasks.length > 0 ? tasks.length : undefined}>
+            {tasks.length === 0 ? (
+              <div className="px-5 py-5">
+                <p className="text-body font-bold text-ink">All clear</p>
+                <p className="mt-0.5 text-meta text-ink-muted">
+                  No payments to check, no arrears, nothing overdue. Tasks appear here when a tenant pays, applies or
+                  falls behind.
+                </p>
+              </div>
+            ) : (
+              <ul className={ROWS}>
                 {tasks.map((task) => (
                   <li key={task.key}>
-                    <Link to={task.to} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-muted">
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          task.tone === 'danger' ? 'bg-danger' : task.tone === 'warning' ? 'bg-warning' : 'bg-info'
-                        }`}
-                        aria-hidden
-                      />
+                    <Link
+                      to={task.to}
+                      className="flex items-center gap-3.5 px-5 py-3.5 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--tb-ring)]"
+                    >
+                      <StateMark tone={task.tone}>{task.mark}</StateMark>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-body font-semibold text-ink">{task.title}</span>
-                        <span className="block text-xs text-ink-muted">{task.detail}</span>
+                        <span className="block text-body font-bold text-ink">{task.title}</span>
+                        <span className="block text-meta text-ink-muted">{task.detail}</span>
                       </span>
-                      <ChevronRightIcon className="shrink-0 text-ink-muted" />
+                      <span className="inline-flex h-9 shrink-0 items-center rounded-sm bg-brand-50 px-3.5 text-meta font-semibold text-brand-600">
+                        {task.action}
+                      </span>
                     </Link>
                   </li>
                 ))}
               </ul>
-            </Card>
-          )}
-        </section>
-        {trend.data && trend.data.months.some((m) => m.invoicedCents > 0) ? <CollectionsChart months={trend.data.months} /> : null}
-        </div>
+            )}
+            <p className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line-soft px-5 py-3">
+              <Link to="/payments" className={NAV_LINK}>{slipCount} slip{slipCount === 1 ? '' : 's'} to check</Link>
+              <Link to="/tickets" className={NAV_LINK}>{repairs}</Link>
+            </p>
+          </SectionCard>
 
         <LeaseList rows={rows} />
+
+        {trend.data && trend.data.months.some((m) => m.invoicedCents > 0) ? (
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2"><CollectionsChart months={trend.data.months} /></div>
+        ) : null}
       </div>
+
+      <Modal
+        open={choosing}
+        onOpenChange={setChoosing}
+        title="Record a payment"
+        description="Choose whose payment it is. You enter the amount on their lease."
+      >
+        <ul className="-mx-2 divide-y divide-line-soft">
+          {payable.map((lease) => (
+            <li key={lease.id}>
+              <Link
+                to={`/leases/${lease.id}?pay=1`}
+                className="flex items-center gap-3 rounded-sm px-2 py-3 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--tb-ring)]"
+              >
+                <Avatar name={lease.tenant} tone={leaseTone(lease)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-bold text-ink">{lease.tenant}</span>
+                  <span className="block truncate text-meta text-ink-muted">{lease.unit}</span>
+                </span>
+                {lease.outstandingCents > 0 ? (
+                  <Badge tone={lease.overdueCents > 0 ? 'danger' : 'neutral'}>{zar(lease.outstandingCents)} open</Badge>
+                ) : (
+                  <Badge tone="success">Paid up</Badge>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Modal>
     </main>
-  );
-}
-
-/**
- * One figure leads: what tenants owe, or when nobody owes, what came in this month. The other
- * counts follow as a line of text, so the page opens on the number that needs a decision.
- */
-function Headline({ arrearsCents, notYetDueCents, owing, collectedCents, invoicedCents, slips, openTickets, lateTickets }: {
-  arrearsCents: number;
-  notYetDueCents: number;
-  owing: number;
-  collectedCents?: number;
-  invoicedCents?: number;
-  slips: number;
-  openTickets: number;
-  lateTickets: number;
-}) {
-  const owed = arrearsCents > 0;
-  const collected = collectedCents === undefined ? '...' : `${headlineZar(collectedCents)} of ${headlineZar(invoicedCents ?? 0)}`;
-  const tickets = `${openTickets} open repair${openTickets === 1 ? '' : 's'}${lateTickets > 0 ? `, ${lateTickets} overdue` : ''}`;
-  const link = 'inline-flex min-h-6 items-center hover:text-ink hover:underline';
-
-  return (
-    <section className="mb-8 border-b border-line pb-6" aria-label="This month">
-      <Link to={owed ? '/reports' : '/payments'} className="inline-block">
-        <p className="label">{owed ? 'Owed to you' : 'Collected this month'}</p>
-        <p className={`font-display text-hero font-medium ${owed ? 'text-danger' : 'text-ink'}`}>
-          {owed ? <Money whole cents={arrearsCents} /> : collectedCents === undefined ? '...' : <Money whole cents={collectedCents} />}
-        </p>
-      </Link>
-      <p className="text-meta text-ink-muted">
-        {owed
-          ? `${owing} tenant${owing === 1 ? '' : 's'} behind on rent.`
-          : invoicedCents === undefined ? '' : `of ${headlineZar(invoicedCents)} invoiced. Nobody is behind.`}
-        {notYetDueCents > 0 ? ` ${headlineZar(notYetDueCents)} more is invoiced and not yet due.` : ''}
-      </p>
-      <ul className="mt-3 flex flex-wrap gap-x-5 text-meta text-ink-muted">
-        {owed ? <li><Link to="/payments" className={link}>{collected} collected this month</Link></li> : null}
-        <li><Link to="/payments" className={link}>{slips} slip{slips === 1 ? '' : 's'} to check</Link></li>
-        <li><Link to="/tickets" className={`${link} ${lateTickets > 0 ? 'text-danger' : ''}`}>{tickets}</Link></li>
-      </ul>
-    </section>
   );
 }
 
@@ -356,119 +460,126 @@ function LeaseList({ rows }: { rows: LeaseRow[] }) {
     : rows;
 
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="label">Leases</h2>
-        <span className="flex gap-4">
-          <Link to="/tenants/import" className="inline-flex min-h-6 items-center text-xs font-bold text-brand-500">Add current tenants</Link>
-          <Link to="/properties" className="inline-flex min-h-6 items-center text-xs font-bold text-brand-500">Properties</Link>
+    <SectionCard
+      title="Leases"
+      className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+      action={
+        <span className="flex flex-wrap gap-x-5">
+          <Link to="/tenants/import" className={NAV_LINK}>Add current tenants</Link>
+          <Link to="/properties" className={NAV_LINK}>All properties</Link>
         </span>
-      </div>
+      }
+    >
       {rows.length > 6 ? (
-        <Input
-          className="mb-3"
-          placeholder="Search unit, tenant or reference"
-          aria-label="Search leases"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
+        <div className="border-b border-line-soft px-5 py-3">
+          <Input
+            placeholder="Search unit, tenant or reference"
+            aria-label="Search leases"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
       ) : null}
       {rows.length === 0 ? (
-        <EmptyState
-          title="No leases yet"
-          description="A lease appears here once it is signed, or as soon as you add a tenant who is renting already."
-        />
+        <div className="px-5 py-6">
+          <p className="text-body font-bold text-ink">No leases yet</p>
+          <p className="mt-0.5 max-w-prose text-meta text-ink-muted">
+            A lease appears here once it is signed, or as soon as you add a tenant who is renting already.
+          </p>
+          <ActionLink variant="secondary" size="sm" to="/tenants/import" className="mt-4">Add a tenant who rents already</ActionLink>
+        </div>
       ) : shown.length === 0 ? (
-        <p className="text-meta text-ink-muted">No lease matches "{search}".</p>
+        <p className="px-5 py-5 text-meta text-ink-muted">No lease matches "{search}".</p>
       ) : (
-        <Card>
+        <>
           {/* Phone: one tappable row per lease. */}
-          <ul className="divide-y divide-line-soft md:hidden">
+          <ul className={`${ROWS} md:hidden`}>
             {shown.map((lease) => (
               <li key={lease.id}>
-                <Link to={`/leases/${lease.id}`} className="flex items-center gap-3 px-4 py-3">
-                  {/* Two lines that never cut the rent off: unit and rent, then tenant and state. */}
-                  <span className="min-w-0 flex-1 space-y-0.5">
+                <Link to={`/leases/${lease.id}`} className="flex items-center gap-3 px-5 py-3.5">
+                  <Avatar name={lease.tenant} tone={leaseTone(lease)} />
+                  {/* Two lines that never cut the rent off: tenant and rent, then unit and state. */}
+                  <span className="min-w-0 flex-1 space-y-1">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-body font-semibold text-ink">{lease.unit}</span>
-                      <Money cents={lease.monthlyRentCents} className="shrink-0 text-body" />
+                      <span className="truncate text-body font-bold text-ink">{lease.tenant}</span>
+                      <Money cents={lease.monthlyRentCents} whole className="shrink-0 text-body" />
                     </span>
                     <span className="flex items-center justify-between gap-3">
-                      <span className="truncate text-xs text-ink-muted">{lease.tenant}</span>
+                      <span className="truncate text-meta text-ink-muted">{lease.unit}</span>
                       <LeaseFlag lease={lease} />
                     </span>
                   </span>
-                  <ChevronRightIcon className="shrink-0 text-ink-muted" />
                 </Link>
               </li>
             ))}
           </ul>
           {/* Laptop: everything on one line, sortable by eye. */}
           <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-meta">
-            <thead>
-              <tr className="border-b border-line-soft text-xs text-ink-muted">
-                <th className="px-4 py-2 font-semibold">Unit</th>
-                <th className="px-4 py-2 font-semibold">Tenant</th>
-                <th className="px-4 py-2 text-right font-semibold">Rent</th>
-                <th className="px-4 py-2 text-right font-semibold">Owing</th>
-                <th className="px-4 py-2 font-semibold">Ends</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-soft">
-              {shown.map((lease) => (
-                <tr
-                  key={lease.id}
-                  className="cursor-pointer hover:bg-surface-muted"
-                  onClick={() => navigate(`/leases/${lease.id}`)}
-                >
-                  <td className="px-4 py-2.5">
-                    <Link to={`/leases/${lease.id}`} className="inline-flex min-h-6 items-center whitespace-nowrap font-semibold text-ink">{lease.unit}</Link>
-                    <span className="block whitespace-nowrap text-xs text-ink-muted">{lease.ref}</span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">{lease.tenant}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right"><Money cents={lease.monthlyRentCents} /></td>
-                  <td className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${lease.overdueCents > 0 ? 'font-semibold text-danger' : 'text-ink-muted'}`}>
-                    {lease.overdueCents > 0 ? zar(lease.overdueCents) : '-'}
-                    {lease.outstandingCents > lease.overdueCents ? (
-                      <span className="block text-xs font-normal text-ink-muted">
-                        {zar(lease.outstandingCents - lease.overdueCents)} not yet due
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
-                    {formatDate(lease.terminationEffectiveOn ?? lease.endDate)}
-                    {endNote(lease) ? <span className="block text-xs font-semibold text-warning">{endNote(lease)}</span> : null}
-                  </td>
+            <table className="w-full text-left text-body">
+              <thead>
+                <tr className="border-b border-line-soft text-meta text-ink-muted">
+                  <th className="px-5 py-3 font-semibold">Tenant</th>
+                  <th className="px-3 py-3 text-right font-semibold">Rent</th>
+                  <th className="px-3 py-3 font-semibold">Ends</th>
+                  <th className="px-5 py-3 text-right font-semibold">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line-soft">
+                {shown.map((lease) => (
+                  <tr
+                    key={lease.id}
+                    className="cursor-pointer hover:bg-surface-muted"
+                    onClick={() => navigate(`/leases/${lease.id}`)}
+                  >
+                    <td className="px-5 py-3.5">
+                      <span className="flex items-center gap-3">
+                        <Avatar name={lease.tenant} tone={leaseTone(lease)} />
+                        <span className="min-w-0">
+                          <Link
+                            to={`/leases/${lease.id}`}
+                            className="block whitespace-nowrap font-bold text-ink hover:underline"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {lease.tenant}
+                          </Link>
+                          <span className="block whitespace-nowrap text-meta text-ink-muted">{lease.unit}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3.5 text-right"><Money cents={lease.monthlyRentCents} whole /></td>
+                    <td className="whitespace-nowrap px-3 py-3.5 text-meta text-ink">
+                      {formatDate(lease.terminationEffectiveOn ?? lease.endDate)}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                      <LeaseFlag lease={lease} />
+                      {lease.outstandingCents > lease.overdueCents ? (
+                        <span className="mt-1 block text-xs text-ink-muted">
+                          {zar(lease.outstandingCents - lease.overdueCents)} not yet due
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </Card>
+        </>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
 /** The one thing worth knowing about a lease at a glance, or its status when nothing stands out. */
-/** What is coming up at the end of a lease, for the table's Ends column. */
-function endNote(lease: LeaseRow): string | null {
-  if (lease.terminationEffectiveOn) return 'Notice served';
-  if (lease.renewalOffered) return 'Renewal offered';
-  const days = daysUntil(lease.endDate);
-  return days >= 0 && days <= 60 ? `In ${days} days` : null;
-}
-
 function LeaseFlag({ lease }: { lease: LeaseRow }) {
   if (lease.overdueCents > 0) return <Badge tone="danger">Owes {zar(lease.overdueCents)}</Badge>;
   if (lease.terminationEffectiveOn) return <Badge tone="warning">Notice served</Badge>;
   if (lease.renewalOffered) return <Badge tone="info">Renewal offered</Badge>;
-  const days = daysUntil(lease.endDate);
-  if (days >= 0 && days <= 60) return <Badge tone="warning">Ends in {days} days</Badge>;
   if (lease.status !== 'active') {
     const shown = status(lease.status);
     return <Badge tone={shown.tone}>{shown.label}</Badge>;
   }
+  const days = daysUntil(lease.endDate);
+  if (days < 0) return <Badge tone="warning">Month to month</Badge>;
+  if (days <= 60) return <Badge tone="warning">Ends in {days} days</Badge>;
   return <Badge tone="success">Paid up</Badge>;
 }

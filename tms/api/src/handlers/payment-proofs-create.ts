@@ -68,7 +68,7 @@ export const handler = route(async (event) => {
   }
 
   const key = `payment-proofs/${leaseId}/${randomUUID()}.${EXTENSION[input.contentType]}`;
-  const uploadUrl = await storage().presignPut(key, input.contentType, 300);
+  const uploadUrl = await storage().presignPut(key, input.contentType, 300, input.sizeBytes);
   const [proof] = await query<{ id: string }>(
     `insert into payment_proof (lease_id, target, invoice_id, amount_cents, paid_on, reference,
                                 s3_key, content_type, size_bytes, submitted_by)

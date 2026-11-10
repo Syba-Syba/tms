@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import {
-  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, TagField, useToast,
+  Alert, Badge, Button, Card, CardBody, CurrencyInput, Input, Modal, PageHeader, Select, useToast,
 } from '@hlonie/toolbox/ui';
+import { useCopyToClipboard } from '@hlonie/toolbox/hooks';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { formatDate, formatMonth, status } from '../lib/format';
@@ -13,6 +14,8 @@ import { QueryState } from '../components/query-state';
 import { invalidateMoneyCaches } from '../lib/money-caches';
 import { ArrearsPanel } from '../components/arrears-panel';
 import { Money } from '../components/money';
+import { useOpenDocument } from '../lib/open-document';
+import { PAGE } from '../lib/layout';
 
 interface Proof {
   id: string;
@@ -34,7 +37,18 @@ interface Statement {
   balanceCents: number;
   depositBalanceCents: number;
   invoices: { id: string; period: string; dueOn: string; totalCents: number; status: string }[];
-  payments: { id: string; amountCents: number; receivedOn: string; reference: string | null }[];
+  /** A deposit asked for and not yet received. Owed like rent, and not part of balanceCents. */
+  depositOwingCents?: number;
+  payments: {
+    id: string; amountCents: number; receivedOn: string; reference: string | null;
+    /** 'reversal' for the entry that undoes an earlier payment. */
+    method?: string;
+    /** On a payment that was reversed: the id of the entry that undid it. */
+    reversedBy?: string | null;
+    /** On a reversal: the payment it undoes. */
+    reversesPaymentId?: string | null;
+    reason?: string | null;
+  }[];
   proofs: Proof[];
 }
 
@@ -52,7 +66,7 @@ const today = localToday;
 function statementCsv(statement: Statement): string {
   const rows: (string | number)[][] = [['Date', 'Description', 'Reference', 'Debit', 'Credit']];
   for (const invoice of statement.invoices) {
-    rows.push([invoice.dueOn, `Rent ${invoice.period}`, '', (invoice.totalCents / 100).toFixed(2), '']);
+    rows.push([invoice.dueOn, `Rent ${formatMonth(invoice.period)}`, '', (invoice.totalCents / 100).toFixed(2), '']);
   }
   for (const payment of statement.payments) {
     rows.push([payment.receivedOn, 'Payment received', payment.reference ?? '', '', (payment.amountCents / 100).toFixed(2)]);
@@ -98,7 +112,21 @@ export function TenantRent() {
     queryFn: () => api.get<Statement>(`/leases/${leaseId}/statement`),
   });
 
-  const [showSlip, setShowSlip] = useState(false);
+  // A deposit not yet received is owed too, and the statement's balance (invoices less
+  // payments) leaves it out, so this page said "fully paid up" beside a deposit still due.
+  const { data: leases } = useQuery({
+    queryKey: ['leases', 'with-ended'],
+    queryFn: () => api.get<{ items: { id: string; depositOwingCents?: number }[] }>('/leases', { query: { include: 'ended' } }),
+    retry: false,
+    // The statement says it itself now; the lease list is only asked when it does not.
+    enabled: data !== undefined && data.depositOwingCents === undefined,
+  });
+  const depositOwing = data?.depositOwingCents ?? leases?.items.find((item) => item.id === leaseId)?.depositOwingCents ?? 0;
+  const openDocument = useOpenDocument();
+
+  // The home screen's "Send proof of payment" lands here with the form already open.
+  const [params] = useSearchParams();
+  const [showSlip, setShowSlip] = useState(() => params.get('proof') === '1');
   const [slip, setSlip] = useState(blankSlip);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -169,108 +197,225 @@ export function TenantRent() {
     return <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={refetch} what="Your statement" />;
   }
 
+  const outstanding = Math.max(balance, 0) + depositOwing;
+  // A reversal is an entry of its own on the statement. Here it is shown on the payment it
+  // undoes, struck through with the reason, rather than as a second, negative line.
+  const received = data.payments.filter((payment) => payment.method !== 'reversal' && !payment.reversesPaymentId);
+  const reversalOf = (payment: Statement['payments'][number]) =>
+    data.payments.find((entry) => entry.reversesPaymentId === payment.id || (payment.reversedBy && entry.id === payment.reversedBy));
+  const standing = received.filter((payment) => !payment.reversedBy && !reversalOf(payment));
+  const overdue = open.some((invoice) => invoice.dueOn < today());
+  const openSlip = () => {
+    // Fresh date each time it opens, unless they left a half-filled slip to come back to.
+    setSlip((current) => (untouched(current) ? blankSlip() : current));
+    setShowSlip(true);
+  };
+
   return (
-    <main className="mx-auto max-w-lg px-4 py-6">
+    <main className={PAGE.wide}>
       <PageHeader
         title="Rent"
-        description={balance <= 0 ? 'You are fully paid up.' : `${formatZar(balance / 100)} outstanding.`}
+        description={
+          outstanding <= 0
+            ? 'You are fully paid up.'
+            : depositOwing > 0
+              ? `${formatZar(outstanding / 100)} outstanding, including your deposit of ${formatZar(depositOwing / 100)}.`
+              : `${formatZar(outstanding / 100)} outstanding.`
+        }
       />
-      <Card className="mb-4">
-        <CardBody className="space-y-3">
-          <p className="label">Pay by EFT</p>
-          {data.bankChangedOn && data.bank ? (
-            <Alert tone="warning" title={`This account changed on ${formatDate(data.bankChangedOn)}`}>
-              If {data.landlord ?? 'your landlord'} did not tell you themselves, phone them
-              {data.landlordPhone ? ` on ${data.landlordPhone}` : ''} before you pay.
-            </Alert>
-          ) : null}
-          {data.bank ? (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
-              <dt className="text-ink-muted">Bank</dt>
-              <dd>{data.bank.name}</dd>
-              <dt className="text-ink-muted">Account holder</dt>
-              <dd>{data.bank.holder}</dd>
-              <dt className="text-ink-muted">Account number</dt>
-              <dd className="font-mono tabular-nums">{data.bank.accountNumber}</dd>
-              <dt className="text-ink-muted">Branch code</dt>
-              <dd className="font-mono tabular-nums">{data.bank.branchCode}</dd>
-            </dl>
+
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className={`col-span-2 rounded-md border px-5 py-4 ${
+          outstanding <= 0 ? 'border-success/30 bg-tint-success' : overdue ? 'border-danger/30 bg-tint-danger' : 'border-warning/30 bg-tint-warning'
+        }`}>
+          <p className="text-meta font-semibold text-ink">{outstanding <= 0 ? 'Where you stand' : overdue ? 'Overdue' : 'To pay'}</p>
+          {outstanding <= 0 ? (
+            <p className="mt-1 text-figure font-bold text-ink">Paid up</p>
           ) : (
-            <p className="text-meta text-ink-muted">
-              {data.landlord ?? 'Your landlord'} has not added their bank account here yet. Use the one on your lease.
-            </p>
+            <p className="mt-1"><Money cents={outstanding} className={`text-figure ${overdue ? 'text-danger' : 'text-ink'}`} /></p>
           )}
-          <TagField label="Reference" value={data?.reference ?? '...'} />
-          <p className="text-xs text-ink-muted">
-            Use it exactly, so your payment is matched to your unit. Your deposit stands at{' '}
-            {formatZar((data?.depositBalanceCents ?? 0) / 100)}, interest included.
+          <p className="text-meta text-ink">
+            {outstanding <= 0
+              ? 'Nothing is owing on your rent or deposit.'
+              : depositOwing > 0 && balance > 0
+                ? <>Rent <Money cents={balance} /> and deposit <Money cents={depositOwing} /></>
+                : depositOwing > 0
+                  ? 'Your deposit, due within 7 days of signing'
+                  : open[0]
+                    ? `${formatMonth(open[0].period)}, due ${formatDate(open[0].dueOn)}`
+                    : 'Rent and charges'}
           </p>
-          <Button block variant="outline" disabled={!data} onClick={() => {
-            // Fresh date each time it opens, unless they left a half-filled slip to come back to.
-            setSlip((current) => (untouched(current) ? blankSlip() : current));
-            setShowSlip(true);
-          }}>
-            Send proof of payment
-          </Button>
-        </CardBody>
-      </Card>
-
-      {data?.proofs.some((proof) => proof.status === 'rejected') ? (
-        <Alert tone="warning" title="A slip was not accepted" className="mb-4">
-          {data.proofs.find((proof) => proof.status === 'rejected')?.rejectReason}
-        </Alert>
-      ) : null}
-
-      {leaseId ? <ArrearsPanel leaseId={leaseId} landlord={false} /> : null}
-
-      <div className="space-y-3">
-        {data?.invoices.map((invoice) => {
-          const proofSent = proofSentFor.has(invoice.id);
-          return (
-            <Card key={invoice.id}>
-              <CardBody className="flex items-center justify-between">
-                <div>
-                  <p className="text-lead font-semibold text-ink">{formatMonth(invoice.period)}</p>
-                  <p className="text-xs text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Money cents={invoice.totalCents} className="text-body" />
-                  <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
-                    {proofSent ? 'Proof sent' : status(invoice.status).label}
-                  </Badge>
-                </div>
-              </CardBody>
-            </Card>
-          );
-        })}
+        </div>
+        <Card>
+          <div className="px-5 py-4">
+            <p className="text-meta font-semibold text-ink-muted">Deposit held</p>
+            <p className="mt-1"><Money cents={data.depositBalanceCents} className="text-figure text-ink" /></p>
+            <p className="text-meta text-ink-muted">interest included</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="px-5 py-4">
+            <p className="text-meta font-semibold text-ink-muted">Paid so far</p>
+            <p className="mt-1"><Money cents={standing.reduce((sum, payment) => sum + payment.amountCents, 0)} className="text-figure text-ink" /></p>
+            <p className="text-meta text-ink-muted">{standing.length === 0 ? 'no payments yet' : `${standing.length} payment${standing.length === 1 ? '' : 's'} received`}</p>
+          </div>
+        </Card>
       </div>
 
-      {data && data.proofs.length > 0 ? (
-        <section className="mt-6">
-          <h2 className="label mb-2">Slips you sent</h2>
-          <div className="space-y-2">
-            {data.proofs.map((proof) => (
-              <Card key={proof.id}>
-                <CardBody className="flex items-center justify-between">
-                  <div>
-                    <p className="text-body"><Money cents={proof.amountCents} /></p>
-                    <p className="text-xs text-ink-muted">
-                      Paid {formatDate(proof.paidOn)}
-                      {proof.target === 'deposit' ? ', deposit' : ''}
-                      {proof.reference ? `, ref ${proof.reference}` : ''}
-                    </p>
-                  </div>
-                  <Badge tone={proofTone[proof.status]}>{proofLabel[proof.status]}</Badge>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* Where to pay comes first on a phone, and sits beside the invoices on a laptop. */}
+        <div className="space-y-4 lg:order-2">
+          <Card>
+            <CardBody className="space-y-3">
+              <h2 className="text-lead font-bold text-ink">Pay by EFT</h2>
+              {data.bankChangedOn && data.bank ? (
+                <Alert tone="warning" title={`This account changed on ${formatDate(data.bankChangedOn)}`}>
+                  If {data.landlord ?? 'your landlord'} did not tell you themselves, phone them
+                  {data.landlordPhone ? ` on ${data.landlordPhone}` : ''} before you pay.
+                </Alert>
+              ) : null}
+              {data.bank ? (
+                <dl className="divide-y divide-line-soft rounded-md border border-line">
+                  <CopyRow label="Bank" value={data.bank.name} />
+                  <CopyRow label="Account holder" value={data.bank.holder} />
+                  <CopyRow label="Account number" value={data.bank.accountNumber} copy mono />
+                  <CopyRow label="Branch code" value={data.bank.branchCode} copy mono />
+                  <CopyRow label="Reference" value={data.reference ?? '...'} copy mono strong />
+                </dl>
+              ) : (
+                <>
+                  <p className="text-body text-ink-muted">
+                    {data.landlord ?? 'Your landlord'} has not added their bank account here yet. Use the one on your lease.
+                  </p>
+                  <dl className="divide-y divide-line-soft rounded-md border border-line">
+                    <CopyRow label="Reference" value={data.reference ?? '...'} copy mono strong />
+                  </dl>
+                </>
+              )}
+              <p className="text-meta text-ink-muted">
+                Use the reference exactly, so your payment is matched to your unit.
+              </p>
+              <Button block size="lg" onClick={openSlip}>
+                Send proof of payment
+              </Button>
+            </CardBody>
+          </Card>
 
-      <Button block variant="secondary" className="mt-5" disabled={!data} onClick={download}>
-        Download statement
-      </Button>
+          {data.proofs.some((proof) => proof.status === 'rejected') ? (
+            <Alert tone="warning" title="A slip was not accepted">
+              {data.proofs.find((proof) => proof.status === 'rejected')?.rejectReason}
+            </Alert>
+          ) : null}
+
+          {data.proofs.length > 0 ? (
+            <Card>
+              <h2 className="px-5 pb-2 pt-4 text-lead font-bold text-ink">Slips you sent</h2>
+              <ul className="divide-y divide-line-soft border-t border-line-soft">
+                {data.proofs.map((proof) => (
+                  <li key={proof.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                    <div className="min-w-0">
+                      <p className="text-body"><Money cents={proof.amountCents} /></p>
+                      <p className="text-meta text-ink-muted">
+                        Paid {formatDate(proof.paidOn)}
+                        {proof.target === 'deposit' ? ', deposit' : ''}
+                        {proof.reference ? `, ref ${proof.reference}` : ''}
+                      </p>
+                    </div>
+                    <Badge tone={proofTone[proof.status]}>{proofLabel[proof.status]}</Badge>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
+
+        <div className="space-y-4 lg:order-1">
+          {leaseId ? <ArrearsPanel leaseId={leaseId} landlord={false} /> : null}
+
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
+              <h2 className="text-lead font-bold text-ink">Invoices</h2>
+              <Button size="sm" variant="outline" onClick={download}>
+                Download statement
+              </Button>
+            </div>
+            {data.invoices.length === 0 ? (
+              <p className="border-t border-line-soft px-5 py-5 text-body text-ink-muted">
+                Your first invoice appears here before your rent is due.
+              </p>
+            ) : (
+              <ul className="divide-y divide-line-soft border-t border-line-soft">
+                {[...data.invoices].reverse().map((invoice) => {
+                  const proofSent = proofSentFor.has(invoice.id);
+                  const month = formatMonth(invoice.period);
+                  return (
+                    <li key={invoice.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3.5">
+                      <div className="min-w-0">
+                        <p className="text-lead font-semibold text-ink">{month}</p>
+                        <p className="text-meta text-ink-muted">Due {formatDate(invoice.dueOn)}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Money cents={invoice.totalCents} className="text-body text-ink" />
+                        <Badge tone={proofSent ? 'info' : status(invoice.status).tone}>
+                          {proofSent ? 'Proof sent' : status(invoice.status).label}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`Open the ${month} invoice as a PDF`}
+                          onClick={() =>
+                            openDocument(async () => (await api.post<{ key: string }>(`/invoices/${invoice.id}/render`, {})).key)
+                          }
+                        >
+                          PDF
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          {received.length > 0 ? (
+            <Card>
+              <h2 className="px-5 pb-2 pt-4 text-lead font-bold text-ink">Payments received</h2>
+              <ul className="divide-y divide-line-soft border-t border-line-soft">
+                {[...received].reverse().map((payment) => {
+                  const reversal = reversalOf(payment);
+                  const reason = reversal?.reason ?? payment.reason;
+                  return (
+                    <li key={payment.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                      <div className="min-w-0">
+                        <p className="text-body font-semibold text-ink">{formatDate(payment.receivedOn)}</p>
+                        <p className="truncate text-meta text-ink-muted">{payment.reference ? `Reference ${payment.reference}` : 'No reference'}</p>
+                        {reversal || payment.reversedBy ? (
+                          <p className="text-meta text-ink">
+                            Reversed{reversal ? ` on ${formatDate(reversal.receivedOn)}` : ''}{reason ? `: ${reason}` : '.'}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {reversal || payment.reversedBy ? (
+                          <>
+                            <s className="text-ink-muted"><span className="sr-only">Reversed payment of </span><Money cents={payment.amountCents} className="text-body" /></s>
+                            <Badge tone="danger">Reversed</Badge>
+                          </>
+                        ) : (
+                          <>
+                            <Money cents={payment.amountCents} className="text-body text-ink" />
+                            <Badge tone="success">Received</Badge>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
+      </div>
 
       <Modal
         open={showSlip}
@@ -289,7 +434,7 @@ export function TenantRent() {
             onChange={(event) => setSlip({ ...slip, invoiceId: event.target.value })}
             options={[
               { value: '', label: 'Rent, oldest month first' },
-              ...open.map((invoice) => ({ value: invoice.id, label: `Rent for ${invoice.period}` })),
+              ...open.map((invoice) => ({ value: invoice.id, label: `Rent for ${formatMonth(invoice.period)}` })),
               { value: 'deposit', label: 'Deposit' },
             ]}
           />
@@ -317,14 +462,37 @@ export function TenantRent() {
             accept={ACCEPTED_TYPES.join(',')}
             aria-label="Slip file"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-500"
+            className="block w-full text-body text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-body file:font-semibold file:text-brand-600"
           />
-          {fileProblem ? <p className="text-xs text-danger">{fileProblem}</p> : null}
+          {fileProblem ? <p className="text-meta font-semibold text-danger">{fileProblem}</p> : null}
           <Button block loading={busy} disabled={!ready} onClick={sendSlip}>
             Send
           </Button>
         </div>
       </Modal>
     </main>
+  );
+}
+
+/** One line of the banking details. The ones a banking app asks for get a Copy button. */
+function CopyRow({ label, value, copy = false, mono = false, strong = false }: {
+  label: string; value: string; copy?: boolean; mono?: boolean; strong?: boolean;
+}) {
+  const { copied, failed, copy: copyValue } = useCopyToClipboard();
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <div className="min-w-0">
+        <dt className="text-meta text-ink-muted">{label}</dt>
+        {/* select-all so a failed copy still leaves the value one long-press from the clipboard. */}
+        <dd className={`select-all break-all text-ink ${mono ? 'font-mono' : ''} ${strong ? 'text-lead font-bold' : 'text-body font-semibold'}`}>
+          {value}
+        </dd>
+      </div>
+      {copy ? (
+        <Button size="sm" variant="secondary" aria-label={`Copy ${label.toLowerCase()}`} onClick={() => copyValue(value)}>
+          <span aria-live="polite">{copied ? 'Copied' : failed ? 'Select it' : 'Copy'}</span>
+        </Button>
+      ) : null}
+    </div>
   );
 }

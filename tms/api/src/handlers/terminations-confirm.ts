@@ -4,6 +4,9 @@ import { withTransaction } from '../lib/db';
 import { badRequest, conflict, forbidden, json, notFound, route } from '../lib/http';
 import { notify } from '../lib/notify';
 import { leaseParties } from '../lib/lease-parties';
+import { lockLease } from '../lib/payments';
+import { putNoticeInForce } from '../lib/notice';
+import { sastToday } from '../domain/dates';
 
 /**
  * The tenant confirms a notice the landlord recorded for them: a mutual one, or the tenant's own
@@ -21,7 +24,10 @@ export const handler = route(async (event) => {
   );
   if (!access.isTenant || access.isLandlord) throw forbidden('Only the tenant confirms this notice.');
 
+  const today = sastToday();
   const result = await withTransaction(async (run) => {
+    // The lease first, as every path that changes its invoices does.
+    await lockLease(run, access.leaseId);
     const [termination] = await run<{
       lease_id: string; status: string; effective_on: string; needs: boolean; confirmed: boolean;
     }>(
@@ -34,8 +40,18 @@ export const handler = route(async (event) => {
     if (termination.status === 'withdrawn') throw conflict('This notice was withdrawn.');
     if (!termination.needs) throw conflict('This notice does not need your confirmation.');
     if (termination.confirmed) throw conflict('You have already confirmed this notice.');
+    // Confirmed months later, it ended the lease on the old date and the rent billed since was
+    // lost. Once the date has gone the landlord records the notice afresh, or attests to it.
+    if (today > termination.effective_on) {
+      throw conflict(
+        `This notice named ${termination.effective_on} as the last day, and that has passed, so it can no longer ` +
+          'be confirmed. Ask your landlord to record a fresh notice.',
+      );
+    }
     await run('update termination set tenant_confirmed_at = now() where id = $1', [terminationId]);
-    return { leaseId: termination.lease_id, effectiveOn: termination.effective_on };
+    // Now it binds: invoices are trimmed to the end date and renewals lapse.
+    const inForce = await putNoticeInForce(run, termination.lease_id, terminationId, termination.effective_on);
+    return { leaseId: termination.lease_id, effectiveOn: termination.effective_on, ...inForce };
   });
 
   const parties = await leaseParties(result.leaseId);
@@ -55,8 +71,14 @@ export const handler = route(async (event) => {
     action: 'termination.confirmed',
     entity: 'termination',
     entityId: terminationId,
-    detail: { effectiveOn: result.effectiveOn },
+    detail: { effectiveOn: result.effectiveOn, invoicesAdjusted: result.invoicesAdjusted },
   });
 
-  return json(200, { id: terminationId, confirmed: true });
+  return json(200, {
+    id: terminationId,
+    confirmed: true,
+    invoicesAdjusted: result.invoicesAdjusted,
+    chargesMoved: result.chargesMoved,
+    renewalCancelled: result.renewalCancelled,
+  });
 });

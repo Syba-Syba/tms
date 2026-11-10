@@ -43,7 +43,13 @@ export const handler = route(async (event) => {
        join applicant p on p.id = a.applicant_id
        join unit u on u.id = a.unit_id
        join property pr on pr.id = u.property_id
-       left join lease l on l.application_id = a.id and l.status <> 'cancelled'
+       -- One lease per application. A renewal copies the application id, so a plain join
+       -- listed the tenant once per lease; the newest is the one to show.
+       left join lateral (
+         select le.id, le.status from lease le
+          where le.application_id = a.id and le.status <> 'cancelled'
+          order by le.start_date desc, le.created_at desc limit 1
+       ) l on true
       where ($1 = 'all' or a.status = $1)
         and pr.landlord_id = $3
         -- Imported tenancies never went through the queue, so they stay out of it.

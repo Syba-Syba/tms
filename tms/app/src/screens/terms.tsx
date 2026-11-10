@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { formatDate } from '../lib/format';
 import { TERMS_VERSION } from '../lib/terms';
 import { List, Section } from './privacy';
+import { Wordmark } from '../components/wordmark';
 
 interface Company {
   name: string;
@@ -29,12 +30,13 @@ export function Terms() {
   const contact = [data?.email, data?.phone].filter(Boolean).join(', ');
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-8">
-      <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">Terms of service</h1>
-      <p className="mb-6 text-meta text-ink-muted">Version of {formatDate(TERMS_VERSION)}</p>
+    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+      <Link to="/" className="inline-flex text-ink" aria-label="Threshold, back to the app"><Wordmark /></Link>
+      <h1 className="mt-8 font-display text-display font-bold text-ink">Terms of service</h1>
+      <p className="mb-6 mt-1 text-body text-ink-muted">Version of {formatDate(TERMS_VERSION)}</p>
 
       <Card>
-        <CardBody className="space-y-5 text-body leading-relaxed text-ink">
+        <CardBody className="space-y-8 px-5 py-6 text-lead leading-relaxed text-ink sm:px-8 sm:py-8">
           <Section title="Who we are">
             <p>
               {name} is provided by {legal}
@@ -45,7 +47,7 @@ export function Terms() {
             <p>
               These terms apply between us and the landlord who opens an account, called "you" below. Your agents work
               under them on your behalf. Tenants use the service through your account and do not sign these terms; the{' '}
-              <Link to="/privacy" className="font-bold text-brand-500">privacy notice</Link> tells them how their
+              <Link to="/privacy" className="font-semibold text-brand-600 underline underline-offset-2">privacy notice</Link> tells them how their
               information is handled.
             </p>
           </Section>
@@ -142,6 +144,10 @@ export function Terms() {
           </Section>
         </CardBody>
       </Card>
+
+      <p className="mt-6 text-body">
+        <Link to="/" className="font-semibold text-brand-600 underline underline-offset-2">Back to the app</Link>
+      </p>
     </main>
   );
 }

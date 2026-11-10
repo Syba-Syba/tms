@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { Alert, Badge, Button, Card, CardBody, ConfirmDialog, PageHeader, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Card, ConfirmDialog, useToast } from '@hlonie/toolbox/ui';
 import { formatZar } from '@hlonie/toolbox/utils';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
-import { SettingsNav } from '../components/settings-nav';
+import { SettingsLayout } from '../components/settings-nav';
 import { formatDate } from '../lib/format';
 import { useOpenDocument } from '../lib/open-document';
 import { standingText, useBilling, type PlanId } from '../lib/billing';
-import { PAGE } from '../lib/layout';
 import { Money } from '../components/money';
 
 /** Posts the signed PayFast form from the browser: the card details never touch this server. */
@@ -48,21 +47,24 @@ function Invoices() {
   });
   if (!data || data.items.length === 0) return null;
   return (
-    <section aria-label="Invoices" className="mt-8">
-      <h2 className="label mb-2">Invoices</h2>
+    <section aria-label="Invoices">
       <Card>
-        <ul className="divide-y divide-line">
+        <div className="px-5 py-4">
+          <h2 className="text-lead font-bold text-ink">Invoices</h2>
+          <p className="text-meta text-ink-muted">One for every payment to Threshold.</p>
+        </div>
+        <ul className="divide-y divide-line-soft border-t border-line-soft">
           {data.items.map((invoice) => (
-            <li key={invoice.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+            <li key={invoice.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
               <div className="min-w-0 flex-1">
-                <p className="text-body font-semibold">Invoice {invoice.number}</p>
-                <p className="text-xs text-ink-muted">
+                <p className="text-body font-semibold text-ink">Invoice {invoice.number}</p>
+                <p className="text-meta text-ink-muted">
                   {formatDate(invoice.periodFrom)} to {formatDate(invoice.periodTo)}
                   {invoice.vatCents > 0 ? `, VAT ${formatZar(invoice.vatCents / 100)}` : ''}
                 </p>
               </div>
-              <Money cents={invoice.amountCents} className="text-body" />
-              <Button size="sm" variant="outline"
+              <Money cents={invoice.amountCents} className="text-body text-ink" />
+              <Button size="sm" variant="outline" aria-label={`PDF of invoice ${invoice.number}`}
                 onClick={() => open(async () => (await api.post<{ key: string }>(`/billing/invoices/${invoice.id}/render`, {})).key)}>
                 PDF
               </Button>
@@ -150,75 +152,88 @@ export function SettingsBilling() {
 
   const tone = data.standing === 'lapsed' ? 'danger' : data.standing === 'past_due' ? 'warning' : 'info';
 
-  return (
-    <main className={PAGE.reading}>
-      <PageHeader title="Settings" description="What you pay for Threshold." />
-      <SettingsNav />
+  // One green button on the page: the plan that fits when there is none yet, otherwise none
+  // stands out more than another and switching is an outline button.
+  const hasPlan = data.plans.some((plan) => data.plan === plan.id && data.standing !== 'lapsed' && data.standing !== 'trial');
+  const lead = hasPlan ? null : (data.recommended ?? data.plans.find((plan) => data.units <= plan.maxUnits)?.id ?? null);
 
+  return (
+    <SettingsLayout description="What you pay for Threshold.">
       {data.driver === 'off' ? (
         <Alert tone="info" title="Billing is off">This installation does not charge for use.</Alert>
       ) : (
         <>
-          <Alert tone={tone} title={standingText(data)} className="mb-5">
+          <Alert tone={tone} title={standingText(data)}>
             You have {data.units} {data.units === 1 ? 'unit' : 'units'}
             {data.allowance !== null && data.standing !== 'lapsed' ? `, and room for ${data.allowance}` : ''}. Tenants are never cut off,
             whatever the plan.
           </Alert>
           {returned && data.standing !== 'active' ? (
-            <Alert tone="info" title="Waiting for PayFast to confirm the payment" className="mb-5">
-              This page updates on its own. It usually takes a few seconds.{' '}
-              <button type="button" className="font-bold text-brand-500" onClick={() => setParams({})}>Dismiss</button>
+            <Alert tone="info" title="Waiting for PayFast to confirm the payment">
+              <p>This page updates on its own. It usually takes a few seconds.</p>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => setParams({})}>Dismiss</Button>
             </Alert>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {data.plans.map((plan) => {
-              const current = data.plan === plan.id && data.standing !== 'lapsed' && data.standing !== 'trial';
-              const tooSmall = data.units > plan.maxUnits;
-              return (
-                <Card key={plan.id} className={current ? 'border-ink' : ''}>
-                  <CardBody className="flex h-full flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-lead font-semibold">{plan.name}</p>
-                      {current ? <Badge tone="success">Current</Badge> : data.pendingPlan === plan.id ? <Badge tone="info">From your next payment</Badge> : data.recommended === plan.id ? <Badge tone="info">Fits you</Badge> : null}
+          <section aria-label="Plans">
+            <h2 className="mb-3 text-lead font-bold text-ink">Plans</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {data.plans.map((plan) => {
+                const current = data.plan === plan.id && data.standing !== 'lapsed' && data.standing !== 'trial';
+                const tooSmall = data.units > plan.maxUnits;
+                return (
+                  <Card key={plan.id} className={current ? 'border-2 border-brand-500' : ''}>
+                    <div className="flex h-full flex-col gap-3 p-5">
+                      <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
+                        <p className="text-lead font-bold text-ink">{plan.name}</p>
+                        {current ? <Badge tone="success">Current</Badge> : data.pendingPlan === plan.id ? <Badge tone="info">From your next payment</Badge> : data.recommended === plan.id ? <Badge tone="info">Fits you</Badge> : null}
+                      </div>
+                      <p className="font-display text-figure font-bold text-ink">
+                        <Money whole cents={plan.priceCents} />
+                        <span className="ml-1.5 text-meta font-normal tracking-normal text-ink-muted">a month</span>
+                      </p>
+                      <p className="text-meta text-ink-muted">Up to {plan.maxUnits} units. Everything included.</p>
+                      {data.isOwner ? (
+                        <Button block className="mt-auto" variant={lead === plan.id ? 'primary' : 'outline'} loading={busy === plan.id}
+                          disabled={current || tooSmall || busy !== null} onClick={() => choose(plan.id)}>
+                          {current ? 'Your plan' : tooSmall ? `Over ${plan.maxUnits} units` : data.hasRecurring && data.status !== 'cancelled' ? `Switch to ${plan.name}` : `Choose ${plan.name}`}
+                        </Button>
+                      ) : null}
                     </div>
-                    <p className="font-display text-figure font-medium tabular-nums">
-                      <Money whole cents={plan.priceCents} />
-                      <span className="ml-1 text-meta font-normal text-ink-muted">a month</span>
-                    </p>
-                    <p className="text-meta text-ink-muted">Up to {plan.maxUnits} units. Everything included.</p>
-                    {data.isOwner ? (
-                      <Button className="mt-auto" variant={current ? 'outline' : 'primary'} loading={busy === plan.id}
-                        disabled={current || tooSmall || busy !== null} onClick={() => choose(plan.id)}>
-                        {current ? 'Your plan' : tooSmall ? `Over ${plan.maxUnits} units` : data.hasRecurring && data.status !== 'cancelled' ? `Switch to ${plan.name}` : `Choose ${plan.name}`}
-                      </Button>
-                    ) : null}
-                  </CardBody>
-                </Card>
-              );
-            })}
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
-            Prices include VAT. Paid monthly by card or instant EFT through PayFast; cancel any time and keep the month you paid for.
-            More than 60 units? Get in touch.
-          </p>
-          {!data.isOwner ? <p className="mt-3 text-meta text-ink-muted">Only the account owner changes the plan.</p> : null}
-
-          {data.isOwner && data.hasRecurring && data.status !== 'cancelled' ? (
-            <button type="button" className="mt-5 text-meta font-bold text-danger" onClick={() => setCancelling(true)}>
-              Cancel the plan
-            </button>
-          ) : null}
+                  </Card>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-meta text-ink-muted">
+              Prices include VAT. Paid monthly by card or instant EFT through PayFast; cancel any time and keep the month you paid for.
+              More than 60 units? Get in touch.
+            </p>
+            {!data.isOwner ? <p className="mt-2 text-meta text-ink-muted">Only the account owner changes the plan.</p> : null}
+          </section>
 
           <Invoices />
 
+          {data.isOwner && data.hasRecurring && data.status !== 'cancelled' ? (
+            <Card>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div className="min-w-0">
+                  <h2 className="text-lead font-bold text-ink">Stop paying</h2>
+                  <p className="text-meta text-ink-muted">You keep the month you paid for. Tenants are never cut off.</p>
+                </div>
+                <Button variant="outline" className="text-danger" onClick={() => setCancelling(true)}>
+                  Cancel the plan
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
           {data.driver === 'local' && data.isOwner ? (
-            <section aria-label="Simulated payments" className="mt-8 rounded-md border border-dashed border-line p-4">
-              <p className="mb-1 text-meta font-semibold">Development: simulated PayFast</p>
-              <p className="mb-3 text-xs text-ink-muted">No money moves. These take the same path a real PayFast notification does.</p>
-              <div className="flex flex-wrap gap-2">
+            <section aria-label="Simulated payments" className="rounded-md border border-dashed border-neutral-300 px-5 py-4">
+              <h2 className="text-body font-bold text-ink">Development: simulated PayFast</h2>
+              <p className="mb-3 text-meta text-ink-muted">No money moves. These take the same path a real PayFast notification does.</p>
+              <div className="flex flex-wrap items-center gap-2">
                 {simulating ? (
-                  <Button size="sm" loading={busy === 'paid'} onClick={() => simulate('paid', simulating)}>Pay the first month</Button>
+                  <Button size="sm" variant="secondary" loading={busy === 'paid'} onClick={() => simulate('paid', simulating)}>Pay the first month</Button>
                 ) : null}
                 {data.hasRecurring ? (
                   <>
@@ -226,7 +241,7 @@ export function SettingsBilling() {
                     <Button size="sm" variant="outline" loading={busy === 'failed'} onClick={() => simulate('failed')}>Payment fails</Button>
                   </>
                 ) : null}
-                {!simulating && !data.hasRecurring ? <p className="text-xs text-ink-muted">Choose a plan to start a checkout.</p> : null}
+                {!simulating && !data.hasRecurring ? <p className="text-meta text-ink-muted">Choose a plan to start a checkout.</p> : null}
               </div>
             </section>
           ) : null}
@@ -242,6 +257,6 @@ export function SettingsBilling() {
         loading={busy === 'cancel'}
         onConfirm={cancel}
       />
-    </main>
+    </SettingsLayout>
   );
 }

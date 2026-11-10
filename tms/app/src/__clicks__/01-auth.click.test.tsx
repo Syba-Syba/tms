@@ -64,8 +64,9 @@ describe('signing in and out', () => {
         <Route path="/" element={<Home />} />
       </Route>,
     );
-    await screen.findByText('Mokoena Properties');
-    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    // The name shows in the sidebar and in the phone header; both render under jsdom.
+    expect((await screen.findAllByText('Mokoena Properties')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Log out' })[0]!);
     await waitFor(() => {
       expect(localStorage.getItem('tms.user')).toBeNull();
       expect((window as any).__assignedUrls?.at(-1)).toBe('/login');

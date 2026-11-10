@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Alert, Button, Card, CardBody, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Button, Checkbox, Input, Spinner, useToast } from '@hlonie/toolbox/ui';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, errorCode, humanError } from '../api/client';
+import { AuthHeading, AuthLayout } from '../components/auth-layout';
+import { TEXT_LINK } from '../components/link-button';
 import { PRIVACY_VERSION } from '../lib/privacy';
 import { startSession, type SessionUser } from '../lib/session';
 
@@ -51,20 +53,17 @@ export function Join() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
+    <AuthLayout>
       {invite.isLoading ? (
         <Spinner />
       ) : !invite.data ? (
         <Alert tone="warning" title="This link no longer works">
           It may have expired, been used already, or been cancelled. Ask the person who added you to send a new one.{' '}
-          <Link to="/login" className="font-bold text-brand-500">Sign in</Link>
+          <Link to="/login" className={TEXT_LINK}>Sign in</Link>
         </Alert>
       ) : (
         <>
-          <h1 className="mb-1 font-display text-display font-medium leading-tight tracking-[-0.01em]">
-            {invite.data.kind === 'tenant' ? `Your lease for ${invite.data.unit}` : `Join ${invite.data.landlord}`}
-          </h1>
-          <p className="mb-5 text-body text-ink-muted">
+          <AuthHeading title={invite.data.kind === 'tenant' ? `Your lease for ${invite.data.unit}` : `Join ${invite.data.landlord}`}>
             Hi {invite.data.name}.{' '}
             {invite.data.kind === 'tenant'
               ? `${invite.data.landlord} runs your lease on Threshold: your rent, your statement, proof of payment and repairs. `
@@ -72,9 +71,8 @@ export function Join() {
             {invite.data.hasAccount
               ? `You already have an account as ${invite.data.email}. Enter its password to add this lease to it.`
               : `You sign in as ${invite.data.email}.`}
-          </p>
-          <Card>
-            <CardBody className="space-y-3">
+          </AuthHeading>
+          <div className="space-y-4">
               <Field label={invite.data.hasAccount ? 'Your password' : 'Password'} htmlFor="join-password"
                 hint={invite.data.hasAccount ? undefined : 'At least 8 characters.'}>
               <Input id="join-password" type="password"
@@ -94,23 +92,22 @@ export function Join() {
                 label={
                   <span>
                     I have read the{' '}
-                    <Link to="/privacy" target="_blank" className="font-bold text-brand-500">privacy notice</Link>{' '}
+                    <Link to="/privacy" target="_blank" className={TEXT_LINK}>privacy notice</Link>{' '}
                     and agree to it
                   </span>
                 }
               />
-              <Button block loading={busy} disabled={password.length < (invite.data.hasAccount ? 1 : 8) || !consent} onClick={join}>
+              <Button block size="lg" loading={busy} disabled={password.length < (invite.data.hasAccount ? 1 : 8) || !consent} onClick={join}>
                 {invite.data.kind === 'tenant' ? 'Open my lease' : 'Join'}
               </Button>
               {invite.data.hasAccount ? (
                 <p className="text-center text-meta text-ink-muted">
-                  Forgot it? <Link to="/forgot-password" className="font-bold text-brand-500">Reset your password</Link>, then open this link again.
+                  Forgot it? <Link to="/forgot-password" className={TEXT_LINK}>Reset your password</Link>, then open this link again.
                 </p>
               ) : null}
-            </CardBody>
-          </Card>
+          </div>
         </>
       )}
-    </main>
+    </AuthLayout>
   );
 }

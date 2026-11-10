@@ -51,10 +51,10 @@ export const useCreditCheck = (applicationId: string | undefined) =>
 export function CreditCheckSummary({ check }: { check: NonNullable<CreditCheckState['check']> }) {
   const open = useOpenDocument();
   return (
-    <div className="space-y-1.5 rounded-sm border border-line-soft p-3">
+    <div className="space-y-2 rounded-md border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={OUTCOME[check.outcome].tone}>{OUTCOME[check.outcome].label}</Badge>
-        {check.score !== null ? <span className="font-mono text-body tabular-nums">Score {check.score}</span> : null}
+        {check.score !== null ? <span className="text-body font-bold text-ink">Score {check.score}</span> : null}
       </div>
       <p className="text-meta text-ink-muted">
         {BUREAU_LABEL[check.bureau]}, {formatDate(check.checkedOn)}. {check.judgements} judgement{check.judgements === 1 ? '' : 's'},{' '}
@@ -62,9 +62,9 @@ export function CreditCheckSummary({ check }: { check: NonNullable<CreditCheckSt
       </p>
       {check.notes ? <p className="whitespace-pre-line text-meta">{check.notes}</p> : null}
       {check.reportKey ? (
-        <button type="button" className="text-meta font-bold text-brand-500" onClick={() => open(check.reportKey!)}>
+        <Button size="sm" variant="outline" onClick={() => open(check.reportKey!)}>
           Open the report
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -102,7 +102,7 @@ export function CreditCheckPanel({ applicationId }: { applicationId: string }) {
 
   if (!data.consent) {
     return (
-      <p className="text-meta text-ink-muted">
+      <p className="rounded-md bg-surface-muted px-4 py-3 text-meta text-ink-muted">
         The applicant has not agreed to a credit check. They can agree from their application; until then, decide on the
         documents, or ask them.
       </p>
@@ -148,9 +148,9 @@ export function CreditCheckPanel({ applicationId }: { applicationId: string }) {
     return (
       <div className="space-y-2">
         <CreditCheckSummary check={data.check} />
-        <button type="button" className="text-meta font-semibold text-ink-muted" onClick={() => setEditing(true)}>
+        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
           Correct the record
-        </button>
+        </Button>
       </div>
     );
   }
@@ -163,40 +163,40 @@ export function CreditCheckPanel({ applicationId }: { applicationId: string }) {
       </p>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label htmlFor="credit-bureau" className="mb-1 block text-meta font-medium">Bureau</label>
+          <label htmlFor="credit-bureau" className="mb-1 block text-meta font-semibold text-ink">Bureau</label>
           <Select id="credit-bureau" value={form.bureau} onChange={(event) => setForm({ ...form, bureau: event.target.value as Bureau })}
             options={Object.entries(BUREAU_LABEL).map(([value, label]) => ({ value, label }))} />
         </div>
         <div>
-          <label htmlFor="credit-date" className="mb-1 block text-meta font-medium">Checked on</label>
+          <label htmlFor="credit-date" className="mb-1 block text-meta font-semibold text-ink">Checked on</label>
           <Input id="credit-date" type="date" max={localToday()} value={form.checkedOn}
             onChange={(event) => setForm({ ...form, checkedOn: event.target.value })} />
         </div>
       </div>
       <div>
-        <p className="mb-1 text-meta font-medium">Outcome</p>
+        <p className="mb-1 text-meta font-semibold text-ink">Outcome</p>
         <SegmentedControl value={form.outcome} onChange={(outcome) => setForm({ ...form, outcome })}
           options={(Object.keys(OUTCOME) as Outcome[]).map((value) => ({ value, label: OUTCOME[value].label }))} />
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label htmlFor="credit-score" className="mb-1 block text-meta font-medium">Score</label>
+          <label htmlFor="credit-score" className="mb-1 block text-meta font-semibold text-ink">Score</label>
           <Input id="credit-score" inputMode="numeric" placeholder="Optional" value={form.score}
             onChange={(event) => setForm({ ...form, score: digits(event.target.value) })} />
         </div>
         <div>
-          <label htmlFor="credit-judgements" className="mb-1 block text-meta font-medium">Judgements</label>
+          <label htmlFor="credit-judgements" className="mb-1 block text-meta font-semibold text-ink">Judgements</label>
           <Input id="credit-judgements" inputMode="numeric" value={form.judgements}
             onChange={(event) => setForm({ ...form, judgements: digits(event.target.value).slice(0, 2) })} />
         </div>
         <div>
-          <label htmlFor="credit-defaults" className="mb-1 block text-meta font-medium">Defaults</label>
+          <label htmlFor="credit-defaults" className="mb-1 block text-meta font-semibold text-ink">Defaults</label>
           <Input id="credit-defaults" inputMode="numeric" value={form.defaults}
             onChange={(event) => setForm({ ...form, defaults: digits(event.target.value).slice(0, 2) })} />
         </div>
       </div>
       <div>
-        <label htmlFor="credit-notes" className="mb-1 block text-meta font-medium">Notes</label>
+        <label htmlFor="credit-notes" className="mb-1 block text-meta font-semibold text-ink">Notes</label>
         <Textarea id="credit-notes" rows={3} maxLength={1000} value={form.notes}
           onChange={(event) => setForm({ ...form, notes: event.target.value })} />
       </div>
@@ -210,7 +210,7 @@ export function CreditCheckPanel({ applicationId }: { applicationId: string }) {
       </div>
       <div className="flex gap-2">
         <Button loading={busy} disabled={!valid || busy} onClick={save}>Save the credit check</Button>
-        {data.check ? <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button> : null}
+        {data.check ? <Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button> : null}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { api, errorCode } from '../api/client';
 import { formatDate } from '../lib/format';
 import { Money } from '../components/money';
 import { DoorwayMonogram, Wordmark } from '../components/wordmark';
+import { ListsDoorway, listsButtonClass } from '../components/lists-kit';
 import { localToday } from '../lib/dates';
 
 interface PublicUnit {
@@ -27,7 +28,8 @@ interface PublicUnit {
 }
 
 interface PublicListings {
-  landlord: { name: string; phone: string; email: string; slug: string };
+  // Contact details are null while the landlord has nothing listed: the server keeps them private.
+  landlord: { name: string; phone: string | null; email: string | null; slug: string };
   items: PublicUnit[];
 }
 
@@ -36,24 +38,24 @@ const rand = (cents: number) => formatZar(cents / 100).replace(/,00$/, '');
 /** Photos scroll sideways, one at a time, the way people expect on a phone. */
 function Photos({ photos, label }: { photos: string[]; label: string }) {
   if (photos.length === 0) {
-    // No grey slab: a quiet doorway and a line, so a unit without photos still looks cared for.
+    // No grey slab: a green-tinted panel with the doorway mark, so a unit without photos still looks cared for.
     return (
-      <div className="flex h-28 flex-col items-center justify-center gap-2 border-b border-line-soft bg-surface-muted">
-        <span className="h-8 w-6 rounded-t-full border-[1.5px] border-b-0 border-ink-muted/60" aria-hidden />
-        <span className="text-xs text-ink-muted">Photos on request</span>
+      <div className="flex aspect-[16/9] flex-col items-center justify-center gap-3 bg-brand-50 text-brand-500">
+        <ListsDoorway className="h-14 w-10" />
+        <span className="text-meta font-semibold text-brand-700">Photos on request</span>
       </div>
     );
   }
   return (
     <div className="relative">
-      <div className="flex aspect-[4/3] snap-x snap-mandatory overflow-x-auto" tabIndex={0} aria-label={`Photos of ${label}`}>
+      <div className="flex aspect-[16/9] snap-x snap-mandatory overflow-x-auto" tabIndex={0} aria-label={`Photos of ${label}`}>
         {photos.map((url, index) => (
           <img key={url} src={url} alt={`${label}, photo ${index + 1} of ${photos.length}`} loading={index === 0 ? 'eager' : 'lazy'}
             className="h-full w-full shrink-0 snap-center object-cover" />
         ))}
       </div>
       {photos.length > 1 ? (
-        <span className="absolute bottom-2 right-2 rounded-sm bg-black/65 px-2 py-0.5 text-xs font-semibold text-white">
+        <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2.5 py-1 text-xs font-semibold text-white">
           {photos.length} photos, swipe
         </span>
       ) : null}
@@ -105,78 +107,92 @@ export function Listings() {
   const suburbs = [...new Set(items.map((unit) => unit.suburb))];
   const areas = suburbs.length === 0 ? '' : suburbs.length === 1 ? suburbs[0] : `${suburbs.slice(0, -1).join(', ')} and ${suburbs.at(-1)}`;
 
+  const contact = (
+    <>
+      {landlord.phone ? (
+        <a href={`tel:${landlord.phone.replace(/\s/g, '')}`} className={listsButtonClass('outline', 'md')}>
+          Call {landlord.phone}
+        </a>
+      ) : null}
+      {landlord.email ? (
+        <a href={`mailto:${landlord.email}`} className={listsButtonClass('outline', 'md')}>
+          Email
+        </a>
+      ) : null}
+    </>
+  );
+  const hasContact = Boolean(landlord.phone || landlord.email);
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <header className="mb-8 flex flex-col gap-5 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-end gap-4">
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
+      <header className="mb-8 flex flex-col gap-5 rounded-lg bg-brand-50 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-8">
+        <div className="flex items-center gap-4">
           <DoorwayMonogram name={landlord.name} />
           <div className="min-w-0">
-            <p className="label">To let{areas ? ` in ${areas}` : ''}</p>
-            <h1 className="font-display text-display font-medium">{landlord.name}</h1>
-            <p className="text-body text-ink-muted">
-              {items.length === 0 ? 'Nothing vacant right now.' : `${items.length} place${items.length === 1 ? '' : 's'} available.`}
+            <p className="text-meta font-semibold text-brand-700">To let{areas ? ` in ${areas}` : ''}</p>
+            <h1 className="font-display text-display font-bold text-ink">{landlord.name}</h1>
+            <p className="mt-1 text-body text-ink-muted">
+              {items.length === 0 ? 'Nothing vacant right now.' : `${items.length} place${items.length === 1 ? '' : 's'} available. Apply online in a few minutes.`}
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a href={`tel:${landlord.phone.replace(/\s/g, '')}`}
-            className="inline-flex h-11 items-center rounded-sm border border-line bg-surface px-4 text-body font-semibold text-ink hover:bg-surface-muted">
-            Call {landlord.phone}
-          </a>
-          <a href={`mailto:${landlord.email}`}
-            className="inline-flex h-11 items-center rounded-sm border border-line bg-surface px-4 text-body font-semibold text-ink hover:bg-surface-muted">
-            Email
-          </a>
-        </div>
+        {hasContact ? <div className="flex flex-wrap gap-2">{contact}</div> : null}
       </header>
 
       {items.length === 0 ? (
-        <EmptyState title="Everything is let" description="Check back later, or get in touch to hear when something comes up." />
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-line bg-surface px-6 py-12 text-center shadow-sm">
+          <span className="text-brand-500"><ListsDoorway className="h-14 w-10" /></span>
+          <h2 className="text-title font-bold text-ink">Everything is let</h2>
+          <p className="max-w-prose text-body text-ink-muted">
+            {hasContact
+              ? 'Places that come up for rent show on this page. Check back later, or get in touch to hear when something opens.'
+              : 'Places that come up for rent show on this page with photos, the rent and a button to apply. Check back later.'}
+          </p>
+          {hasContact ? <div className="mt-1 flex flex-wrap justify-center gap-2">{contact}</div> : null}
+        </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className={`grid grid-cols-1 gap-6 md:grid-cols-2 ${items.length > 2 ? 'xl:grid-cols-3' : ''}`}>
           {items.map((unit) => (
-            <Card key={unit.id} className="overflow-hidden">
+            <Card key={unit.id} className="flex flex-col overflow-hidden">
               <Photos photos={unit.photos} label={unit.label} />
-              <CardBody className="space-y-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div className="min-w-0">
-                    <h2 className="text-lead font-semibold">{unit.label}</h2>
-                    <p className="text-meta text-ink-muted">{unit.suburb}, {unit.city}</p>
-                  </div>
-                  <p className="text-figure">
+              <CardBody className="flex flex-1 flex-col gap-4 p-5">
+                <div>
+                  <p className="text-figure text-ink">
                     <Money whole cents={unit.monthlyRentCents} />
-                    <span className="ml-1 text-meta font-normal text-ink-muted">a month</span>
+                    <span className="ml-1.5 text-meta font-normal text-ink-muted">a month</span>
                   </p>
+                  <h2 className="mt-1 text-lead font-bold text-ink">{unit.label}</h2>
+                  <p className="text-meta text-ink-muted">{unit.suburb}, {unit.city}</p>
                 </div>
-                <p className="text-meta text-ink">
-                  {unit.bedrooms === 0 ? 'Studio' : `${unit.bedrooms} bedroom${unit.bedrooms === 1 ? '' : 's'}`}
-                  {' · '}{unit.bathrooms} bathroom{unit.bathrooms === 1 ? '' : 's'}
-                  {unit.parkingBays > 0 ? ` · ${unit.parkingBays} parking bay${unit.parkingBays === 1 ? '' : 's'}` : ''}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge tone="info">
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge tone="success">
                     {!unit.availableFrom || unit.availableFrom <= today ? 'Available now' : `From ${formatDate(unit.availableFrom)}`}
                   </Badge>
+                  <Badge tone="neutral">{unit.bedrooms === 0 ? 'Studio' : `${unit.bedrooms} bedroom${unit.bedrooms === 1 ? '' : 's'}`}</Badge>
+                  <Badge tone="neutral">{unit.bathrooms} bathroom{unit.bathrooms === 1 ? '' : 's'}</Badge>
+                  {unit.parkingBays > 0 ? <Badge tone="neutral">{unit.parkingBays} parking bay{unit.parkingBays === 1 ? '' : 's'}</Badge> : null}
                   {unit.furnished ? <Badge tone="neutral">Furnished</Badge> : null}
                   {unit.petsAllowed ? <Badge tone="neutral">Pets allowed</Badge> : null}
                 </div>
                 {unit.description ? (
                   <p className="whitespace-pre-line text-body leading-relaxed text-ink">{unit.description}</p>
                 ) : null}
-                <p className="text-meta text-ink-muted">Deposit {rand(unit.depositCents)}</p>
-                <Link
-                  to={`/apply?landlord=${encodeURIComponent(landlord.slug)}&unit=${unit.id}`}
-                  className="flex h-11 w-full items-center justify-center rounded-sm bg-action text-body font-semibold text-ink-inverse hover:bg-action-hover"
-                >
-                  Apply for {unit.label}
-                </Link>
+                <div className="mt-auto space-y-3">
+                  <p className="text-meta text-ink-muted">Deposit {rand(unit.depositCents)}</p>
+                  <Link
+                    to={`/apply?landlord=${encodeURIComponent(landlord.slug)}&unit=${unit.id}`}
+                    className={`${listsButtonClass('primary', 'md')} w-full`}
+                  >
+                    Apply for {unit.label}
+                  </Link>
+                </div>
               </CardBody>
             </Card>
           ))}
         </div>
       )}
 
-      <footer className="mt-12 flex flex-col items-center gap-1 border-t border-line pt-6 text-xs text-ink-muted">
+      <footer className="mt-12 flex flex-col items-center gap-2 border-t border-line pt-6 text-meta text-ink-muted">
         <span className="flex items-center gap-1.5">Listed with <Wordmark small /></span>
         <Link to="/privacy" className="inline-flex min-h-6 items-center underline">How applications handle your information</Link>
       </footer>

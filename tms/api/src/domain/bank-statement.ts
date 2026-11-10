@@ -121,7 +121,7 @@ const fingerprint = (parts: string[]) =>
  * month's overlapping export, so neither is imported twice.
  */
 function withFingerprints(
-  rows: Array<{ postedOn: string; amountCents: number; description: string; fitId?: string }>,
+  rows: Array<{ postedOn: string; amountCents: number; description: string; fitId?: string; account?: string }>,
   account = '',
 ): StatementLine[] {
   const seen = new Map<string, number>();
@@ -135,7 +135,7 @@ function withFingerprints(
       description: row.description,
       // A FITID is unique only within its account, so the account is part of the fingerprint:
       // without it a credit on a second account was dropped as already imported.
-      fingerprint: row.fitId ? fingerprint(['fitid', account, row.fitId]) : fingerprint([base, String(occurrence)]),
+      fingerprint: row.fitId ? fingerprint(['fitid', row.account ?? account, row.fitId]) : fingerprint([base, String(occurrence)]),
       ...(row.fitId ? { legacyFingerprint: fingerprint(['fitid', row.fitId]) } : {}),
     };
   });
@@ -157,8 +157,11 @@ const decodeEntities = (text: string) =>
 function parseOfx(text: string): ParsedStatement {
   const blocks = text.split(/<STMTTRN>/i).slice(1);
   if (blocks.length === 0) throw new StatementError('That OFX file has no transactions in it.');
-  const rows: Array<{ postedOn: string; amountCents: number; description: string; fitId?: string }> = [];
+  const rows: Array<{ postedOn: string; amountCents: number; description: string; fitId?: string; account: string }> = [];
   let debitsSkipped = 0;
+  // A file may hold several accounts. Each transaction belongs to the last ACCTID before it;
+  // using the file's first for all dropped a second account's lines as duplicates.
+  let account = ofxField(text.split(/<STMTTRN>/i)[0]!, 'ACCTID') ?? '';
   for (const block of blocks) {
     const amount = parseAmount(ofxField(block, 'TRNAMT') ?? '');
     const postedOn = parseDate(ofxField(block, 'DTPOSTED') ?? '');
@@ -173,10 +176,12 @@ function parseOfx(text: string): ParsedStatement {
       .join(' ')
       .trim();
     const fitId = ofxField(block, 'FITID') ?? undefined;
-    rows.push({ postedOn, amountCents: amount, description: description || 'No description', fitId });
+    rows.push({ postedOn, amountCents: amount, description: description || 'No description', fitId, account });
+    // The next statement's ACCTID sits after this transaction's closing tag, in the same chunk.
+    const after = /<\/STMTTRN>([\s\S]*)$/i.exec(block);
+    if (after) account = ofxField(after[1]!, 'ACCTID') ?? account;
   }
-  const account = ofxField(text, 'ACCTID') ?? '';
-  return { format: 'ofx', lines: withFingerprints(rows, account), debitsSkipped };
+  return { format: 'ofx', lines: withFingerprints(rows), debitsSkipped };
 }
 
 /* ------------------------------------------------------------------ *

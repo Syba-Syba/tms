@@ -578,6 +578,9 @@ async function readBalances(run: SettleRun, leaseId: string, lock = false) {
 /**
  * Bills what the tenant still owes after the deposit as an 'other' line on the lease's latest
  * invoice, or on a new invoice due today when there is none, so it can be paid and chased.
+ * An old invoice that was fully paid falls due today with it: left on its old date the debt was
+ * weeks overdue the moment it existed, and the arrears run opened with the final reminder. One
+ * already in arrears keeps its date.
  */
 async function billShortfall(run: SettleRun, leaseId: string, amountCents: number, today: string): Promise<void> {
   const description = 'Owed after the deposit: repairs and cancellation penalty';
@@ -589,10 +592,14 @@ async function billShortfall(run: SettleRun, leaseId: string, amountCents: numbe
     await run(`insert into invoice_line (invoice_id, kind, description, amount_cents) values ($1, 'other', $2, $3)`,
       [latest.id, description, amountCents]);
     const [row] = await run<{ total: string; paid: string }>(
-      `update invoice set total_cents = total_cents + $2 where id = $1
+      `update invoice
+          set total_cents = total_cents + $2,
+              due_on = case when coalesce((select sum(amount_cents) from payment where invoice_id = $1), 0) >= total_cents
+                            then greatest(due_on, $3::date) else due_on end
+        where id = $1
        returning total_cents::text as total,
                  coalesce((select sum(amount_cents) from payment where invoice_id = $1), 0)::text as paid`,
-      [latest.id, amountCents],
+      [latest.id, amountCents, today],
     );
     await run('update invoice set status = $2 where id = $1', [latest.id, invoiceStatus(Number(row!.paid), Number(row!.total))]);
     return;

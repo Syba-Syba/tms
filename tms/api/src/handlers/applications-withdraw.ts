@@ -3,6 +3,7 @@ import { audit } from '../lib/audit';
 import { withTransaction } from '../lib/db';
 import { badRequest, conflict, json, notFound, route } from '../lib/http';
 import { notify } from '../lib/notify';
+import { sastToday } from '../domain/dates';
 import { releaseUnitIfUnclaimed } from './applications-decide';
 
 /**
@@ -19,7 +20,7 @@ export const handler = route(async (event) => {
   // Someone who is both (a landlord applying to their own unit) is treated as the applicant.
   const asLandlord = access.isLandlord && !access.isApplicant;
 
-  await withTransaction(async (run) => {
+  const depositToRefundCents = await withTransaction(async (run) => {
     const [application] = await run<{ id: string; status: string; unit_id: string }>(
       'select id, status, unit_id from application where id = $1 for update',
       [id],
@@ -60,6 +61,27 @@ export const handler = route(async (event) => {
       [id],
     );
     await releaseUnitIfUnclaimed(run, application.unit_id, id);
+
+    // A deposit may be paid before the lease is signed. On a cancelled lease it could never
+    // be settled or refunded through the app, and sat on the ledger for good. It is written
+    // off the ledger as a refund here, and the landlord is told to pay it back.
+    let depositToRefund = 0;
+    for (const leaseId of ids) {
+      const [held] = await run<{ balance: string }>(
+        `select coalesce(sum(case when entry_type in ('received', 'interest') then amount_cents else -amount_cents end), 0)::text
+                  as balance
+           from deposit_ledger where lease_id = $1`,
+        [leaseId],
+      );
+      const balance = Number(held?.balance ?? 0);
+      if (balance <= 0) continue;
+      await run(
+        `insert into deposit_ledger (lease_id, entry_type, amount_cents, occurred_on, note)
+         values ($1, 'refund', $2, $3, 'Refund due: the application was withdrawn before the lease was signed')`,
+        [leaseId, balance, sastToday()],
+      );
+      depositToRefund += balance;
+    }
 
     // An inspection booked on a lease that will never start is not going to happen. Left open,
     // the morning sweep kept reminding both parties of it. 'missed' is the only closed state
@@ -106,11 +128,13 @@ export const handler = route(async (event) => {
         action: 'application.withdrawn',
         entity: 'application',
         entityId: id,
-        detail: { previousStatus: application.status, cancelledLeases: ids },
+        detail: { previousStatus: application.status, cancelledLeases: ids, depositToRefundCents: depositToRefund },
       },
       run,
     );
+    return depositToRefund;
   });
 
-  return json(200, { id, status: 'withdrawn' });
+  // Above zero, the landlord holds a deposit that must be paid back to the applicant.
+  return json(200, { id, status: 'withdrawn', depositToRefundCents });
 });

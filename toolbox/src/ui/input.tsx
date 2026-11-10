@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { cn } from '../lib/cn';
 
-/* A white field with a 1px rule, as on a paper form. Focus darkens the rule to the accent. */
+/* A white field, 44px tall. Focus turns the rule green and adds a soft green ring. */
 export interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   invalid?: boolean;
@@ -16,10 +16,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div
       className={cn(
-        'flex h-10 items-center gap-2 rounded-sm border border-line bg-surface px-3 transition-colors',
-        'focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500',
+        'flex h-11 items-center gap-2 rounded-sm border border-neutral-300 bg-surface px-3.5 transition-colors',
+        'focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-[var(--tb-ring)] focus-within:ring-offset-1 focus-within:ring-offset-[var(--tb-surface)]',
         invalid && 'border-danger focus-within:border-danger focus-within:ring-danger',
-        props.disabled && 'opacity-50',
+        props.disabled && 'bg-surface-muted opacity-60',
         className,
       )}
     >

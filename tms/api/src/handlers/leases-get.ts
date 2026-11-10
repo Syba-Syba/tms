@@ -48,10 +48,14 @@ export const handler = route(async (event) => {
     id: string; status: string; reason: string; notice_given_on: string; effective_on: string;
     refund_due_by: string | null; deductions: string; statement_s3_key: string | null;
     initiated_by: string; awaiting_tenant: boolean; penalty_cents: string;
+    attested_at: string | null; attestation_statement: string | null; evidence_s3_key: string | null;
+    refund_cents: string | null; refund_paid_on: string | null; refund_paid_reference: string | null;
   }>(
     `select t.id, t.status, t.reason, t.notice_given_on::text, t.effective_on::text, t.statement_s3_key,
             t.initiated_by, (t.needs_tenant_confirmation and t.tenant_confirmed_at is null) as awaiting_tenant,
             t.refund_due_by::text, t.penalty_cents,
+            t.attested_at::text, t.attestation_statement, t.evidence_s3_key,
+            t.refund_cents::text, t.refund_paid_on::text, t.refund_paid_reference,
             (select count(*) from deposit_deduction d where d.termination_id = t.id)::text as deductions
        from termination t where t.lease_id = $1 and t.status <> 'withdrawn'`,
     [leaseId],
@@ -89,7 +93,13 @@ export const handler = route(async (event) => {
     `select i.id, to_char(i.period_start, 'FMMonth YYYY') as period, i.due_on::text,
             i.total_cents, i.status, i.pdf_s3_key,
             coalesce((select sum(p.amount_cents) from payment p where p.invoice_id = i.id), 0)::text as paid
-       from invoice i where i.lease_id = $1 order by i.period_start desc limit 12`,
+       from invoice i
+      where i.lease_id = $1
+        -- The latest twelve, and every older one still owing: an old unpaid invoice could not
+        -- be picked when recording a payment.
+        and (i.status in ('issued', 'part_paid')
+             or i.id in (select r.id from invoice r where r.lease_id = $1 order by r.period_start desc limit 12))
+      order by i.period_start desc`,
     [leaseId],
   );
 
@@ -156,6 +166,20 @@ export const handler = route(async (event) => {
           deductions: Number(termination.deductions),
           // Shown to the tenant when they confirm a notice the landlord recorded for them.
           penaltyCents: Number(termination.penalty_cents),
+          // Stands on the landlord's attestation and the attached written notice, not on the
+          // tenant's confirmation. Both parties see the statement and can open the file.
+          attested: termination.attested_at !== null,
+          attestation: termination.attested_at
+            ? {
+                at: termination.attested_at,
+                statement: termination.attestation_statement,
+                evidenceKey: termination.evidence_s3_key,
+              }
+            : null,
+          // The refund the statement promised, and when it was actually paid, once recorded.
+          refundCents: termination.refund_cents === null ? null : Number(termination.refund_cents),
+          refundPaidOn: termination.refund_paid_on,
+          refundReference: termination.refund_paid_reference,
         }
       : null,
     renewal: renewal

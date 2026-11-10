@@ -83,6 +83,8 @@ describe('the inspection, clicked end to end', () => {
     mount(`/leases/${leaseId}`, <Route path="/leases/:leaseId" element={<LeaseDetail />} />);
     if (before.inspections.length === 0) {
       fireEvent.click(await screen.findByRole('button', { name: 'Book move-in' }));
+      // The day is chosen, not assumed: the dialog opens on a sensible one.
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Book the inspection' }));
       await screen.findByText('Move-in inspection created', undefined, { timeout: 8000 });
     }
     // Listed by its plain name, not the database's 'incoming'.
@@ -113,7 +115,7 @@ describe('the inspection, clicked end to end', () => {
     );
     await screen.findAllByText('Good', { exact: false });
 
-    fireEvent.click(screen.getAllByRole('tab', { name: 'Damaged' })[0]!);
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Damaged' })[0]!);
     type(await screen.findByPlaceholderText('What exactly, and where'), 'Cracked during clicking');
     fireEvent.click(screen.getByRole('button', { name: `Save ${room}` }));
   });

@@ -33,7 +33,7 @@ export const handler = route(async (event) => {
       input.amountCents, input.incurredOn, slipKey, person.sub,
     ],
   );
-  const uploadUrl = input.slip && slipKey ? await storage().presignPut(slipKey, input.slip.contentType, 300) : null;
+  const uploadUrl = input.slip && slipKey ? await storage().presignPut(slipKey, input.slip.contentType, 300, input.slip.sizeBytes) : null;
   if (uploadUrl) uploadLinksByAccount.record(person.sub);
 
   await audit({

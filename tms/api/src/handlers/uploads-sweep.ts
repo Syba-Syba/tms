@@ -25,7 +25,7 @@ const remove = (key: string) =>
  * still 'uploading'. Confirmed uploads are never touched.
  */
 export async function handler() {
-  const removed = { documents: 0, ticketPhotos: 0, inspectionPhotos: 0, unitPhotos: 0, paymentSlips: 0, expenseSlips: 0 };
+  const removed = { documents: 0, ticketPhotos: 0, inspectionPhotos: 0, unitPhotos: 0, paymentSlips: 0, expenseSlips: 0, noticeEvidence: 0 };
 
   // Documents: a pending entry no application_document took up is an abandoned upload. Each
   // entry is deleted only after its object, so a failed removal is tried again next run.
@@ -67,6 +67,10 @@ export async function handler() {
     // A slip never sent was never seen by the landlord, and nothing else refers to it.
     ['paymentSlips', `delete from payment_proof where id in (
         select id from payment_proof where status = 'uploading' and created_at < ${STALE} limit ${BATCH})
+      returning s3_key`],
+    // A written notice uploaded and never attached. Attaching deletes the entry, so any left is unused.
+    ['noticeEvidence', `delete from notice_evidence where s3_key in (
+        select s3_key from notice_evidence where created_at < ${STALE} limit ${BATCH})
       returning s3_key`],
   ];
   // Expense slips: a slip never confirmed still has its upload key. The expense stays; only

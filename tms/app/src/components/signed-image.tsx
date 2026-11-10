@@ -20,5 +20,10 @@ export function SignedImage({ storageKey, alt, className }: {
 
   if (failed) return null;
   if (!src) return <div className={`animate-pulse bg-surface-muted ${className ?? ''}`} />;
-  return <img src={src} alt={alt} className={className} loading="lazy" />;
+  // Opens full size in a new tab: a thumbnail is not enough to judge a crack or a stain by.
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="block shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tb-ring)] focus-visible:ring-offset-2">
+      <img src={src} alt={alt} className={className} loading="lazy" />
+    </a>
+  );
 }

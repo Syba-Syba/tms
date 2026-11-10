@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { Alert, Button, Card, CardBody, Input, Modal, PageHeader, Select, useToast } from '@hlonie/toolbox/ui';
+import { Alert, Badge, Button, Input, Modal, Select, useToast } from '@hlonie/toolbox/ui';
 import { useTwoStep } from '../components/two-step';
 import { Field } from '@hlonie/toolbox/forms';
 import { api, humanError } from '../api/client';
 import { QueryState } from '../components/query-state';
-import { SettingsNav } from '../components/settings-nav';
+import { SettingsCard, SettingsLayout } from '../components/settings-nav';
 import { listingsUrl, useLandlord, type Bank } from '../lib/landlord';
-import { PAGE } from '../lib/layout';
 
 /** Universal branch codes: picking the bank fills the code, the field people most often get wrong. */
 export const BANKS: { name: string; branchCode: string }[] = [
@@ -112,21 +111,16 @@ export function SettingsAccount() {
   const knownBank = BANKS.some((entry) => entry.name === bank.name);
 
   return (
-    <main className={PAGE.narrow}>
-      <PageHeader title="Settings" description="Your business, where rent is paid, and how applicants find you." />
-      <SettingsNav />
-
+    <SettingsLayout description="Your business, where rent is paid, and how applicants find you.">
       {!owner ? (
-        <Alert tone="info" title="Only the account owner changes these" className="mb-4">
+        <Alert tone="info" title="Only the account owner changes these">
           You can see them, so you can answer a tenant who asks where to pay.
         </Alert>
       ) : null}
 
-      <section className="mb-6" aria-label="Business">
-        <h2 className="label mb-2">Business</h2>
-        <Card>
-          <CardBody className="space-y-3">
-            <Field label="Business name" htmlFor="acct-business-name">
+      <SettingsCard title="Business" description="These print on leases, invoices and letters.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Business name" htmlFor="acct-business-name" className="sm:col-span-2">
               <Input
                 id="acct-business-name"
                 disabled={!owner}
@@ -171,7 +165,7 @@ export function SettingsAccount() {
                 onChange={(event) => editDetails({ ...details, vatNo: event.target.value.replace(/\D/g, '') })}
               />
             </Field>
-            <p className="text-xs text-ink-muted">These print on leases, invoices and letters.</p>
+          </div>
             {owner ? (
               <Button
                 loading={busy === 'details'}
@@ -187,16 +181,16 @@ export function SettingsAccount() {
                 Save business details
               </Button>
             ) : null}
-          </CardBody>
-        </Card>
-      </section>
+      </SettingsCard>
 
-      <section className="mb-6" aria-label="Bank account">
-        <h2 className="label mb-2">Where tenants pay rent</h2>
-        <Card>
-          <CardBody className="space-y-3">
+      <SettingsCard
+        title="Where tenants pay rent"
+        label="Bank account"
+        description="Rent is paid straight into this account, never to Threshold."
+        action={data.account.bank ? <Badge tone="success">On file</Badge> : <Badge tone="warning">Not added yet</Badge>}
+      >
             {!data.account.bank ? (
-              <p className="text-meta text-ink">
+              <p className="text-body text-ink">
                 {owner
                   ? "Add the account rent goes into. It prints on every invoice and shows on each tenant's rent screen."
                   : 'The owner has not added the bank account yet. Until they do, invoices ask tenants to use the account on their lease.'}
@@ -204,6 +198,7 @@ export function SettingsAccount() {
             ) : null}
             {owner || data.account.bank ? (
               <>
+               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Bank" htmlFor="acct-bank">
                   <Select
                     id="acct-bank"
@@ -243,7 +238,6 @@ export function SettingsAccount() {
                     onChange={(event) => editBank({ ...bank, holder: event.target.value })}
                   />
                 </Field>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Account number" htmlFor="acct-account-number">
                     <Input
                       id="acct-account-number"
@@ -263,15 +257,15 @@ export function SettingsAccount() {
                       onChange={(event) => editBank({ ...bank, branchCode: event.target.value.replace(/\D/g, '') })}
                     />
                   </Field>
-                </div>
+               </div>
                 {owner && replacing && twoStepOff ? (
                   <Alert tone="warning" title="Turn on two-step sign-in first">
                     Changing the account rent goes into needs a code from your phone.{' '}
-                    <Link to="/settings/notifications" className="font-bold text-brand-500">Turn it on under You</Link>.
+                    <Link to="/settings/notifications" className="font-bold text-brand-600 underline underline-offset-2">Turn it on under You</Link>.
                   </Alert>
                 ) : null}
                 {owner ? (
-                  <Button loading={busy === 'bank'} disabled={busy !== null || !bankReady || (replacing && twoStepOff)}
+                  <Button variant="secondary" loading={busy === 'bank'} disabled={busy !== null || !bankReady || (replacing && twoStepOff)}
                     onClick={() => (replacing && twoStep.data ? setAsking(true) : save('bank', { bank }, 'Bank account saved'))}>
                     Save bank account
                   </Button>
@@ -284,24 +278,20 @@ export function SettingsAccount() {
                 </p>
               </>
             ) : null}
-          </CardBody>
-        </Card>
-      </section>
+      </SettingsCard>
 
-      <section aria-label="Listings link">
-        <h2 className="label mb-2">Your listings link</h2>
-        <Card>
-          <CardBody className="space-y-3">
-            <p className="text-meta text-ink">
-              Share it on a listing site, WhatsApp or your own website. It shows your vacant units with their photos, and nobody else's. Add photos and a description from each unit on Properties.
-            </p>
+      <SettingsCard
+        title="Your listings link"
+        label="Listings link"
+        description="Share it on a listing site, WhatsApp or your own website. It shows your vacant units with their photos, and nobody else's. Add photos and a description from each unit on Properties."
+      >
             {link ? (
               <div className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-sm border border-line bg-surface-muted px-3 py-2 font-mono text-meta">
+                <code className="flex h-11 min-w-0 flex-1 items-center truncate rounded-sm border border-line bg-surface-muted px-3.5 font-mono text-meta text-ink">
                   {link}
                 </code>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(link);
@@ -316,7 +306,7 @@ export function SettingsAccount() {
               </div>
             ) : null}
             {owner ? (
-              <div className="flex flex-wrap items-end gap-2">
+              <div className="flex flex-wrap items-end gap-2 border-t border-line-soft pt-4">
                 <Field label="Change the end of the link" htmlFor="acct-link-name" className="min-w-0 flex-1">
                   <Input id="acct-link-name" value={slug}
                     onChange={(event) => editSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} />
@@ -328,12 +318,10 @@ export function SettingsAccount() {
                 </Button>
               </div>
             ) : null}
-          </CardBody>
-        </Card>
-      </section>
+      </SettingsCard>
       <Modal open={asking} onOpenChange={setAsking} title="Confirm the new bank account"
         description={`Rent will go to ${bank.name}, account ending ${bank.accountNumber.slice(-4)}. Enter the code from your authenticator app.`}>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <Input aria-label="Code from the app" inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
             value={code} onChange={(event) => setCode(event.target.value)} />
           <Button block loading={busy === 'bank'} disabled={code.trim().length < 6}
@@ -342,6 +330,6 @@ export function SettingsAccount() {
           </Button>
         </div>
       </Modal>
-    </main>
+    </SettingsLayout>
   );
 }
